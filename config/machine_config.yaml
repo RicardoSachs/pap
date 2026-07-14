@@ -1,0 +1,45 @@
+
+# ---------------------------------------------------------------
+# Machine-specific configuration template.
+# 
+# Copy this file to:
+#   %USERPROFILE%\Documents\Tools\config\market_data_config.yaml
+#
+# Fill in the values for your machine.
+# This file stays in the project as a reference.
+# Your local copy lives outside the project and is never shared.
+# ---------------------------------------------------------------
+
+# Identifier for this machine. Used in log messages. Try to match hostname.
+# Examples: 'PC-01', 'PC-02', 'BLOOMBERG-WS'
+machine_id: ''
+
+# Set to true only on machines with Bloomberg BLP API access.
+# Controls whether Bloomberg pipelines are registered in the scheduler
+# and whether run_prices.py --source bloomberg is permitted.
+bloomberg_enabled: false
+
+# Set to true on machines that are intended to query from FMS SQL Server
+# on the scheduling routines. Not necesary that is not able to reach
+fms_enabled: false
+
+# Set to true on machines used for SBS browser acquisition.
+# Controls whether scraper jobs are registered in the scheduler
+# and whether acquire_sbs.py is permitted to run.
+scraper_enabled: false
+
+# Set to true on machines that run fully automated scrapers
+# (no manual login required). Tipically the PostgreSQL server.
+# Distinct from scraper_enabled which covers the SBS manual image pad.
+automatic_scraper_enabled: false
+
+# Absolute path to chromedriver.exe.
+# Only required if scraped_enabled is true.
+# Use %USERPROFULE% to avoid harcoding the username:
+#   "%USERPROFILE%\\Documents\\Tools\\chromedriver\\chromedriver.exe"
+# Leave empty string if scraper_enabled is false.
+chromedriver_path: ''
+
+# Timezone for the scheduler.
+# Full list: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+timezone: 'America/Lima'

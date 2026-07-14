@@ -1,0 +1,19 @@
+
+{
+  "name": "analytics-dashboards",
+  "version": "1.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-plotly.js": "2.6.0",
+    "plotly.js-dist-min": "2.35.2"
+  }
+}
+

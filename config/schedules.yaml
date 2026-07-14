@@ -1,0 +1,6 @@
+
+reference:
+  - reference_data.securities
+
+daily:
+  - prices.equity_daily

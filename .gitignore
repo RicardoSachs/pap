@@ -1,0 +1,65 @@
+# --- Secrets -------------------------------------------------------
+# .env holds the real credentials. .env.* catches .env.database and
+# .env.development. The negation MUST come after those two lines or
+# the templates get swallowed - and reversing them silently publishes
+# the real .env.
+.env
+.env.*
+!.env*.example
+
+# Flat dump of the whole project startpoint
+repo.txt
+
+# --- Internal working docs -----------------------------------------
+# Infra topology, account names, the open credential-rotation checklist,
+# and the unresolved-issues list. Internal runbooks and AI-assistant
+# context - not project documentation.
+ROTATION.md
+CONVENTIONS_AUDIT.md
+RECONSTRUCTION.md
+CLAUDE.md
+docs/
+
+# --- Ad-hoc SQL scratchpads ----------------------------------------
+# Not loaded by any code
+queries/
+
+# --- Reference data: security master --------------------------------
+# The instrument universe the fund tracks; partly vendor-derived.
+# Commit header-only .csv.example templates instead.
+src/seeds/*.csv
+!src/seeds/*.csv.example
+src/seeds/backup/
+
+# --- Python ----------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Next.js ---------------------------------------------------
+node_modules/
+.next/
+out/
+.turbo/
+.vercel/
+next-env.d.ts
+npm-debug.log*
+
+# --- Pipeline outputs (data/raw, data/staging, data/logs) -------------
+data/
+*.log
+
+# --- Editors / OS ------------------------------------------------------
+.vscode/
+.idea/
+.claude/
+Thumbs.db
+desktop.ini
+.DS_Store

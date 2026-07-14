@@ -1,0 +1,263 @@
+
+/* web/apps/dashboards/app/globals.css */
+/* ===========================================================================
+   Design system tokens + global layout for the analytics dashboards.
+   Fonts are injected by next/font in layout.js as --font-inter / --font-plex.
+   =========================================================================== */
+:root {
+  /* surfaces */
+  --s0: #0D0F14;   /* page background        */
+  --s1: #141720;   /* header / sidebar       */
+  --s2: #1C2030;   /* cards / panels         */
+  --s3: #252A3A;   /* table headers          */
+  --s4: #2E3348;   /* borders / dividers     */
+  /* text */
+  --text-primary: #E8EAF0;
+  --text-secondary: #8892A4;
+  --text-muted: #4A5568;
+  /* accents */
+  --teal: #2DD4A0;   /* positive / active     */
+  --rose: #F06580;   /* negative              */
+  --blue: #5B8CFF;   /* interactive / nav     */
+  --amber: #F5A623;  /* warnings / stale      */
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono: var(--font-plex), 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --header-h: 56px;
+  --side-collapsed: 48px;
+  --side-expanded: 200px;
+}
+
+/* Theme token sets. Surfaces + text swap by [data-theme]; functional colors
+   (--teal/--rose/--blue/--amber) are semantic and identical in both modes.
+   :root above holds the dark values as the no-JS fallback. */
+[data-theme="dark"] {
+  --s0: #0D0F14; --s1: #141720; --s2: #1C2030; --s3: #252A3A; --s4: #2E3348;
+  --text-primary: #E8EAF0; --text-secondary: #8892A4; --text-muted: #4A5568;
+}
+[data-theme="light"] {
+  --s0: #F7F8FA; --s1: #FFFFFF; --s2: #F0F2F5; --s3: #E4E7ED; --s4: #D1D5DB;
+  --text-primary: #111827; --text-secondary: #6B7280; --text-muted: #9CA3AF;
+}
+
+* { box-sizing: border-box; }
+
+/* smooth theme switch */
+body, .header, .sidebar, .main, .panel, .kpi-tile, .btn, .select,
+.period-btn, table, th, td, .col-chooser, .side-item {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--s0);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pos { color: var(--teal); }
+.neg { color: var(--rose); }
+.muted { color: var(--text-secondary); }
+.dim { color: var(--text-muted); }
+
+/* ----- Header --------------------------------------------------------------- */
+.header {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--header-h);
+  display: flex; align-items: center; gap: 18px;
+  padding: 0 18px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--s4);
+  z-index: 30;
+}
+.header .brand {
+  font-weight: 700; font-size: 15px; color: var(--text-primary);
+  letter-spacing: 0.2px; white-space: nowrap;
+}
+.header .spacer { flex: 1; }
+.header .hgroup { display: flex; align-items: center; gap: 8px; }
+.header .hlabel { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-secondary); }
+
+/* period control: quick buttons (ghost / active-filled) + resolved date / custom inputs */
+.period-control { display: flex; flex-direction: column; gap: 3px; justify-content: center; }
+.period-group { display: inline-flex; gap: 6px; }
+.period-btn {
+  appearance: none; cursor: pointer; background: transparent;
+  color: var(--text-secondary); border: 1px solid var(--s4); border-radius: 6px;
+  font-family: var(--font-mono); font-size: 12px; padding: 5px 11px;
+}
+.period-btn:hover { border-color: var(--blue); color: var(--text-primary); }
+.period-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+.period-sub { min-height: 16px; display: flex; align-items: center; }
+.period-resolved { font-size: 10px; color: var(--text-secondary); font-family: var(--font-mono); letter-spacing: 0.3px; }
+.custom-dates { display: flex; gap: 12px; align-items: center; }
+.custom-dates label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary);
+}
+.date-input {
+  background: var(--s2); border: 1px solid var(--s4); border-radius: 4px;
+  color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; padding: 4px 8px;
+}
+.date-input:focus { outline: none; border-color: var(--blue); }
+/* make the native calendar glyph visible on dark surfaces */
+[data-theme="dark"] .date-input::-webkit-calendar-picker-indicator { filter: invert(1) opacity(0.7); }
+
+/* selects */
+.select {
+  appearance: none; background: var(--s2); color: var(--text-primary);
+  border: 1px solid var(--s4); border-radius: 7px; padding: 7px 28px 7px 10px;
+  font-family: var(--font-sans); font-size: 13px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238892A4' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.select:focus { outline: none; border-color: var(--blue); }
+
+/* freshness */
+.freshness { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
+.freshness .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+.freshness.stale .dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+
+/* theme toggle (icon button in the header) */
+.theme-toggle { font-size: 14px; line-height: 1; padding: 7px 9px; }
+
+/* ----- Sidebar -------------------------------------------------------------- */
+.sidebar {
+  position: fixed; top: var(--header-h); bottom: 0; left: 0;
+  width: var(--side-collapsed);
+  background: var(--s1); border-right: 1px solid var(--s4);
+  padding: 8px 0; z-index: 20;
+  transition: width 0.15s ease;
+  overflow: hidden;
+}
+.sidebar:hover, .sidebar.expanded { width: var(--side-expanded); }
+.side-toggle {
+  display: flex; align-items: center; gap: 14px;
+  width: 100%; background: transparent; border: 0; cursor: pointer;
+  color: var(--text-secondary); padding: 10px 14px; font-size: 16px;
+}
+.side-toggle:hover { color: var(--text-primary); }
+.side-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 14px; color: var(--text-secondary);
+  border-left: 3px solid transparent; cursor: pointer; white-space: nowrap;
+}
+.side-item .icon { font-size: 16px; width: 18px; text-align: center; flex: none; }
+.side-item .label {
+  font-size: 13px; opacity: 0; transition: opacity 0.12s ease;
+}
+.sidebar:hover .side-item .label, .sidebar.expanded .side-item .label { opacity: 1; }
+.side-item:hover { background: var(--s2); color: var(--text-primary); }
+.side-item.active { color: var(--text-primary); border-left-color: var(--blue); background: var(--s2); }
+.side-item.soon { opacity: 0.3; cursor: not-allowed; }
+.side-item.soon:hover { background: transparent; color: var(--text-secondary); }
+.side-sep { height: 1px; background: var(--s4); margin: 8px 12px; }
+
+/* ----- Main / layout -------------------------------------------------------- */
+.main {
+  margin-top: var(--header-h);
+  margin-left: var(--side-collapsed);
+  padding: 20px 22px;
+  transition: margin-left 0.15s ease;
+}
+.main.exp { margin-left: var(--side-expanded); }
+
+.page-title { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
+.page-sub { color: var(--text-secondary); margin: 0 0 18px; font-size: 13px; }
+
+/* ----- Panels / cards ------------------------------------------------------- */
+.panel {
+  background: var(--s2); border: 1px solid var(--s4); border-radius: 10px;
+  padding: 16px; margin-bottom: 18px;
+}
+.panel-title { font-weight: 600; font-size: 13px; margin: 0 0 12px; color: var(--text-primary); }
+
+/* ----- KPI bar -------------------------------------------------------------- */
+.kpi-bar {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.kpi-tile {
+  background: var(--s2); border: 1px solid var(--s4); border-radius: 10px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+}
+.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-secondary); }
+.kpi-value {
+  font-family: var(--font-mono); font-size: 20px; font-weight: 500; line-height: 1.1;
+  color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kpi-meta { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ----- Controls / buttons --------------------------------------------------- */
+.controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-secondary); font-weight: 600; }
+.btn {
+  appearance: none; cursor: pointer; font-family: var(--font-sans); font-size: 12px;
+  background: var(--s3); color: var(--text-primary); border: 1px solid var(--s4);
+  border-radius: 7px; padding: 6px 11px; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { border-color: var(--blue); color: var(--text-primary); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ----- Tables --------------------------------------------------------------- */
+.table-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.table-tools .right { display: flex; gap: 8px; position: relative; }
+.table-wrap { overflow: auto; max-height: 62vh; border: 1px solid var(--s4); border-radius: 10px; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--s4); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--s3); color: var(--text-secondary); font-weight: 600;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; user-select: none;
+}
+tbody tr:hover { background: var(--s3); }
+tbody td { color: var(--text-primary); }
+tfoot th, tfoot td {
+  position: sticky; bottom: 0; z-index: 2;
+  background: var(--s3); color: var(--text-primary); font-weight: 600; border-top: 2px solid var(--s4);
+}
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tag {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: var(--s3); color: var(--text-secondary); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.flag-warn { color: var(--amber); }
+
+/* column chooser popover */
+.col-chooser {
+  position: absolute; top: 36px; right: 0; z-index: 20;
+  background: var(--s2); border: 1px solid var(--s4); border-radius: 10px;
+  padding: 10px; min-width: 200px; box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+}
+.col-chooser .row { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 12px; color: var(--text-primary); }
+.col-chooser .row input { accent-color: var(--blue); }
+
+/* security typeahead combobox */
+.combo { position: relative; }
+.combo-results {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 25;
+  background: var(--s2); border: 1px solid var(--s4); border-radius: 8px;
+  min-width: 300px; max-height: 320px; overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.combo-item {
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--text-primary);
+}
+.combo-item:hover, .combo-item.active { background: var(--s3); }
+.combo-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+
+/* ----- States --------------------------------------------------------------- */
+.error { color: var(--rose); font-weight: 600; }
+.loading { color: var(--text-secondary); padding: 20px 0; }
+

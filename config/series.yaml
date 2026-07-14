@@ -1,0 +1,7 @@
+
+equity_daily:
+  pipeline: pipelines.prices.bloomberg
+  cadence: daily
+  target_table: fact_prices
+  default_start_date: 2000-01-01
+  universe: equity    

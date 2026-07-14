@@ -1,0 +1,10 @@
+
+numpy
+pandas
+pyodbc
+psycopg
+psycopg[binary]
+fastapi
+uvicorn
+python-dotenv
+pyyaml

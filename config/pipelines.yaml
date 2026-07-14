@@ -1,0 +1,28 @@
+
+pipelines:
+  dim:
+    bloomberg:
+      security:
+        shared_fields:
+          - PARSEKYABLE_DES
+          - ID_ISIN
+          - TICKER
+          - NAME
+          - SHORT_NAME
+          - SECURITY_NAME
+          - ID_BB_SEC_NUM_DES
+          - CRNCY
+          - COUNTRY
+          - EXCH_CODE
+          - MARKET_SECTOR_DES
+          - SECURITY_TYP
+          - MARKET_STATUS
+          - EXCH_MARKET_STATUS
+        equity_fields:
+          - INDUSTRY_SECTOR
+        fund_fields:
+          - FUND_TYP
+          - FUND_ASSET_CLASS_FOCUS
+          - FUND_GEO_FOCUS
+          - FUND_OBJECTIVE_LONG
+        

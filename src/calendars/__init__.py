@@ -1,4 +1,5 @@
-
+# src/calendars/__init__.py
+# ---------------------------------------------------------------
 # Convenience imports for the most common calendar functions.
 from src.calendars.calendar_nyse import (
     is_business_day as nyse_is_business_day,

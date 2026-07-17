@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/dividendos/run.py
 # ---------------------------------------------------------------
 # Fact pipeline entry point for SBS dividendos (dividend adj factors).

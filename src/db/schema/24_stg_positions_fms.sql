@@ -1,5 +1,4 @@
-
--- src/db/schema/stg_positions_fms.sql
+-- 24_stg_positions_fms.sql
 -- ---------------------------------------------------------------
 -- stg_positions_fms: raw landing for FMS sproc output.
 --

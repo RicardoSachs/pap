@@ -1,5 +1,4 @@
-
-# src/pipeline/prices/sbs/vector_completo/extract.py
+# src/pipelines/prices/sbs/vector_completo/extract.py
 import logging
 from datetime import date
 import pandas as pd

@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/rf_local/run.py
 # ---------------------------------------------------------------
 # Fact pipeline entry point for SBS rf_local (local fixed income).

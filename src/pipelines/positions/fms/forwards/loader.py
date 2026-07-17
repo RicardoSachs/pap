@@ -1,5 +1,4 @@
-
-# src/pipeline/positions/fms/forwards/loader.py
+# src/pipelines/positions/fms/forwards/loader.py
 # ---------------------------------------------------------------
 # Two writers, each idempotent via ON CONFLICT DO UPDATE.
 #

@@ -1,3 +1,8 @@
+# src/db/bootstrap.py
+# ---------------------------------------------------------------
+# Database bootstrap: creates the metadata/tracking tables and loads the
+# dimension and series-registry seeds into an empty PostgreSQL database.
+# Bootstrap is onboard on an empty DB (see onboard.py).
 
 import logging
 from typing import Optional
@@ -28,28 +33,28 @@ def create_db() -> None:
     with get_connection() as conn:
         cur = conn.cursor()
 
-        cur.execute('''
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS _metadata (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
-        ''')
+        """)
 
-        cur.execute('''
+        cur.execute("""
             INSERT INTO _metadata (key, value)
             VALUES ('db_initialized', 'true')
             ON CONFLICT (key) DO NOTHING;
-        ''')
+        """)
 
 
 # Schema -----
 
 def create_schema(conn: Connection) -> None:
-    '''
+    """
     Executes all SQL files in schema/ in filename order.
     Files are numbered (01_, 02_, ...) to enforce FK dependency order.
 
-    '''
+    """
     sql_files = sorted(SCHEMA_DIR.glob('*.sql'))
     if not sql_files:
         raise FileNotFoundError(f'No SQL files found in {SCHEMA_DIR}')
@@ -62,7 +67,7 @@ def create_schema(conn: Connection) -> None:
 
     logger.info(f'Schema created from {len(sql_files)} files.')
 
-# Pass 1: Sekeleton loaders (from seeds) ----------
+# Pass 1: Skeleton loaders (from seeds) ----------
 
 # Dim entity -----
 
@@ -70,10 +75,10 @@ def load_dim_entity(
     conn: Connection,
     series_df: pd.DataFrame,
 ) -> dict[tuple, int]:
-    '''
+    """
     Inserts unique (procode, entity_type) pairs into dim_entity.
     Returns a mapping {(procode, entity_type): entity_id} for downstream use.
-    '''
+    """
     unique_entities = (
         series_df[['procode', 'entity_type', 'name']]
         .drop_duplicates(subset=['procode', 'entity_type'])
@@ -104,11 +109,11 @@ def load_dim_entity_identifiers(
     identifiers_df: pd.DataFrame,
     entity_map: dict[tuple, int],
 ) -> None:
-    '''
+    """
     Populates dim_entity_identifiers from seeds/identifiers.csv.
     One row per identifier – no sparse columns.
     Called after load_dim_entity so entity_map is available.
-    '''
+    """
     inserted = skipped = 0
 
     for _, row in identifiers_df.iterrows():
@@ -139,7 +144,7 @@ def load_dim_security_skeleton(
     series_df: pd.DataFrame,
     entity_map: dict[tuple, int],
 ) -> None:
-    '''
+    """
     Inserts minimal dim_security rows for entity_type = "security".
     Only columns available from series.csv: security_type.
     All vendor-sourced attributes (sector, exchange, etc.) are left NULL
@@ -147,7 +152,7 @@ def load_dim_security_skeleton(
 
     Uses INSERT … ON CONFLICT DO NOTHING for idempotency (SCD Type 1).
 
-    '''
+    """
 
     security_df = (
         series_df[series_df['entity_type'] == 'security']
@@ -163,12 +168,12 @@ def load_dim_security_skeleton(
             continue
 
         cur.execute(
-            '''
+            """
             INSERT INTO dim_security (entity_id, security_type)
             VALUES (%s, %s)
             ON CONFLICT (entity_id) DO NOTHING
 
-            ''',
+            """,
             (entity_id, row.get('security_type'))
         )
         inserted += 1
@@ -179,12 +184,12 @@ def load_series_registry(
     series_df: pd.DataFrame,
     entity_map: dict[tuple, int]
 ) -> None:
-    '''
+    """
     Inserts new series into series_registry.
     ON CONFLICT DO NOTHING preserves status of existing rows –
     safe to re-run without overwriting operational state.
 
-    '''
+    """
 
     cur = conn.cursor()
     inserted = skipped = 0
@@ -198,7 +203,7 @@ def load_series_registry(
             )
             continue
         cur.execute(
-            '''
+            """
             INSERT INTO series_registry (
                 entity_id, field, domain, source, frequency,
                 default_start_date, status,
@@ -207,7 +212,7 @@ def load_series_registry(
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (entity_id, field, source) DO NOTHING
 
-            ''',
+            """,
             (
                 entity_id,
                 row['field'],
@@ -237,13 +242,13 @@ def run_dim_enrichment(
     domain: Optional[str] = None,
 ) -> None:
 
-    '''
+    """
     Dispatches dim enrichment pipelines per vendor × domain combination.
     Each pipeline extracts vendor attributes to stg_* then resolves
     into full dim_security / dim_macro rows.
     Optionally filtered by vendor and/or domain.
 
-    '''
+    """
     pipelines = _get_enrichment_pipelines(vendor=vendor, domain=domain)
 
     if not pipelines:
@@ -269,11 +274,11 @@ def _get_enrichment_pipelines(
     vendor: Optional[str] = None,
     domain: Optional[str] = None,
 ) -> list:
-    '''
+    """
     Registry of all dim enrichment pipelines.
     Add new entries here as new vendor/domain combinations are added.
 
-    '''
+    """
     all_pipelines = [
         {
             'vendor': 'bloomberg',
@@ -288,7 +293,7 @@ def _get_enrichment_pipelines(
     ]
 
 def _lazy_run(module_path: str):
-    '''Returns a zero-argument callable that imports and runs module.run() lazily.'''
+    """Returns a zero-argument callable that imports and runs module.run() lazily."""
     def runner():
         import importlib
         mod = importlib.import_module(module_path)
@@ -305,7 +310,7 @@ def run_bootstrap(
     backfill_domain: str = None,
     backfill_source: str = None
 ) -> None:
-    '''
+    """
     Full bootstrap sequence:
 
         1. Create schema
@@ -322,19 +327,7 @@ def run_bootstrap(
     Steps 8 and 9 are opt-in via flags allowing bootstrap to run
     in stages (schema + seeds first, enrich and backfill later)
     
-    :param enrich: Description
-    :type enrich: bool
-    :param enrich_vendor: Description
-    :type enrich_vendor: str
-    :param enrich_domain: Description
-    :type enrich_domain: str
-    :param run_backfill: Description
-    :type run_backfill: bool
-    :param backfill_domain: Description
-    :type backfill_domain: str
-    :param backfill_source: Description
-    :type backfill_source: str
-    '''
+    """
     logger.info('=== Bootstrap started ===')
 
     series_df = load_series_seed()
@@ -343,6 +336,9 @@ def run_bootstrap(
 
     create_db()
 
+    # FIXME: rationale is a SQLite remnant - psycopg has no executescript, and
+    #   get_connection() commits on clean exit regardless. The isolated
+    #   connection per step is harmless, but this justification is wrong.
     # Step 1: schema - isolated connection due to executescript implicit COMMIT
     logger.info('--- Step 1: Creating schema ---')
     with get_connection() as conn:
@@ -389,7 +385,7 @@ def run_bootstrap(
     logger.info('=== Bootstrap complete ===')
 
 # Run if main
-if __name__ == '__main__':
+if __name__ == "__main__":
     from src.shared.logging import setup_logging
     setup_logging('bootstrap_pg')
     run_bootstrap(enrich=False,

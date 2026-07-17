@@ -1,3 +1,7 @@
+# src/vendors/bloomberg.py
+# ---------------------------------------------------------------
+# Bloomberg blpapi client helpers: session management and BDP/reference-
+# data request wrappers, returning pandas DataFrames.
 
 import blpapi
 import pandas as pd
@@ -12,7 +16,7 @@ def start_session(session = blpapi.Session()):
     return session
 
 def get_securityData(toPy_list, subservice):
-    '''
+    """
     Pulls the security data from a .toPy (response.toPy()['securityData'])
     
     :param toPy_list: response.toPy() list
@@ -20,7 +24,7 @@ def get_securityData(toPy_list, subservice):
 
     returns a list in which each element is a dict corresponding to a security
     a.k.a. response.toPy()['securityData']
-    '''
+    """
     securityData = map(lambda x:x['securityData'], toPy_list)
 
     if subservice == 'HistoricalDataRequest':
@@ -30,10 +34,10 @@ def get_securityData(toPy_list, subservice):
         return [*itertools.chain.from_iterable(securityData)]
 
 def secdata_to_df(sec_data):
-    '''
+    """
     :param sec_data: response.toPy()['securityData'] or equivalent
     so input is a dict in shape {'security':id, 'eidData':[], ..., 'fieldaData':[{}]}
-    '''
+    """
     if type(sec_data['fieldData']) is list:
         ind = None
     else:
@@ -70,7 +74,7 @@ def data_request(
     end_date: str | None = None,
     options: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
-    '''
+    """
     Generate named arguments dictionary of historical data Bloomberg API "a la BDH"
     
     :param securities: Iterable of tickers parsekeyables or other IDs (ISIN, CUSIP, etc)
@@ -85,7 +89,7 @@ def data_request(
     :type options: Dict[str, Any] | None
     :return: Named arguments dictionary 
     :rtype: Dict[str, Any]
-    '''
+    """
 
     # Raise error if missing mandatory parameters
     if securities is None:

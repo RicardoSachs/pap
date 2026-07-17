@@ -1,5 +1,4 @@
-
--- src/db/schema/dim_portfolio.sql
+-- 22_dim_portfolio.sql
 -- ---------------------------------------------------------------
 -- dim_portfolio: one row per (internal_code, source).
 --

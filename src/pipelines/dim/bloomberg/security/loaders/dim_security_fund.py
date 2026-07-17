@@ -1,3 +1,6 @@
+# src/pipelines/dim/bloomberg/security/loaders/dim_security_fund.py
+# ---------------------------------------------------------------
+# Loader: upserts fund-extension attributes into dim_security_fund.
 
 import logging
 import pandas as pd
@@ -5,14 +8,14 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 def load_dim_security_fund(conn, df: pd.DataFrame) -> None:
-    '''
+    """
     Upserts fund extension attributes.
     Skip rows where security_id cannot be resolved from entity_id.
     
     :param conn: Connection object
     :param df: Staging bloomberg table
     :type df: pd.DataFrame
-    '''
+    """
     if df.empty:
         logger.info('dim_security_fund: nothing to load.')
         return

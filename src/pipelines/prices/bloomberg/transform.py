@@ -1,11 +1,10 @@
-
-# pipelines/prices/bloomberg/transform.py
+# src/pipelines/prices/bloomberg/transform.py
 # ---------------------------------------------------------------
 # Transforms staged Bloomberg price data into fact_prices shape.
 # Resolves parsekyable -> series_id via the securities list
 # already in memory from run.py - no extra DB queries needed.
 # Casts value to REAL and validates before loading.
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 
 import logging
 import pandas as pd
@@ -16,7 +15,7 @@ def transform_prices(
     raw_df: pd.DataFrame,
     securities: list[dict],
 ) -> pd.DataFrame:
-    '''
+    """
     Transforms long-format Bloomberg price data for loading into fact_prices.
 
     Maps parsekyable -> series_id using the securities list from run.py.
@@ -32,7 +31,7 @@ def transform_prices(
     :type securities: list[dict]
     :return: DataFrame for fact_prices
     :rtype: DataFrame
-    '''
+    """
     if raw_df.empty:
         logger.warning('Raw DataFrame is empty - nothing to transform.')
         return pd.DataFrame(columns=['series_id', 'date', 'value', 'source'])

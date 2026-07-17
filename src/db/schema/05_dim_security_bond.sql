@@ -1,4 +1,3 @@
-
 -- 05_dim_security_bond.sql
 -- Bond-specific extension of dim_security (1:1).
 -- ASSUMED shape: the real file 05 DDL was not captured in pgetl_db_context.json

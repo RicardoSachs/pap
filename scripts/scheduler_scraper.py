@@ -1,4 +1,3 @@
-
 # scripts/scheduler_scraper.py
 # ---------------------------------------------------------------
 # Scheduler for acquisition machines.
@@ -185,6 +184,11 @@ def job_acquire_sbs(legacy: Optional[bool] = False):
 
 # ---- Schedule definitions --------------------------------------
 
+# FIXME: this comment contradicts the code and scheduler_central. It claims
+#   acquisition 08:00 / central check_sbs 09:00 / ingestion 09:10, but the cron
+#   below is 16:20 and scheduler_central runs check_sbs 08:40 / ingest 08:50 -
+#   so acquisition fires AFTER central ingestion, inverting the documented
+#   order. Reconcile the times (see CONVENTIONS_AUDIT.md bug #5).
 # SBS acquisition - Mon-Fri at 08:00 local time.
 # PC is off on weekends so no Saturday job needed.
 # Monday correctly acquires Friday via prev_reporting_day.

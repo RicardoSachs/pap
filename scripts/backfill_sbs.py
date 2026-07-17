@@ -1,5 +1,4 @@
-
-# scripts/backfill_sbs_prices.py
+# scripts/backfill_sbs.py
 # ---------------------------------------------------------------
 # File-driven backfill for SBS price pipelines.
 # Iterates through all available raw files oldest to newest
@@ -11,25 +10,25 @@
 #
 # Usage:
 #   # Backfill all file types
-#   python scripts/backfill_sbs_prices.py
+#   python scripts/backfill_sbs.py
 #
 #   # Backfill specific file type only
-#   python scripts/backfill_sbs_prices.py --file-type rf_local
+#   python scripts/backfill_sbs.py --file-type rf_local
 #
 #   # Backfill multiple specific file types
-#   python scripts/backfill_sbs_prices.py --file-type rf_local rf_exterior
+#   python scripts/backfill_sbs.py --file-type rf_local rf_exterior
 #
 #   # Backfill within a date range
-#   python scripts/backfill_sbs_prices.py --start 2024-01-01 --end 2024-12-31
+#   python scripts/backfill_sbs.py --start 2024-01-01 --end 2024-12-31
 #
 #   # Dry run: show available dates without loading
-#   python scripts/backfill_sbs_prices.py --file-type vector_completo --dry-run
+#   python scripts/backfill_sbs.py --file-type vector_completo --dry-run
 #
 #   # Skip dates already fully loaded (default behaviour)
-#   python scripts/backfill_sbs_prices.py --file-type rf_local
+#   python scripts/backfill_sbs.py --file-type rf_local
 #
 #   # Force reload even for dates already loaded
-#   python scripts/backfill_sbs_prices.py --file-type rf_local --force
+#   python scripts/backfill_sbs.py --file-type rf_local --force
 # ---------------------------------------------------------------
 
 import argparse

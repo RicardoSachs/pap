@@ -1,4 +1,3 @@
-
 -- 17_stg_prices_sbs_vector_completo.sql
 -- ---------------------------------------------------------------
 -- Staging table for SBS daily general prices file (vector_completo).

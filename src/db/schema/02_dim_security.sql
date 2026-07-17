@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- dim_security
 -- Domain-specific attributes for entity_type = 'security'

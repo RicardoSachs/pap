@@ -1,11 +1,8 @@
-
-
-"""
-drop_all_tables.py
-
-Drops all tables from a PostgreSQL database using the existing
-get_connection function from src.db.connection.
-"""
+# scripts/clean_database.py
+# ---------------------------------------------------------------
+# Drops all tables from a PostgreSQL database, via the project's
+# get_connection(). Supports --dry-run. Destructive DDL utility.
+# ---------------------------------------------------------------
 
 import sys
 from pathlib import Path
@@ -33,7 +30,7 @@ def get_all_tables(conn, schema: str = "public") -> list[str]:
             """,
             (schema,),
         )
-        # RealDictCursor returns dicts
+        # dict_row returns dicts
         return [row["tablename"] for row in cur.fetchall()]
 
 def drop_all_tables(
@@ -51,7 +48,7 @@ def drop_all_tables(
     dry_run : bool
         If True, only logs the tables that would be dropped.
     config : dict, optional
-        Custom DB config dict. If None, uses DB_CONFIG from
+        Custom DB config dict. If None, uses get_db_config() from
         src.shared.config_pg.
     """
     with get_connection(config) as conn:

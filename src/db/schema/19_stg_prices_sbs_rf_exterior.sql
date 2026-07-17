@@ -1,4 +1,3 @@
-
 -- 19_stg_prices_sbs_rf_exterior.sql
 -- ---------------------------------------------------------------
 -- Staging table for SBS foreign fixed income file (rf_exterior).

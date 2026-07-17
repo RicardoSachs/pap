@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/tipo_cambio/transform.py
 # ---------------------------------------------------------------
 # Transforms stg_prices_sbs_tipo_cambio into:

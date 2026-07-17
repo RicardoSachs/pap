@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/tipo_cambio/loader.py
 # ---------------------------------------------------------------
 # Loads transformed tipo_cambio data into fact_prices.

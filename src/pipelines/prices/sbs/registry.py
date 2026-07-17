@@ -1,5 +1,4 @@
-
-# src/pipeline/prices/sbs/registry.py
+# src/pipelines/prices/sbs/registry.py
 # ---------------------------------------------------------------
 # Shared SBS universe registration logic.
 # Called as Step 1 in each SBS pipeline run() before _classify().
@@ -284,18 +283,6 @@ def _register_normal_instrument(
             f"Linked SBS instrument {codigo_sbs} to existing "
             f"entity_id={entity_id} via ISIN {isin}."
         )
-    # DEBUGG: VERIFY
-    # logger.info(f'entity_id={entity_id}')
-
-    # verify = conn.execute(
-    #     "SELECT entity_id FROM dim_entity WHERE entity_id = ?",
-    #     (entity_id,)
-    # ).fetchone()
-
-    # logger.info(
-    #     f'entity_id={entity_id} verify={verify}'
-    # )
-
     # Always store codigo_sbs on the entity (new or existing)
     upsert_entity_identifier(
         conn, entity_id, "codigo_sbs", codigo_sbs, "sbs", is_primary=True

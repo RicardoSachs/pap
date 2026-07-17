@@ -1,4 +1,4 @@
-
+# src/calendars/calendar_nyse.py
 # ---------------------------------------------------------------
 # NYSE calendar (XNYS) backed by exchange_calendars.
 # Used by Bloomberg prices and fundamentals pipelines to skip

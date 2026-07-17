@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- dim_entity_identifiers
 -- Maps internal entity_id to all vendor-specific identifiers.

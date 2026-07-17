@@ -1,5 +1,4 @@
-
-# scripts/acquire/acquire_sbs_bulk.py
+# scripts/acquire/acquire_sbs_range.py
 # ---------------------------------------------------------------
 # Bulk SBS acquisition for initial or catch-up loads.
 # Single browser session: logs in once, queries portal for
@@ -7,16 +6,16 @@
 #
 # Usage:
 #   # Full history from 2020 to today
-#   python scripts/acquire/acquire_sbs_bulk.py --start 2020-01-01
+#   python scripts/acquire/acquire_sbs_range.py --start 2020-01-01
 #
 #   # Scoped date range
-#   python scripts/acquire/acquire_sbs_bulk.py --start 2024-01-01 --end 2024-12-31
+#   python scripts/acquire/acquire_sbs_range.py --start 2024-01-01 --end 2024-12-31
 #
 #   # Specific file types only
-#   python scripts/acquire/acquire_sbs_bulk.py --start 2020-01-01 --file-types tasa_activa_mn tipo_cambio
+#   python scripts/acquire/acquire_sbs_range.py --start 2020-01-01 --file-types tasa_activa_mn tipo_cambio
 #
 #   # Custom retry settings
-#   python scripts/acquire/acquire_sbs_bulk.py --start 2020-01-01 --max-retries 5 --retry-delay 60
+#   python scripts/acquire/acquire_sbs_range.py --start 2020-01-01 --max-retries 5 --retry-delay 60
 # ---------------------------------------------------------------
 
 import argparse

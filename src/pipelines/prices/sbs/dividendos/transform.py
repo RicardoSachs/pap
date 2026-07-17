@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/dividendos/transform.py
 # ---------------------------------------------------------------
 # Transforms stg_prices_sbs_dividendos into:

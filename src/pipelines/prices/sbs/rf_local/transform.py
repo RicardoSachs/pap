@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/rf_local/transform.py
 # ---------------------------------------------------------------
 # Transforms stg_prices_sbs_rf_local into:

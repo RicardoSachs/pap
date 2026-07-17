@@ -1,4 +1,3 @@
-
 -- 26_stg_positions_fms_forwards.sql
 -- ---------------------------------------------------------------
 -- stg_positions_fms_forwards: raw landing for the FMS forwards

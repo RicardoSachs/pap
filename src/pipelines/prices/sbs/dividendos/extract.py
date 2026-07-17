@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/dividendos/extract.py
 import logging
 from datetime import date, datetime
@@ -7,22 +6,6 @@ from src.scrapers.sbs import find_latest_file
 
 logger = logging.getLogger(__name__)
 SBS_SUBDIR = "dividendos"
-
-# RAW_COLUMNS = {
-#     c.strip(): v for c, v in [
-#         ("FECHA VECTOR", "fecha_vector"),
-#         (bytes.fromhex("43264f61637574653b4449474f20534253").decode("latin-1"), "codigo_sbs"),
-#         ("ISIN", "isin"),
-#         (bytes.fromhex("4e454d264f61637574653b4e49434f").decode("latin-1"), "nemonico"),
-#         ("EMISOR", "emisor"),
-#         ("MONEDA", "moneda"),
-#         ("FACTOR DE AJUSTE", "factor_ajuste"),
-#         ("TIPO DE ENTREGA DE DERECHO", "tipo_entrega"),
-#     ]
-# }
-
-#[FECHA VECTOR, C&Oacute;DIGO SBS, ISIN, NEM&Oacute;NICO, EMISOR, MONEDA, 
-#FACTOR DE AJUSTE, TIPO DE ENTREGA DE DERECHO]
 
 RAW_COLUMNS = {
     "FECHA VECTOR": "fecha_vector", "C&Oacute;DIGO SBS": "codigo_sbs", "ISIN": "isin", 

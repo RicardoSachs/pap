@@ -1,3 +1,7 @@
+# src/pipelines/dim/bloomberg/security/loaders/dim_entity_identifiers.py
+# ---------------------------------------------------------------
+# Loader: upserts long-format identifiers (ISIN/CUSIP/SEDOL/...) into
+# dim_entity_identifiers, as a side effect of Bloomberg security enrichment.
 
 import logging
 import pandas as pd
@@ -7,15 +11,13 @@ from src.db.queries import upsert_entity_identifier
 logger = logging.getLogger(__name__)
 
 def load_identifiers_from_enrichment(conn, df: pd.DataFrame) -> None:
-    '''
+    """
     Upserts long-format identifier DataFrame into dim_entity_identifiers.
     Called as a side effect of security enrichment - Bloomberg returns
     ISIN, CUSIP, SEDOL or others alongside attribute fields in the BDP call.
     
     :param conn: Connection object
-    :param df: Description
-    :type df: pd.DataFrame
-    '''
+    """
     if df.empty:
         logger.info('dim_entity_identifiers: nothing to load from enrichment.')
         return

@@ -1,4 +1,3 @@
-
 # scripts/run_prices.py
 # ---------------------------------------------------------------
 # Scheduler entry point for fact prices pipelines.

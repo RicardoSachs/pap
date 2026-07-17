@@ -1,3 +1,6 @@
+# src/pipelines/dim/bloomberg/security/loaders/dim_security.py
+# ---------------------------------------------------------------
+# Loader: upserts shared security attributes into dim_security (SCD Type 1).
 
 import logging
 import pandas as pd
@@ -6,14 +9,11 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 def load_dim_security(conn, df: pd.DataFrame) -> None:
-    '''
+    """
     Upserts shared security attributes into dim_security.
     Matches on entity_id SCD Type 1 - overwrites in place.
     
-    :param conn: Description
-    :param df: Description
-    :type df: pd.DataFrame
-    '''
+    """
     if df.empty:
         logger.info('dim_security: nothing to load')
         return
@@ -21,7 +21,7 @@ def load_dim_security(conn, df: pd.DataFrame) -> None:
     updated = 0
     for _, row in df.iterrows():
         conn.execute(
-            '''
+            """
             INSERT INTO dim_security (
                 entity_id,
                 ticker,
@@ -48,7 +48,7 @@ def load_dim_security(conn, df: pd.DataFrame) -> None:
                 market_sector = COALESCE(EXCLUDED.market_sector, dim_security.market_sector),
                 security_type = COALESCE(EXCLUDED.security_type, dim_security.security_type),
                 updated_at    = NOW()
-            ''',
+            """,
             (
                 row['entity_id'],
                 row['ticker'],

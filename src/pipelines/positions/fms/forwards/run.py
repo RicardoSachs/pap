@@ -1,5 +1,4 @@
-
-# src/pipeline/positions/fms/forwards/run.py
+# src/pipelines/positions/fms/forwards/run.py
 # ---------------------------------------------------------------
 # Callable run wrapper for the FMS forwards pipeline.
 #

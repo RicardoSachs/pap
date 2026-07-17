@@ -1,4 +1,3 @@
-
 -- 21_stg_prices_sbs_dividendos.sql
 -- ---------------------------------------------------------------
 -- Staging table for SBS daily dividends file (dividendos).

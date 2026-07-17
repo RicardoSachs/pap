@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/rf_exterior/loader.py
 # ---------------------------------------------------------------
 # Loads transformed rf_exterior data into fact_prices and updates

@@ -1,4 +1,3 @@
-
 # scripts/delete_series.py
 # ---------------------------------------------------------------
 # Maintenance script: completely removes one or more series and
@@ -210,18 +209,6 @@ def _delete_ticker(
             series_ids,
         ).rowcount
         logger.info(f"  Deleted {deleted} rows from series_registry.")
-
-        # 3. dim_source_priority
-        # conn.execute(
-        #     "DELETE FROM dim_source_priority WHERE entity_id = ?",
-        #     (entity_id,),
-        # )
-
-        # 4. dim_internal_attributes
-        # conn.execute(
-        #     "DELETE FROM dim_internal_attributes WHERE entity_id = ?",
-        #     (entity_id,),
-        # )
 
         # 5. Staging tables (keyed by bloomberg_ticker, resolve first)
         bbg_ticker_row = conn.execute(

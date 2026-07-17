@@ -1,4 +1,3 @@
-
 -- 27_fact_positions_forwards.sql
 -- ---------------------------------------------------------------
 -- fact_positions_forwards: forward contract positions.

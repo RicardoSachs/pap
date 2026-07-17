@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- stg_prices_bloomberg
 -- Raw price observations as returned by Bloomberg API calls.

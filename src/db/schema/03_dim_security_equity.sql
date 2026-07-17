@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- dim_security_equity
 -- Equity-specific extension of dim_security.

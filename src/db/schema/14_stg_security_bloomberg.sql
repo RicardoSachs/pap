@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- stg_security_bloomberg
 -- Raw security attributes as returned by Bloomberg API calls.

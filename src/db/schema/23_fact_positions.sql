@@ -1,5 +1,4 @@
-
--- src/db/schema/fact_positions.sql
+-- 23_fact_positions.sql
 -- ---------------------------------------------------------------
 -- fact_positions: daily holdings.
 --

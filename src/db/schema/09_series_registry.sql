@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- series_registry
 -- Operational registry. One row per ticker-field-source combination

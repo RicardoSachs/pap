@@ -1,20 +1,20 @@
-
-# ----------------------------------------------------------------
+# scripts/acquire/check_sbs.py
+# ---------------------------------------------------------------
 # Validates that today's SBS files have arrived in data/raw/
 # before the central PC ingestion pipeline runs.
 #
 # Only meaningful when acquisition runs on a different machine
-# than the cental PC. WHen acquisition runs locally, the
-# schedulewr already gates ingestion via acquire_sbs.py exit code.
+# than the central PC. When acquisition runs locally, the
+# scheduler already gates ingestion via acquire_sbs.py exit code.
 # 
-# Exits with code  if any expected file is missing so the
-# scheduler suppressses the inbgestion setp automatically.
+# Exits with code 1 if any expected file is missing so the
+# scheduler suppresses the ingestion step automatically.
 #
 # Usage:
 #   python scripts/acquire/check_sbs.py
 #   python scripts/acquire/check_sbs.py --date 2026-03-10
 #   python scripts/acquire/check_sbs.py --file-types vector_completo rf_local
-# ----------------------------------------------------------------
+# ---------------------------------------------------------------
 
 import argparse
 import logging
@@ -36,7 +36,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Checks wheter today's SBS files have arrived in data/raw/."
+            "Checks whether today's SBS files have arrived in data/raw/. "
             'Exits with code 1 if any file is missing.'
         ),
         formatter_class=argparse.RawTextHelpFormatter
@@ -99,5 +99,5 @@ def main() -> None:
 
     logger.info(f'All SBS files present for {run_date}. Ready for ingestion.')
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

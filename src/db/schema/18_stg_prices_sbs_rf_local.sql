@@ -1,4 +1,3 @@
-
 -- 18_stg_prices_sbs_rf_local.sql
 -- ---------------------------------------------------------------
 -- Staging table for SBS local fixed income file (rf_local).

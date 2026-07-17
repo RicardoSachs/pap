@@ -1,4 +1,3 @@
-
 # src/shared/config_pg.py
 # ---------------------------------------------------------------
 # PostgreSQL connection config, read from the environment.
@@ -22,7 +21,7 @@ from src.shared.env import optional, required
 
 @lru_cache(maxsize=1)
 def get_db_config() -> dict:
-    '''
+    """
     Returns the PostgreSQL connection parameters from the environment.
 
     Every value except the port is required - there is deliberately no
@@ -33,7 +32,7 @@ def get_db_config() -> dict:
     :return: Dict with host, port, dbname, user, password
     :rtype: dict
     :raises MissingSecret: If any required key is unset
-    '''
+    """
     return {
         'host':     required('PG_HOST'),
         'port':     optional('PG_PORT', '5432'),

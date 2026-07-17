@@ -1,4 +1,3 @@
-
 # src/vendors/fms.py
 # ---------------------------------------------------------------
 # FMS (SQL Server) vendor adapter.

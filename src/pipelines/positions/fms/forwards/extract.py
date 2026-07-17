@@ -1,5 +1,4 @@
-
-# src/pipeline/positions/fms/forwards/extract.py
+# src/pipelines/positions/fms/forwards/extract.py
 # ---------------------------------------------------------------
 # Executes the FMS forwards query and returns a raw DataFrame with
 # vendor-native (PascalCase) column names. All translation to

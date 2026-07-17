@@ -1,4 +1,4 @@
-
+# scripts/bootstrap_db.py
 # ---------------------------------------------------------------
 # Entry point for first-time database setup.
 #
@@ -89,5 +89,5 @@ def main() -> None:
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

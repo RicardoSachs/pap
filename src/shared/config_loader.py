@@ -1,3 +1,7 @@
+# src/shared/config_loader.py
+# ---------------------------------------------------------------
+# YAML config loaders: reads the securities/series/pipelines/schedules
+# config files from the config directory.
 
 from pathlib import Path
 import yaml
@@ -11,27 +15,27 @@ def _load_yaml(path: Path) -> dict:
         return yaml.safe_load(f)
     
 def load_securities() -> dict:
-    '''
+    """
     Securities, identifiers and universes
-    '''
+    """
     return _load_yaml(CONFIG_DIR / 'securities.yaml')
 
 def load_series() -> dict:
-    '''
+    """
     Series definitions (prices, fundamentals, cadence, default start)
-    '''
+    """
     return _load_yaml(CONFIG_DIR / 'series.yaml')
 
 def load_schedules() -> dict:
-    '''
+    """
     Orchestration schedules
-    '''
+    """
     return _load_yaml(CONFIG_DIR / 'schedules.yaml')
 
 def load_all_configs() -> dict:
-    '''
+    """
     Convenience loader for orchestrators
-    '''
+    """
     return {
         'securities': load_securities(),
         'series': load_series(),
@@ -39,14 +43,10 @@ def load_all_configs() -> dict:
     }
 
 def load_series_config(series_name:str) -> dict:
-    '''
+    """
     Load configuration for a logical series / pipeline
     
-    :param series_name: Description
-    :type series_name: str
-    :return: Description
-    :rtype: dict
-    '''
+    """
 
     cfg = _load_yaml(CONFIG_DIR / 'series.yaml')
 
@@ -56,14 +56,10 @@ def load_series_config(series_name:str) -> dict:
     return cfg[series_name]
 
 def load_universe(universe_name: str) -> list[dict]:
-    '''
+    """
     Load universe definition (list of securities)
     
-    :param universe_name: Description
-    :type universe_name: str
-    :return: Description
-    :rtype: list[dict]
-    '''
+    """
     cfg = _load_yaml(CONFIG_DIR / 'universes.yaml')
 
     if universe_name not in cfg:
@@ -72,7 +68,7 @@ def load_universe(universe_name: str) -> list[dict]:
     return cfg[universe_name]
 
 def load_pipelines() -> dict:
-    '''
+    """
     Specific fields/values for pipelines
-    '''
+    """
     return _load_yaml(CONFIG_DIR / 'pipelines.yaml')

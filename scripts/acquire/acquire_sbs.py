@@ -1,5 +1,5 @@
-
-# --------------------------------------------------------------
+# scripts/acquire/acquire_sbs.py
+# ---------------------------------------------------------------
 # Daily SBS file acquisition entry point.
 # Opens browser, waits for manual login (image pad),
 # then automatically downloads all files for run_date.
@@ -9,7 +9,7 @@
 #   python scripts/acquire/acquire_sbs.py --date 2026-08-03
 #   python scripts/acquire/acquire_sbs.py --file-types vector_completo rf_local
 #   python scripts/acquire/acquire_sbs.py --timeout 120
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 
 import argparse
 import logging
@@ -104,13 +104,13 @@ def main() -> None:
         logger.info(f'{name}: {"OK" if ok else "FAILED"}')
 
     if success_count < total:
-        logger.error('Some files failed. Resolve before runing ingestion.')
+        logger.error('Some files failed. Resolve before running ingestion.')
         sys.exit(1)
 
     logger.info(
         f'All files ready. Run ingestion with: '
-        f'python scripts/run_price.py TODO'
+        f'python scripts/run_prices.py'
     )
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

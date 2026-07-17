@@ -1,4 +1,3 @@
-
 # src/shared/env.py
 # ---------------------------------------------------------------
 # Single load-point for the project's .env file, and the accessor
@@ -30,11 +29,11 @@ load_dotenv(ENV_FILE)
 
 
 class MissingSecret(RuntimeError):
-    '''Raised when a required environment value is absent or empty.'''
+    """Raised when a required environment value is absent or empty."""
 
 
 def required(key: str) -> str:
-    '''
+    """
     Reads a required value from the environment. Never falls back to a
     default - a missing secret must fail loudly, at the point of use,
     with a message that says how to fix it.
@@ -44,7 +43,7 @@ def required(key: str) -> str:
     :return: The value
     :rtype: str
     :raises MissingSecret: If the key is unset or empty
-    '''
+    """
     val = os.getenv(key)
     if not val:
         raise MissingSecret(
@@ -55,7 +54,7 @@ def required(key: str) -> str:
 
 
 def optional(key: str, default: str | None = None) -> str | None:
-    '''
+    """
     Reads a non-secret value that has a safe default (a port, a flag).
     Never use this for a credential - use required().
 
@@ -65,5 +64,5 @@ def optional(key: str, default: str | None = None) -> str | None:
     :type default: str | None
     :return: The value or the default
     :rtype: str | None
-    '''
+    """
     return os.getenv(key, default)

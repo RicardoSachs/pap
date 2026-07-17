@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/rf_exterior/extract.py
 import logging
 from datetime import date, datetime
@@ -7,31 +6,6 @@ from src.scrapers.sbs import find_latest_file
 
 logger = logging.getLogger(__name__)
 SBS_SUBDIR = "rfe"
-
-# Hex-decoded keys guarantee byte-perfect match with SBS file headers
-# RAW_COLUMNS = {
-#     c.strip(): v for c, v in [
-#         (bytes.fromhex("43264f61637574653b4449474f20534253").decode("latin-1"), "codigo_sbs"),
-#         ("ISIN", "isin"),
-#         ("TIPO DE INSTRUMENTO", "tipo_instrumento"),
-#         ("EMISOR", "emisor"),
-#         ("MONEDA", "moneda"),
-#         ("VALOR FACIAL", "valor_facial"),
-#         ("ORIGEN DEL PRECIO", "origen_precio"),
-#         ("PRECIO LIMPIO (MONTO)", "precio_limpio_monto"),
-#         ("PRECIO LIMPIO (%)", "precio_limpio_pct"),
-#         ("PRECIO SUCIO (MONTO)", "precio_sucio_monto"),
-#         ("PRECIO SUCIO (%)", "precio_sucio_pct"),
-#         (bytes.fromhex("494e544552264561637574653b5320434f525249444f20284d4f4e544f29").decode("latin-1"), "interes_corrido_monto"),
-#         (bytes.fromhex("464543484120454d495349264f61637574653b4e").decode("latin-1"), "fecha_emision"),
-#         ("FECHA VENCIMIENTO", "fecha_vencimiento"),
-#         (bytes.fromhex("5441534120435550264f61637574653b4e").decode("latin-1"), "tasa_cupon"),
-#         (bytes.fromhex("265561637574653b4c54494d4f20435550264f61637574653b4e").decode("latin-1"), "ultimo_cupon"),
-#         (bytes.fromhex("5052264f61637574653b58494d4f20435550264f61637574653b4e").decode("latin-1"), "proximo_cupon"),
-#         (bytes.fromhex("56415249414349264f61637574653b4e2050524543494f20535543494f").decode("latin-1"), "variacion_precio_sucio"),
-#     ]
-# }
-# DATE_COLS = ["fecha_emision", "fecha_vencimiento", "ultimo_cupon", "proximo_cupon"]
 
 RAW_COLUMNS = {
     "C&Oacute;DIGO SBS": "codigo_sbs", "ISIN": "isin",

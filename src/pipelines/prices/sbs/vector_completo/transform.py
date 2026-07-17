@@ -1,5 +1,4 @@
-
-# src/pipeline/prices/sbs/vector_completo/transform.py
+# src/pipelines/prices/sbs/vector_completo/transform.py
 # ---------------------------------------------------------------
 # Transforms stg_prices_sbs_vector_completo into:
 #   - facts: daily price observations -> fact_prices

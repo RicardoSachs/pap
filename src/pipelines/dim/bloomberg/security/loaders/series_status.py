@@ -1,5 +1,4 @@
-
-# src/pipeline/dim/bloomberg/security/loaders/series_status.py
+# src/pipelines/dim/bloomberg/security/loaders/series_status.py
 # ---------------------------------------------------------------
 # Updates series_registry status based on Bloomberg MARKET_STATUS
 # and EXCH_MARKET_STATUS fields retrieved during dim enrichment.

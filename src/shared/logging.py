@@ -1,4 +1,4 @@
-
+# src/shared/logging.py
 # ---------------------------------------------------------------
 # Centralised logging setup for all entry points.
 # Called once at the top of every script's main() before any

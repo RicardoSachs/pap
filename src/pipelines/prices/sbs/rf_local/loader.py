@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/rf_local/loader.py
 # ---------------------------------------------------------------
 # Loads transformed rf_local data into fact_prices and updates

@@ -1,5 +1,4 @@
-
-# src/pipeline/prices/sbs/vector_completo/loader.py
+# src/pipelines/prices/sbs/vector_completo/loader.py
 import logging
 import pandas as pd
 

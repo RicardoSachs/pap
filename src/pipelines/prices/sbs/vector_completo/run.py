@@ -1,5 +1,4 @@
-
-# src/pipeline/prices/sbs/vector_completo/run.py
+# src/pipelines/prices/sbs/vector_completo/run.py
 import logging
 from datetime import date, timedelta
 from typing import Optional

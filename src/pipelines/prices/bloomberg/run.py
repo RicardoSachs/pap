@@ -1,5 +1,4 @@
-
-# pipelines/prices/bloomberg/run.py
+# src/pipelines/prices/bloomberg/run.py
 # ---------------------------------------------------------------
 # Fact pipeline entry point for Bloomberg daily prices.
 # Handles both incremental daily updates and backfill.
@@ -13,7 +12,7 @@
 # 
 # Classify step separates new series (no fact rows yet) from
 # existing ones (incremental update from last loaded date).
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 
 import logging
 from datetime import date, timedelta
@@ -139,7 +138,7 @@ def _classify(
     securities: list[dict],
     run_date: date
 ) -> list[dict]:
-    '''
+    """
     Determines start_date per series by checking fact_prices.
 
     New series (no rows in fact_prices):
@@ -159,7 +158,7 @@ def _classify(
     :type run_date: date
     :return: Start date and is new list by security
     :rtype: list[dict]
-    '''
+    """
     classified = []
     
     with get_connection() as conn:
@@ -194,10 +193,10 @@ def _update_metadata(
     transformed: object,
     run_status: str
 ) -> None:
-    '''
+    """
     Updates last_run_at, last_run_status, last_loaded_date
     in series_registry for each processed series.
-    '''
+    """
     with get_connection() as conn:
         for sec in securities:
             series_rows = transformed[
@@ -219,9 +218,9 @@ def _mark_all(
     securities: list[dict],
     run_status: str
 ) -> None:
-    '''
+    """
     Marks all series with run_status when pipeline exits early.
-    '''
+    """
     with get_connection() as conn:
         for sec in securities:
             update_series_run_metadata(

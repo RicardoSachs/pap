@@ -1,3 +1,8 @@
+# src/pipelines/dim/bloomberg/security/run.py
+# ---------------------------------------------------------------
+# Orchestrates the Bloomberg security-dimension pipeline: extract
+# attributes, transform, and load dim_security and its equity/fund/
+# identifier extensions.
 
 import logging
 import pandas as pd
@@ -20,7 +25,7 @@ from src.pipelines.dim.bloomberg.security.loaders.series_status import load_seri
 logger = logging.getLogger(__name__)
 
 def run() -> None:
-    '''
+    """
     Full dim enrichment run for Bloomberg securities.
 
     Steps:
@@ -31,7 +36,7 @@ def run() -> None:
         4. Transform: pivot, resolve entity_id, split by target table
         5. Load each dim table - each loader filters by security type
         6. Load identifiers discovered during enrichment
-    '''
+    """
     logger.info('=== Dim enrichment: bloomberg/security started ===')
 
     cfg = load_pipelines()['pipelines']['dim']['bloomberg']['security']
@@ -99,7 +104,7 @@ def run() -> None:
 
     logger.info('=== Dim enrichment: bloomberg/security complete ===')
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from src.shared.logging import setup_logging
     setup_logging('dim_bloomberg_security')
     run()

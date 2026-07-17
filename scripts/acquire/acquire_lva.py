@@ -1,5 +1,5 @@
-
-# --------------------------------------------------------------
+# scripts/acquire/acquire_lva.py
+# ---------------------------------------------------------------
 # Daily LVA file acquisition entry point.
 # Automatically downloads the table for run_date.
 #
@@ -7,7 +7,7 @@
 #   python scripts/acquire/acquire_lva.py
 #   python scripts/acquire/acquire_lva.py --date 2026-08-03
 #   python scripts/acquire/acquire_lva.py --timeout 20
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 
 import argparse
 import logging
@@ -56,8 +56,8 @@ def main() -> None:
     
     logger.info(
         f'All files ready. Run ingestion with: '
-        f'python scripts/run_price.py TODOOOOOOOOOOO'
+        f'python scripts/run_prices.py'
     )
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

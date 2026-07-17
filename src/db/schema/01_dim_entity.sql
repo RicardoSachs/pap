@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- dim_entity
 -- Anchor table for all entities (securities, macro variables, etc.)

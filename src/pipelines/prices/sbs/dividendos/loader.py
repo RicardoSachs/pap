@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/dividendos/loader.py
 # ---------------------------------------------------------------
 # Loads transformed dividendos data into fact_prices.

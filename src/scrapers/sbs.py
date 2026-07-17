@@ -1,3 +1,7 @@
+# src/scrapers/sbs.py
+# ---------------------------------------------------------------
+# SBS website scraper (Selenium): downloads the SBS 'vector de precios' and
+# related xls files into the raw data tree, keyed by reporting date.
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -229,7 +233,7 @@ def acquire_range(
     sbs_files: Optional[list[dict]] = None,
     force: bool = False
 ) -> dict[str, list[date]]:
-    '''
+    """
     Acquires missing SBS files across a date range.
     Opens a single browser session for the entire range.
 
@@ -246,21 +250,7 @@ def acquire_range(
             "skipped":   [date, ...],  all files already in raw/
         }
     
-    :param start_date: Description
-    :type start_date: date
-    :param end_date: Description
-    :type end_date: date
-    :param file_types: Description
-    :type file_types: Optional[list[str]]
-    :param timeout_seconds: Description
-    :type timeout_seconds: int
-    :param max_retries: Description
-    :type max_retries: int
-    :param retry_delay: Description
-    :type retry_delay: int
-    :return: Description
-    :rtype: dict[str, list[date]]
-    '''
+    """
     # Resolve files to download:
     files_to_download = _resolve_file_types(file_types, sbs_files)
     if not files_to_download:
@@ -366,184 +356,8 @@ def acquire_range(
 
     return {'succeeded': succeeded, 'failed': failed, 'skipped': skipped}
 
-def acquire_range_old(
-    start_date: date,
-    end_date: date,
-    file_types: Optional[list[str]] = None,
-    timeout_seconds: int = 720,
-    max_retries: int = 10,
-    retry_delay: int = 10,
-    raw_dir: Optional[Path] = None,
-    sbs_files: Optional[list[dict]] = None
-) -> dict[str, list[date]]:
-    '''
-    Acquires missing SBS files across a date range.
-    Opens a single browser session for the entire range.
-
-    Steps:
-      1. Login once (manual image pad)
-      2. Query portal select element for eligible dates in range
-      3. Diff eligible dates against data/raw/ filesystem
-      4. Download missing files with per-file retry logic
-
-    Returns:
-        {
-            "succeeded": [date, ...],  all files downloaded OK
-            "failed":    [date, ...],  at least one file failed
-            "skipped":   [date, ...],  all files already in raw/
-        }
-    
-    :param start_date: Description
-    :type start_date: date
-    :param end_date: Description
-    :type end_date: date
-    :param file_types: Description
-    :type file_types: Optional[list[str]]
-    :param timeout_seconds: Description
-    :type timeout_seconds: int
-    :param max_retries: Description
-    :type max_retries: int
-    :param retry_delay: Description
-    :type retry_delay: int
-    :return: Description
-    :rtype: dict[str, list[date]]
-    '''
-    # Resolve files to download:
-    files_to_download = _resolve_file_types(file_types, sbs_files)
-    if not files_to_download:
-        return {'succeeded': [], 'failed': [], 'skipped': []}
-    
-    succeeded = []
-    failed = []
-    skipped = []
-
-    logger.info(
-        f"=== SBS acquire_range | "
-        f"{start_date} to {end_date} | "
-        f"files={[f for f in files_to_download.keys()]} | "
-        f"max_retries={max_retries} ==="
-    )
-
-     # Launch chrome(driver)
-    driver = create_driver(VP_SBS_DIR)
-
-    # Step 1: login once
-    driver.get('https://extranet.sbs.gob.pe/app/login.jsp')
-
-    # Wait for manual login -poll for post-login indicator
-    logger.info(
-        f'Waiting up to {timeout_seconds}s for manual login. '
-        f'Please complete the login authentication in the browser.'
-    )
-
-    logged_in = _wait_for_login(driver, timeout_seconds=timeout_seconds)
-
-    if not logged_in:
-        logger.error(
-            f'Login not detected after {timeout_seconds}s. Aborting bulk acquisition.'
-        )
-        driver.close()
-        sys.exit(1)
-        return {'succeeded': [], 'failed': [], 'skipped': []}
-
-    logger.info('Login detected. Starting file downloads.')
-    
-    # Step 2: query portal for eligible dates inside the session
-    logger.info('Querying portal for available dates.')
-    eligible_dates = _get_eligible_dates(driver, start_date, end_date)
-
-    if not eligible_dates:
-        logger.warning('No eligible dates found in portal for given range.')
-        _close_sbs_portal(driver)
-        driver.close()
-        return {'succeeded': [], 'failed': [], 'skipped': []}
-    
-    logger.info(f'{len(eligible_dates)} eligible dates found in portal.')
-
-    # Step 3: diff against filesystem
-    dates_to_download = _diff_against_raw(eligible_dates, files_to_download, raw_dir)
-
-    if not dates_to_download:
-        logger.info('All eligible dates already in raw/. Nothing to download.')
-        driver.close()
-        return {'successed':[], 'failed':[], 'skipped':eligible_dates}
-    
-    logger.info(
-        f'{len(dates_to_download)} dates missing from raw/. '
-        f'{len(eligible_dates) - len(dates_to_download)}'
-    )
-    skipped = [d for d in eligible_dates if d not in dates_to_download]
-
-    # Step 4: download with retry
-    for run_date in dates_to_download:
-        date_prefix = run_date.strftime('%Y%m%d')
-        day_results = {}
-
-        for file_name, file_cfg in files_to_download.items():
-            output_path = VP_SBS_DIR / file_cfg['folder'] / (date_prefix + '.xls')
-
-            if output_path.exists():
-                day_results[file_name] = 'skipped'
-                continue
-
-            success = False
-            for attempt in range(1, max_retries + 1):
-                success = _download_file(
-                    driver,
-                    fecha_str=run_date.strftime('%d/%m/%Y'),
-                    file_key=file_name,
-                    file_postfix=file_cfg.get('postfix',''),
-                    download_dir=VP_SBS_DIR,
-                    nombre_folder=file_cfg['folder'],
-                    ningun_resultado=file_cfg['ningun_resultado_enabled'],
-                    dropdown_name=file_cfg['fecha_dropdown_name'],
-                    download_url=file_cfg['url_download'],
-                    landing_url=file_cfg['url_landing']
-                )
-                if success:
-                    break
-                if attempt < max_retries:
-                    logger.warning(
-                        f'{file_name} {run_date}: attempt {attempt} failed, '
-                        f'retrying in {retry_delay}s'
-                    )
-                    time.sleep(retry_delay)
-                else:
-                    logger.error(
-                        f'{file_name} {run_date}: '
-                        f'all {max_retries} attempts failed.'
-                    )
-
-            day_results[file_name] = 'ok' if success else 'failed'
-
-        statuses = list(day_results.values())
-        if all(s == 'skipped' for s in statuses):
-            skipped.append(run_date)
-        elif any(s == 'failed' for s in statuses):
-            failed.append(run_date)
-            logger.warning(f'{run_date}: partial failure - {day_results}')
-        else:
-            succeeded.append(run_date)
-            logger.info(f'{run_date}: all files OK.')
-
-    _close_sbs_portal(driver)
-    driver.close()
-
-    logger.info(
-        f'Range complete: {len(succeeded)} succeeded, '
-        f'{len(failed)} failed, {len(skipped)} skipped.'
-    )
-
-    if failed:
-        logger.warning(
-            f'Failed dates: {[str(d) for d in sorted(failed)]}. '
-            f'Re-run scoped to these dates to retry.'
-        )
-
-    return {'succeeded': succeeded, 'failed': failed, 'skipped': skipped}
-
 def find_latest_file(folder_name: str, run_date: date, raw_dir: Optional[Path] = None) -> Optional[Path]:
-    '''
+    """
     Finds the most recent .xls file in data/raw/sbs/vector_precios/{file_type}/
     up to and including run_date.
     Used by check_sbs.py and ingestion pipeline extract.py
@@ -551,11 +365,7 @@ def find_latest_file(folder_name: str, run_date: date, raw_dir: Optional[Path] =
     
     :param folder_name: Vector folder name (vector_completo, tc, rfl, etc.)
     :type folder_name: str
-    :param run_date: Description
-    :type run_date: date
-    :return: Description
-    :rtype: Path | None
-    '''
+    """
     download_dir = _resolve_raw_dir(raw_dir)
     search_dir = download_dir / folder_name
     if not search_dir.exists():
@@ -581,9 +391,9 @@ def find_latest_file(folder_name: str, run_date: date, raw_dir: Optional[Path] =
     return target
 
 def _wait_for_login(driver, timeout_seconds: int) -> bool:
-    '''
+    """
     Polls the page every 3 seconds waiting for a post-login indicator.
-    Adjust the selecto to match whatever element appears after
+    Adjust the selector to match whatever element appears after
     successful SBS login. (e.g. a nav menu, username display, dashboard).
     
     :param driver: selenium.webdriver
@@ -591,7 +401,7 @@ def _wait_for_login(driver, timeout_seconds: int) -> bool:
     :type timeout_seconds: int
     :return: True if success, False otherwise
     :rtype: bool
-    '''
+    """
     poll_interval = 3
     elapsed = 0
 
@@ -626,7 +436,7 @@ def _download_file(
     timeout: float = 30.0,
     ) -> bool:
 
-    '''
+    """
     Download and move xls vector de precios to data/raw/sbs/vector_precios.
     Works for [rfl, rfe, vector_completo].
     Returns True if successfully downloaded the vector, False otherwise.
@@ -643,9 +453,7 @@ def _download_file(
     :type dropdown_name: str
     :param download_url: URL to download per file type x date
     :type download_url: str
-    :return: Description
-    :rtype: bool
-    '''
+    """
 
     fecha = datetime.strptime(fecha_str, '%d/%m/%Y')
     nombre_xls = fecha.strftime("%Y%m%d") + file_postfix + '.xls'
@@ -653,7 +461,7 @@ def _download_file(
     output_dir = download_dir / nombre_folder
     output_path = output_dir / nombre_xls
 
-    # Commented: file existance is done by _download_day
+    # Commented: file existence is done by _download_day
     # if output_path.exists():
     #     logger.info(f'{nombre_folder}: already exists, skipping.')
     #     return True
@@ -664,7 +472,7 @@ def _download_file(
         # Go to landing page
         driver.get(f'{SBS_BASE_URL}{landing_url}')
 
-        # Redefinir fecha y buscar
+        # Set the date and search
         fecha_dropdown = wait_and_click(driver, By.NAME, dropdown_name)
         fecha_select = Select(fecha_dropdown)
         fecha_select.select_by_visible_text(fecha_str)
@@ -689,11 +497,11 @@ def _download_file(
             fecha_select2 = Select(fecha_dropdown2_list[0])
             fecha_select2.select_by_visible_text(fecha_str)
 
-        buscar_button = driver.find_elements(By.CLASS_NAME, 'boton')[-1] #Para usar el ultimo boton de Reporte Dividendos
+        buscar_button = driver.find_elements(By.CLASS_NAME, 'boton')[-1] # use the last button, for the Dividendos report
         buscar_button.click()
 
-        # Descargar xls
-        WebDriverWait(driver, timeout).until( # Se espera a que aparezca la tabla o ningun resultado coincide
+        # Download xls
+        WebDriverWait(driver, timeout).until( # wait for the results table or the "no results" message
                 EC.any_of(
                     EC.presence_of_element_located((By.ID, 'genericoDto')),
                     EC.presence_of_element_located((By.ID, 'genericDto')),
@@ -710,23 +518,23 @@ def _download_file(
                 logger.info(f'{nombre_folder}: returned no matching results, skipping.')
             return True
 
-        # Esperar que termine descarga
+        # Wait for the download to finish
         prev_files = snapshot_files(download_dir)
 
-        driver.get(f'{SBS_BASE_URL}{fecha_url(fecha, download_url)}') # Trigger descarga
+        driver.get(f'{SBS_BASE_URL}{fecha_url(fecha, download_url)}') # Trigger download
         wait_for_new_download(download_dir, prev_files, timeout)
 
-        # Validar si no es vacio
+        # Validate the file is not empty
         if is_file_empty(download_dir / 'excel.xls'):
             raise TypeError('Empty file')
 
-        # Renombrar xls con fecha
+        # Rename xls with the date
         os.rename(
             download_dir / 'excel.xls',
             download_dir / nombre_xls
         )
 
-        # Mover a su carpeta
+        # Move to its folder
         shutil.move(
             download_dir / nombre_xls,
             output_path
@@ -821,14 +629,14 @@ def silent_remove(filepath):
             raise
 
 def fecha_url(fecha_dt, base_url) -> str:
-    '''
-    url de descarga correspondiente a una fecha
+    """
+    Build the download URL for a given date.
     
-    :param fecha_dt: datetime de la fecha
-    :param base_url: URL base de la plataforma
-    :return: url de descarga de dicha fecha
+    :param fecha_dt: datetime of the date
+    :param base_url: base URL of the platform
+    :return: download URL for that date
     :rtype: str
-    '''
+    """
     d = '{:02d}'.format(fecha_dt.day)
     m = '{:02d}'.format(fecha_dt.month)
     Y = fecha_dt.year
@@ -880,15 +688,11 @@ def wait_for_new_download(
     timeout = 30,
     stable_secs = 1.0
 ):
-    '''
+    """
     Waits until a new file appears and stops changing size.
     Returns the Path to the downloaded file.
     
-    :param download_dir: Description
-    :param before_snapshot: Description
-    :param timeout: Description
-    :param stable_secs: Description
-    '''
+    """
 
     download_dir = Path(download_dir)
     start = time.time()
@@ -924,16 +728,12 @@ def wait_for_new_download(
 # ---- Internal helpers ------------------------------------------
 
 def _save_empty_file(file_name:str, output_dir: Path, file_key:str) -> None:
-    '''
+    """
     Saves a zero-row Excel xls file with correct headers to signal
     that dividends were queried for run_date but none were found.
-    Distinguishes "not quiered" from "queried, none found".
+    Distinguishes "not queried" from "queried, none found".
     
-    :param file_name: Description
-    :type file_name: str
-    :param output_dir: Description
-    :type output_dir: Path
-    '''
+    """
     file_key_cols = {
         'dividendos':[
             'FECHA VECTOR', 'C&Oacute;DIGO SBS', 'ISIN', 'NEM&Oacute;NICO',
@@ -964,16 +764,14 @@ def _resolve_file_types(
     file_types: Optional[list[str]], 
     sbs_files: Optional[list[dict]]
 ) -> dict:
-    '''
+    """
     Returns the subset of SBS_FILES matching file_tpyes.
     Returns all SBS if file_types is None.
     Logs a warning for any unrecognised file type name.
     
     :param file_types: Valid str name of file vector type
     :type file_types: Optional[list[str]]
-    :return: Description
-    :rtype: dict
-    '''
+    """
     registry = sbs_files if sbs_files is not None else SBS_FILES
 
     if file_types is None:
@@ -997,18 +795,11 @@ def _get_eligible_dates(
     start_date: date,
     end_date: date
 ) -> list[date]:
-    '''
+    """
     Reads the date select element from the portal within the active session.
     Returns dates available in the portal within [start_date, end_date].
     
-    :param page: Description
-    :param start_date: Description
-    :type start_date: date
-    :param end_date: Description
-    :type end_date: date
-    :return: Description
-    :rtype: list[date]
-    '''
+    """
     try:
         # Navigate to a page that has the date selector
         driver.get(f"{SBS_BASE_URL}{SBS_FILES['vector_completo']['url_landing']}")
@@ -1047,7 +838,7 @@ def _diff_against_raw(
     files_to_download: dict,
     raw_dir: Optional[Path] = None
 ) -> list[date]:
-    '''
+    """
     Returns dates from eligible_dates where at least one expected
     file is missing from data/raw/.
     A date is considered complete only if ALL expected files exist.
@@ -1056,9 +847,7 @@ def _diff_against_raw(
     :type eligible_dates: list[date]
     :param files_to_download: Dict of dictionaries from picked SBS_FILES
     :type files_to_download: dict
-    :return: Description
-    :rtype: list[date]
-    '''
+    """
     download_dir = _resolve_raw_dir(raw_dir)
 
     missing = []
@@ -1078,19 +867,13 @@ def all_files_present(
     raw_dir: Optional[Path] = None,
     sbs_files: Optional[list[dict]] = None
 ) -> bool:
-    '''
+    """
     Returns True if all expected SBS files are already present
     in data/raw/ for run_date.
-    Used as pre-aquisition check to skip unnecesary browser
+    Used as pre-acquisition check to skip unnecessary browser
     sessions when file were already downloaded.
     
-    :param run_date: Description
-    :type run_date: date
-    :param file_types: Description
-    :type file_types: Optional[list[str]]
-    :return: Description
-    :rtype: bool
-    '''
+    """
     files_to_check = _resolve_file_types(file_types, sbs_files)
     date_prefix = run_date.strftime('%Y%m%d')
     return all(
@@ -1100,9 +883,9 @@ def all_files_present(
     )
 
 def _resolve_raw_dir(raw_dir: Optional[Path] = None) -> Path:
-    '''
+    """
     Returns the raw dir to use, falling back to module-level default.
-    '''
+    """
     return raw_dir if raw_dir is not None else VP_SBS_DIR
 
 def _resolve_sbs_files(sbs_files: Optional[list[dict]] = None) -> list[dict]:
@@ -1110,7 +893,7 @@ def _resolve_sbs_files(sbs_files: Optional[list[dict]] = None) -> list[dict]:
 
 def _get_xls_name():
     return
-# if __name__ == '__main__':
+# if __name__ == "__main__":
 #     setup_logging('aquire_range')
 #     acquire_range(
 #         start_date=date(2015,1,1),

@@ -1,3 +1,7 @@
+# src/pipelines/prices/lva/consolidate_lva.py
+# ---------------------------------------------------------------
+# LVA index consolidation: parses downloaded LVA daily/historical XML
+# files into a single staged indices table.
 
 import os
 import sys
@@ -51,9 +55,9 @@ col_dtype_map = {'fecha':'datetime64[ns]',
 
 # Functions
 def read_name_csv(path, col_name = 'NOMBRE', delim = '\\', **kwargs):
-    '''
+    """
     Reads the csv and adds the file name as an aditional column
-    '''
+    """
     name = path.split(delim)[-1]
     df = pd.read_csv(path, **kwargs)
     df[col_name] = name

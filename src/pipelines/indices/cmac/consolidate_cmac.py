@@ -1,3 +1,7 @@
+# src/pipelines/indices/cmac/consolidate_cmac.py
+# ---------------------------------------------------------------
+# CMAC deposit-rate consolidation: parses the SBS monthly CMAC Excel files
+# (old and new templates) into a single staged indices table.
 
 #%%
 import os

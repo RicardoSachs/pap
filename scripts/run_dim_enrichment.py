@@ -1,4 +1,3 @@
-
 # scripts/run_dim_enrichment.py
 # ---------------------------------------------------------------
 # Generic entry point for dim enrichment pipelines.

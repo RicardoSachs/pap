@@ -1,3 +1,8 @@
+# src/db/connection.py
+# ---------------------------------------------------------------
+# get_connection() contextmanager over psycopg3: opens a PostgreSQL
+# connection with dict_row rows, commits on clean exit, rolls back on
+# exception, always closes. Project-wide connection access point.
 
 import psycopg
 from psycopg import Connection
@@ -7,7 +12,7 @@ from contextlib import contextmanager
 from src.shared.config_pg import get_db_config
 
 def _get_connection(config: dict = None) -> Connection:
-    '''
+    """
     Open a PostgreSQL connection with sensible defaults:
         - dict_row row factory for dict-like access (replaces sqlite3.Row)
         - Foreign keys are enforced by default in PostgreSQL (no PRAGMA needed)
@@ -18,7 +23,7 @@ def _get_connection(config: dict = None) -> Connection:
     :type config: dict
     :return: Connection object to database
     :rtype: psycopg.Connection
-    '''
+    """
 
     if config is None:
             config = get_db_config()
@@ -35,7 +40,7 @@ def _get_connection(config: dict = None) -> Connection:
 
 @contextmanager
 def get_connection(config: dict = None):
-    '''
+    """
     Context manager for safe connection handling.
     Commits on clean exit, rolls back on exception.
 
@@ -45,7 +50,7 @@ def get_connection(config: dict = None):
     
     :param config: Dict with connection params
     :type config: dict
-    '''
+    """
     conn = _get_connection(config)
     try:
         yield conn

@@ -1,11 +1,10 @@
-
 # src/pipelines/prices/bloomberg/extract.py
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 # Extracts historical price data from Bloomberg via BDH
 # Accepts a list fo securites each with their own start_date,
 # batches them into a single Bloomberg call where possible,
 # and writes raw response to stg_prices_bloomberg.
-# --------------------------------------------------------------
+# ---------------------------------------------------------------
 
 import logging
 from datetime import date, datetime
@@ -20,7 +19,7 @@ def extract_prices(
     securities: list[dict],
     end_date: date
 ) -> pd.DataFrame:
-    '''
+    """
     Extracts historical prices from Bloomberg BDH.
     Each security has its own start_date determined by _classify
     in run.py (default_start_date for new, last_loaded + 1 for existing)
@@ -35,7 +34,7 @@ def extract_prices(
     :type end_date: date
     :return: Long format Bloomberg DataFrame
     :rtype: DataFrame
-    '''
+    """
     valid = [s for s in securities if s.get('parsekyable')]
     missing = [s['procode'] for s in securities if not s.get('parsekyable')]
 
@@ -119,7 +118,7 @@ def extract_prices(
     return result_df
 
 def _melt_to_long(raw_df: pd.DataFrame, loaded_at: str) -> pd.DataFrame:
-    '''
+    """
     Normalises Bloomberg BDH response to long format.
     Handles both wide (date x fields per ticker) and 
     MultiIndex (date, ticker) x fields formats
@@ -130,7 +129,7 @@ def _melt_to_long(raw_df: pd.DataFrame, loaded_at: str) -> pd.DataFrame:
     :type loaded_at: str
     :return: Long format BDH DataFrame
     :rtype: DataFrame
-    '''
+    """
     if isinstance(raw_df.columns, pd.MultiIndex):
         # MultiIndex: columns are (field, ticker)
         raw_df = raw_df.stack(level=1).reset_index()
@@ -164,26 +163,23 @@ def _melt_to_long(raw_df: pd.DataFrame, loaded_at: str) -> pd.DataFrame:
     return long_df[['parsekyable','field','date','value','loaded_at']]
 
 def load_stg_prices_bloomberg(conn, df: pd.DataFrame) -> None:
-    '''
+    """
     Writes long-format extract result to stg_prices_bloomberg.
     UNIQUE constraint on (parsekyable, field, date, loaded_at)
     means re-runs within the same second are silently ignored.
     All historical loads retained for audit and re-processing.
     
-    :param conn: Description
-    :param df: Description
-    :type df: pd.DataFrame
-    '''
+    """
     inserted = 0
     for _, row in df.iterrows():
         cur = conn.execute(
-            '''
+            """
             INSERT INTO stg_prices_bloomberg
                 (parsekyable, field, date, value, loaded_at)
             VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (parsekyable, field, date, loaded_at)
             DO NOTHING
-            ''',
+            """,
             (
                 row['parsekyable'],
                 row['field'],

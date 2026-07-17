@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- fact_prices
 -- Daily price observations. Pure long format, one value per row.

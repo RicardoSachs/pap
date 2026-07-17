@@ -1,4 +1,4 @@
-
+# src/configs/machine_config.py
 # ---------------------------------------------------------------
 # Loads machine-specific configuration from
 # market_data_config.yaml.
@@ -33,14 +33,14 @@ _BASE_CONFIG = CONFIG_DIR / 'machine_config.yaml'
 
 @lru_cache(maxsize=1)
 def get_machine_config() -> dict:
-    '''
+    """
     Loads and caches machine config from local yaml.
     Call this to access raw config dict if needed.
     Prefer the typed accessor functions below.
     
     :return: Machine config YAML as dictionary
     :rtype: dict
-    '''
+    """
     if _LOCAL_CONFIG.exists():
         path = _LOCAL_CONFIG
     else:
@@ -83,11 +83,11 @@ def fms_enabled() -> bool:
     return bool(get_machine_config().get('fms_enabled', False))
 
 def chromedriver_path() -> str | None:
-    '''
+    """
     Returns the absolute path to chromedriver.exe for this machine.
     Expands environmnet variables (e.g. %USERPROFILE%).
     Returns None if not set or scraper is not enabled.
-    '''
+    """
     val = get_machine_config().get('chromedriver_path', '')
     if not val:
         return None
@@ -107,10 +107,10 @@ def timezone() -> str:
 # ---- Capability guards ------------------------------------------
 
 def assert_bloomberg() -> None:
-    '''
+    """
     Raises RuntimeError if Bloomberg is not enabled on this machine.
     Call at the top of any Bloomberg pipeline entry point.
-    '''
+    """
     if not bloomberg_enabled():
         raise RuntimeError(
             f'Bloomberg is not enabled on this machine ({machine_id()}). '
@@ -119,10 +119,10 @@ def assert_bloomberg() -> None:
         )
     
 def assert_fms() -> None:
-    '''
+    """
     Raises RuntimeError if FMS is not enabled on this machine.
     Call at the schedulers that contain FMS pipelines
-    '''
+    """
     if not fms_enabled():
         raise RuntimeError(
             f"FMS is not enabled on this machine ({machine_id()})"
@@ -130,10 +130,10 @@ def assert_fms() -> None:
         )
     
 def assert_scraper() -> None:
-    '''
+    """
     Raises RuntimeError if the scraper is not enabled on this machine.
-    Call at the top of any aquisition script.
-    '''
+    Call at the top of any acquisition script.
+    """
     if not scraper_enabled():
         raise RuntimeError(
             f'Scraper is not enabled on this machine ({machine_id()}). '
@@ -148,10 +148,10 @@ def assert_scraper() -> None:
         )
     
 def assert_automated_scraper() -> None:
-    '''
+    """
     Raises RuntimeError if the automatic scraper is not enabled on this machine.
-    Call at the top of any automatic aquisition script.
-    '''
+    Call at the top of any automatic acquisition script.
+    """
     if not automated_scraper_enabled():
         raise RuntimeError(
             f'Automated scaper is not enabled on this machine ({machine_id()}). '

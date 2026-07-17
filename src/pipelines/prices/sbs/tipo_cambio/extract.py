@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/tipo_cambio/extract.py
 import logging
 from datetime import date, datetime

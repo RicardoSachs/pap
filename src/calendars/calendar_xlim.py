@@ -1,4 +1,4 @@
-
+# src/calendars/calendar_xlim.py
 # ---------------------------------------------------------------
 # Lima Stock Exchange calendar (XLIM) backed by exchange_calendars.
 # Used by local pipelines and the SBS reporting day calendar.

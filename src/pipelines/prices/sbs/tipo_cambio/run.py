@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/tipo_cambio/run.py
 # ---------------------------------------------------------------
 # Fact pipeline entry point for SBS tipo_cambio (FX rates).

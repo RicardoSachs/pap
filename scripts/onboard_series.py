@@ -1,4 +1,4 @@
-
+# scripts/onboard_series.py
 # ---------------------------------------------------------------
 # Entry point for incremental series onboarding.
 # Run after adding new rows to series.csv.
@@ -93,5 +93,5 @@ def main() -> None:
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

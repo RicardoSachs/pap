@@ -1,3 +1,7 @@
+# src/shared/seed_loader.py
+# ---------------------------------------------------------------
+# Seed CSV loaders: reads the series and identifiers seed files into
+# pandas DataFrames.
 
 import pandas as pd
 

@@ -1,4 +1,3 @@
-
 -- 20_stg_prices_sbs_tipo_cambio.sql
 -- ---------------------------------------------------------------
 -- Staging table for SBS FX rates file (tipo_cambio).

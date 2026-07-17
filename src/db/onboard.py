@@ -1,4 +1,5 @@
-
+# src/db/onboard.py
+# ---------------------------------------------------------------
 # Incremental series onboarding
 # Reuses bootstrap loaders - bootstrap is just onboard on empty DB.
 # All seeds loaded upfront by caller and passed as arguments
@@ -26,7 +27,7 @@ def run_onboard(
     enrich_vendor: str = None,
     enrich_domain: str = None
 ) -> None:
-    '''
+    """
     Incremental onboarding: registers new series from seeds.
 
     Steps:
@@ -50,7 +51,7 @@ def run_onboard(
     :type enrich_vendor: str
     :param enrich_domain: Domain to enrich
     :type enrich_domain: str
-    '''
+    """
     logger.info('=== Onboarding started ===')
 
     # Load all seeds upfron - passed as arguments to loaders
@@ -84,11 +85,11 @@ def run_backfill_pending(
     domain: str = None,
     source: str = None,
 ) -> None:
-    '''
+    """
     Triggers fact backfill pipelines for all backfill-pending series.
     Groups by domain + source to minimise pipeline invocations.
     Optionally filtered by domain and/or source.
-    '''
+    """
     with get_connection() as conn:
         pending = get_backfill_pending_series(conn, domain=domain, source=source)
 
@@ -111,7 +112,7 @@ def run_backfill_pending(
         _dispatch_backfill(grp_domain, grp_source, series_list)
 
 def _get_fact_pipeplines() -> list[dict]:
-    '''
+    """
     Registry of all fact pipelines.
     One entry per domain/source combination
 
@@ -122,7 +123,7 @@ def _get_fact_pipeplines() -> list[dict]:
 
     Add new entries here as new domain/source combinations are added.
     _dispatch_backfill() never needs to change.
-    '''
+    """
     return [
         {
             'domain': 'prices',
@@ -134,12 +135,12 @@ def _get_fact_pipeplines() -> list[dict]:
     ]
 
 def _lazy_run(module_path: str):
-    '''
+    """
     Returns a callable that lazily imports and runs module.run(**kwargs).
     Avoids importing all pipeline modules at onboard load time.
     Accepts kwargs so the same wrapper works for both frequency-aware
     and non-frequency-aware pipelines.
-    '''
+    """
     def runner(**kwargs):
         import importlib
         mod = importlib.import_module(module_path)
@@ -147,12 +148,12 @@ def _lazy_run(module_path: str):
     return runner
 
 def _dispatch_backfill(domain: str, source: str, series_list: list[dict]) -> None:
-    '''
+    """
     Routes to the correct fact pipeline via the registry.
     For frequency_aware pipelines. splits series_list by frequency
     and dispatches once per group.
     For non-frequency-aware pipelines, passes the full list.
-    '''
+    """
     from datetime import date, timedelta
     run_date = date.today() - timedelta(days=1)
 
@@ -197,6 +198,6 @@ def _dispatch_backfill(domain: str, source: str, series_list: list[dict]) -> Non
             exc_info=True
         )
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     with get_connection() as conn:
         print(get_backfill_pending_series(conn))

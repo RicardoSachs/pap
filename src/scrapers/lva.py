@@ -1,3 +1,7 @@
+# src/scrapers/lva.py
+# ---------------------------------------------------------------
+# LVA portal scraper (Selenium): logs in and downloads LVA index files
+# into the raw data tree.
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -83,17 +87,11 @@ def select_date(
         run_date:date,
         timeout_seconds: int = 10
     ) -> bool:
-    '''
+    """
     Select date for LVA indices portal. 
     Returns True if date is reachable (aka has data) and False otherwise
     
-    :param driver: Description
-    :param date_item: Description
-    :param run_date: Description
-    :type run_date: date
-    :param timeout_seconds: Description
-    :type timeout_seconds: int
-    '''
+    """
     try:
         date_set = date_to_set(run_date)
     except Exception as e:
@@ -193,14 +191,14 @@ def get_indices_df(driver, run_date:date) -> pd.DataFrame:
     soup = BeautifulSoup(html, 'html.parser')
     tables = soup.find_all('table')
 
-    # Leer encabezados en primera tabla del html
+    # Read the headers from the first table in the html
     header = []
     for tr in tables[0].find_all('tr'):
         cells = [td.get_text(strip=True) for td in tr.find_all(['td','th'])]
         header.append(cells)
     header = header[1]
 
-    # Leer el resto de la tabla en la segunda tabla del html
+    # Read the rest of the rows from the second table in the html
     rows = []
     for tr in tables[1].find_all('tr'):
         cells = [td.get_text(strip=True) for td in tr.find_all(['td','th'])]
@@ -353,16 +351,14 @@ def download_range(
 def _diff_against_raw(
     eligible_dates: list[date]
 ) -> list[date]:
-    '''
+    """
     Returns dates from eligible_dates where expected file is missing from data/raw/.
 
     :param eligible_dates: Date list as returned as _get_eligible_dates
     :type eligible_dates: list[date]
     :param files_to_download: Dict of dictionaries from picked SBS_FILES
     :type files_to_download: dict
-    :return: Description
-    :rtype: list[date]
-    '''
+    """
     missing = []
     for d in eligible_dates:
         file_name = _get_csv_name(d)
@@ -371,7 +367,7 @@ def _diff_against_raw(
             missing.append(d)
     return missing
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # setup_logging('lva_indices_day')
     # get_date = date(2026,4,30)
     # download_day(get_date)

@@ -1,4 +1,3 @@
-
 # scripts/scheduler_central.py
 # ---------------------------------------------------------------
 # Scheduler for the central PC.
@@ -95,57 +94,6 @@ def job_prices_bloomberg():
     logger.info("--- job: prices bloomberg ---")
     from src.pipelines.prices.bloomberg.run import run
     run(run_date=date.today())
-
-
-# def job_macro_bloomberg_monthly():
-#     """
-#     Monthly Bloomberg macro ingestion.
-#     APScheduler fires on day=1 of every month. The internal
-#     guard checks the actual first NYSE business day to handle
-#     cases where the 1st is a weekend or holiday.
-#     """
-#     logger.info("--- job: macro bloomberg monthly ---")
-#     today = date.today()
-#     if not _is_first_business_day_of_month(today, exchange="nyse"):
-#         logger.info(
-#             f"{today} is not the first NYSE business day of the month. "
-#             f"Skipping macro monthly."
-#         )
-#         return
-#     from src.pipelines.macro.bloomberg.run import run
-#     run(run_date=today, frequency="monthly")
-
-
-# def job_macro_bloomberg_quarterly():
-#     """
-#     Quarterly Bloomberg macro ingestion.
-#     Fires on 1st of Jan/Apr/Jul/Oct. Internal guard checks the
-#     actual first NYSE session after quarter close + 5 day lag
-#     to give Bloomberg time to publish revised data.
-#     """
-#     logger.info("--- job: macro bloomberg quarterly ---")
-#     today = date.today()
-#     if not _is_first_business_day_after_quarter_close(today, lag_days=5):
-#         logger.info(
-#             f"{today} is not the first NYSE business day after "
-#             f"quarter close + 5 days. Skipping macro quarterly."
-#         )
-#         return
-#     from src.pipelines.macro.bloomberg.run import run
-#     run(run_date=today, frequency="quarterly")
-
-
-# def job_fundamentals_bloomberg():
-#     """
-#     Quarterly Bloomberg fundamentals ingestion.
-#     Offset ~2 weeks from macro quarterly to allow Bloomberg
-#     time to publish full earnings data.
-#     No extra calendar guard - runs on whichever business day
-#     the 15th falls closest to.
-#     """
-#     logger.info("--- job: fundamentals bloomberg ---")
-#     from src.pipelines.fundamentals.bloomberg.run import run
-#     run(run_date=date.today())
 
 
 def job_dim_enrichment():
@@ -254,42 +202,6 @@ scheduler.add_job(
     coalesce=True,
     max_instances=1,
 )
-
-# Bloomberg macro monthly - fire on 1st of each month
-# Job guards on actual first NYSE business day internally
-# scheduler.add_job(
-#     job_macro_bloomberg_monthly,
-#     CronTrigger(day=1, hour=9, minute=0),
-#     id="macro_bloomberg_monthly",
-#     name="Bloomberg macro monthly",
-#     misfire_grace_time=86400,
-#     coalesce=True,
-#     max_instances=1,
-# )
-
-# Bloomberg macro quarterly - fire on 1st of Jan/Apr/Jul/Oct
-# Job guards on actual first NYSE session after quarter close + 5d
-# scheduler.add_job(
-#     job_macro_bloomberg_quarterly,
-#     CronTrigger(month="1,4,7,10", day=1, hour=9, minute=30),
-#     id="macro_bloomberg_quarterly",
-#     name="Bloomberg macro quarterly",
-#     misfire_grace_time=86400,
-#     coalesce=True,
-#     max_instances=1,
-# )
-
-# Bloomberg fundamentals - 15th of month after quarter close
-# Offset from macro to allow full earnings publication
-# scheduler.add_job(
-#     job_fundamentals_bloomberg,
-#     CronTrigger(month="1,4,7,10", day=15, hour=9, minute=0),
-#     id="fundamentals_bloomberg",
-#     name="Bloomberg fundamentals quarterly",
-#     misfire_grace_time=86400,
-#     coalesce=True,
-#     max_instances=1,
-# )
 
 # Dim enrichment - weekly Monday morning
 scheduler.add_job(

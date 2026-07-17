@@ -1,4 +1,3 @@
-
 -- =============================================================
 -- dim_security_fund
 -- Fund-specific extension of dim_security.

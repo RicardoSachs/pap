@@ -1,3 +1,7 @@
+# src/pipelines/dim/bloomberg/security/transform.py
+# ---------------------------------------------------------------
+# Transforms long-format Bloomberg security attributes into wide
+# dim_security rows, mapping Bloomberg field names to dim columns.
 
 import logging
 import pandas as pd
@@ -52,7 +56,7 @@ def transform_security_attributes(
     stg_df: pd.DataFrame,
     conn
 ) -> dict[str, pd.DataFrame]:
-    '''
+    """
     Pivots long-format staging data to wide per ticker,
     resolves entity_id for each ticker,
     maps Bloomberg field names to dim column names,
@@ -65,9 +69,7 @@ def transform_security_attributes(
     :param stg_df: Staging (long) dataframe
     :type stg_df: pd.DataFrame
     :param conn: Connection object
-    :return: Description
-    :rtype: dict[str, DataFrame]
-    '''
+    """
     if stg_df.empty:
         logger.warning('Staging DataFrame is empty - nothing to transform')
         return {}
@@ -107,7 +109,7 @@ def transform_security_attributes(
     }
 
 def _map_shared(wide_df: pd.DataFrame) -> pd.DataFrame:
-    '''
+    """
     Maps Bloomberg fields to dim_security columns.
     Only includes rows where entity_id is resolved.
     Returns: [entity_id, ticker, name, short_name,
@@ -116,9 +118,7 @@ def _map_shared(wide_df: pd.DataFrame) -> pd.DataFrame:
     
     :param wide_df: Raw wide DataFrame
     :type wide_df: pd.DataFrame
-    :return: Description
-    :rtype: DataFrame
-    '''
+    """
     rows = []
     for _, row in wide_df.iterrows():
         mapped = {'entity_id': row['entity_id']}
@@ -132,16 +132,14 @@ def _map_shared(wide_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 def _map_equity(wide_df: pd.DataFrame) -> pd.DataFrame:
-    '''
+    """
     Maps Bloomberg fields to dim_security_equity columns.
     Only includes rows where security_type indicates equity.
     Returns: [entity_id, sector]
     
     :param wide_df: Raw wide DataFrame
     :type wide_df: pd.DataFrame
-    :return: Description
-    :rtype: DataFrame
-    '''
+    """
     equity_types = {'Common Stock', 'ADR'}
     equity_df = wide_df[
         wide_df.get('SECURITY_TYP', pd.Series(dtype=str)).isin(equity_types)
@@ -160,16 +158,14 @@ def _map_equity(wide_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 def _map_fund(wide_df: pd.DataFrame) -> pd.DataFrame:
-    '''
+    """
     Maps Bloomberg fields to dim_security_fund columns.
     Only includes rows where security_type indicates a fund.
     Returns: [entity_id, fund_type, asset_class, geography, objective]
     
     :param wide_df: Raw wide DataFrame
     :type wide_df: pd.DataFrame
-    :return: Description
-    :rtype: DataFrame
-    '''
+    """
     fund_types = {'ETP', 'Open-End Fund', 'Closed-End Fund'}
     fund_df = wide_df[
         wide_df.get('SECURITY_TYP', pd.Series(dtype=str)).isin(fund_types)
@@ -188,16 +184,14 @@ def _map_fund(wide_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 def _map_identifiers(wide_df: pd.DataFrame) -> pd.DataFrame:
-    '''
+    """
     Extract identifier fields from staged data into a long-format
     DataFrame ready for upsert into dim_entity_identifiers.
     Returns: [entity_id, id_type, id_value, source, is_primary]
     
     :param wide_df: Raw wide DataFrame
     :type wide_df: pd.DataFrame
-    :return: Description
-    :rtype: DataFrame
-    '''
+    """
     rows = []
     for _, row in wide_df.iterrows():
         for bbg_field, (id_type, source) in IDENTIFIER_FIELD_MAP.items():

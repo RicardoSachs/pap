@@ -1,4 +1,3 @@
-
 # src/pipelines/prices/sbs/rf_exterior/run.py
 # ---------------------------------------------------------------
 # Fact pipeline entry point for SBS rf_exterior (foreign fixed income).

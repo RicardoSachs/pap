@@ -16,16 +16,18 @@
 #   7. Transform to fact shape (portfolio resolution)
 #   8. Load fact (idempotent upsert)
 #   9. Flip any backfill-pending portfolios to active
+#  10. Log a reconciliation summary; raise if any fund was left
+#      unresolved (unless allow_unresolved=True)
 #
 # run_from_stg(batch_id)
-#   Bypasses FMS entirely. Reads existing staging rows by
-#   batch_id, transforms to fact shape, upserts fact. Used to
-#   rebuild fact after fixing a portfolio registration or MTM
-#   source without re-hitting FMS.
+#   Bypasses FMS entirely (no FMS gate — Postgres only). Reads
+#   existing staging rows by batch_id, transforms to fact shape,
+#   upserts fact. Used to rebuild fact after fixing a portfolio
+#   registration or MTM source without re-hitting FMS.
 # ---------------------------------------------------------------
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pandas as pd
 
@@ -36,10 +38,22 @@ from src.pipelines.positions.fms.forwards import extract, transform, loader
 logger = logging.getLogger(__name__)
 
 
-def run_full(start_date: date, end_date: date, force: bool = False) -> None:
+def run_full(
+    start_date: date,
+    end_date: date,
+    force: bool = False,
+    allow_unresolved: bool = False,
+) -> None:
     """
     Full pipeline: extract from FMS, load staging, load fact.
     Idempotent - safe to re-run for the same date range.
+
+    Fails loud: if any codigo_fondo can't be resolved to a registered
+    dim_portfolio, the resolved rows are still committed (they're valid
+    and idempotent) but the run raises afterwards so the operator
+    registers the missing fund and re-runs. Pass allow_unresolved=True
+    (e.g. for a historical backfill of decommissioned funds) to
+    downgrade that to a warning.
     """
     assert_fms()
 
@@ -47,6 +61,7 @@ def run_full(start_date: date, end_date: date, force: bool = False) -> None:
     logger.info(f"batch_id={batch_id} start={start_date} end={end_date} force={force}")
 
     raw_df = extract.extract(start_date, end_date, force=force)
+    extracted = len(raw_df)
     if raw_df.empty:
         logger.info("no rows extracted, nothing to load")
         return
@@ -54,20 +69,37 @@ def run_full(start_date: date, end_date: date, force: bool = False) -> None:
     stg_df = transform.transform_for_staging(raw_df, batch_id)
 
     with get_connection() as conn:
-        loader.load_staging(conn, stg_df)
+        staged = loader.load_staging(conn, stg_df)
 
         portfolios = _load_portfolios(conn)
+        unresolved = _unresolved_funds(stg_df, portfolios)
         fact_df = transform.transform_for_fact(stg_df, portfolios)
-        loader.load_fact(conn, fact_df)
+        loaded = loader.load_fact(conn, fact_df)
 
-        _flip_backfill_pending_to_active(conn, fact_df)
+        flipped = _flip_backfill_pending_to_active(conn, fact_df)
+
+    _log_reconciliation(extracted, staged, loaded, unresolved, flipped)
+
+    if unresolved and not allow_unresolved:
+        raise RuntimeError(
+            f"{len(unresolved)} FMS fund(s) unresolved to a dim_portfolio and "
+            f"dropped from fact: {unresolved}. Register them in dim_portfolio "
+            f"(seeds/portfolios.csv) and re-run — the upsert backfills the gap. "
+            f"Pass allow_unresolved=True to suppress this."
+        )
 
 
 def run_from_stg(batch_id: str) -> None:
     """
     Rebuild fact from an existing staging batch, without re-hitting FMS.
+
+    No FMS gate: this touches only Postgres, so it runs on any machine
+    with DB access. Note the staging PK is (codigo_fondo, codigo_sbs,
+    date) and does NOT include batch_id, and load_staging overwrites
+    batch_id on conflict — so a grain row always carries its most recent
+    batch_id. This resolves the common "rebuild what I just loaded" case;
+    an older batch_id whose grain was later re-staged returns no rows.
     """
-    assert_fms()
     logger.info(f"from-stg mode: batch_id={batch_id}")
 
     with get_connection() as conn:
@@ -88,7 +120,37 @@ def run_from_stg(batch_id: str) -> None:
 # ---------------------------------------------------------------
 
 def _new_batch_id() -> str:
-    return "fms_forwards_" + datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return "fms_forwards_" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+
+def _unresolved_funds(stg_df: pd.DataFrame, portfolios: pd.DataFrame) -> list[str]:
+    """
+    Return the sorted codigo_fondo values present in staging that have no
+    matching dim_portfolio (source='fms') row — i.e. the funds
+    transform_for_fact will drop.
+    """
+    if stg_df.empty:
+        return []
+    known = set(portfolios["procode"])
+    present = set(stg_df["codigo_fondo"].dropna().unique())
+    return sorted(present - known)
+
+
+def _log_reconciliation(
+    extracted: int,
+    staged: int,
+    loaded: int,
+    unresolved: list[str],
+    flipped: int,
+) -> None:
+    """One-line run summary so silent under-population is visible."""
+    logger.info(
+        f"reconciliation: extracted={extracted} staged={staged} "
+        f"fact_loaded={loaded} unresolved_funds={len(unresolved)} "
+        f"portfolios_activated={flipped}"
+    )
+    if unresolved:
+        logger.warning(f"unresolved codigo_fondo dropped from fact: {unresolved}")
 
 
 def _load_portfolios(conn) -> pd.DataFrame:
@@ -126,13 +188,14 @@ def _read_staging_by_batch(conn, batch_id: str) -> pd.DataFrame:
     return df
 
 
-def _flip_backfill_pending_to_active(conn, fact_df: pd.DataFrame) -> None:
+def _flip_backfill_pending_to_active(conn, fact_df: pd.DataFrame) -> int:
     """
     Any FMS portfolio in status 'backfill-pending' that produced at
-    least one fact row in this run gets promoted to 'active'.
+    least one fact row in this run gets promoted to 'active'. Returns
+    the number of portfolios flipped.
     """
     if fact_df.empty:
-        return
+        return 0
     portfolio_ids = fact_df["portfolio_id"].unique().tolist()
     with conn.cursor() as cur:
         cur.execute(
@@ -148,3 +211,4 @@ def _flip_backfill_pending_to_active(conn, fact_df: pd.DataFrame) -> None:
         flipped = cur.rowcount
     if flipped:
         logger.info(f"flipped {flipped} FMS portfolios from backfill-pending to active")
+    return flipped

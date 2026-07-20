@@ -1,0 +1,11 @@
+procode,source,portfolio_type,display_name,base_currency,status
+# One row per (procode, source). FMS own accounts: source=fms,
+# portfolio_type=own_account, status=backfill-pending (the forwards run
+# flips them to active on first successful load). procode must match the
+# CodigoFondo emitted by FMS. Copy this file to portfolios.csv and fill in
+# the real fund codes (the 4-vs-12 account-count question is settled here,
+# by the set you register). portfolios.csv is git-ignored.
+FONDO0,fms,own_account,Example Fund 0,PEN,backfill-pending
+FONDO1,fms,own_account,Example Fund 1,PEN,backfill-pending
+FONDO2,fms,own_account,Example Fund 2,PEN,backfill-pending
+FONDO3,fms,own_account,Example Fund 3,PEN,backfill-pending

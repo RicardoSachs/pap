@@ -26,9 +26,10 @@
 -- Upsert policy: ON CONFLICT DO UPDATE - forwards get restated
 -- when FMS revises valuations. Matches fact_positions policy.
 --
--- MTM: mtm_soles is nullable, populated from FMS's valuation
--- field (precio_vector or equivalent) when available. Downstream
--- analytics prefer mtm_soles over nocional_soles when non-null.
+-- MTM: mtm_soles is nullable, derived as PrecioInversion -
+-- PrecioDesinversion from the FMS forwards payload (NOT PrecioVector).
+-- Downstream analytics prefer mtm_soles over nocional_soles when
+-- non-null.
 --
 -- NUMERIC precision: monetary NUMERIC(18, 4), FX rates
 -- NUMERIC(18, 8), matches staging convention. Departs from the

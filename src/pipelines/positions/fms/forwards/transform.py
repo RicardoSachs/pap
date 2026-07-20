@@ -12,6 +12,8 @@
 #   - Extracts fact-relevant columns from staging + raw_payload
 #   - Converts id_secuencial_fecha_vencimiento (in raw_payload) to
 #     fecha_vencimiento DATE
+#   - Derives mtm_soles = PrecioInversion - PrecioDesinversion
+#     (both Tier 2 payload fields); NOT PrecioVector
 #   - Materializes source='fms' constant
 #
 # Both are pure functions. No DB access. Called by run.py.
@@ -134,7 +136,7 @@ def transform_for_fact(stg_df: pd.DataFrame, portfolios: pd.DataFrame) -> pd.Dat
     )
     stg_df["precio_forward"] = stg_df["raw_payload"].map(lambda p: p.get("PrecioForward") if p else None)
     stg_df["valor_strike"]   = stg_df["raw_payload"].map(lambda p: p.get("ValorStrike")   if p else None)
-    stg_df["mtm_soles"]      = stg_df["raw_payload"].map(lambda p: p.get("PrecioVector")  if p else None)
+    stg_df["mtm_soles"]      = stg_df["raw_payload"].map(_mtm_soles)
 
     fact = stg_df[[
         "portfolio_id",
@@ -206,3 +208,20 @@ def _yyyymmdd_to_date(v) -> date | None:
         return None
     n = int(v)
     return date(n // 10000, (n // 100) % 100, n % 100)
+
+
+def _mtm_soles(payload: dict | None) -> float | None:
+    """
+    Mark-to-market in soles = PrecioInversion - PrecioDesinversion.
+
+    Both operands come from the FMS forwards payload (Tier 2). Returns
+    None if the payload is missing either operand, so a partial row
+    lands NULL rather than a misleading zero.
+    """
+    if not payload:
+        return None
+    inv = payload.get("PrecioInversion")
+    des = payload.get("PrecioDesinversion")
+    if inv is None or des is None:
+        return None
+    return inv - des

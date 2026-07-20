@@ -13,7 +13,11 @@ from psycopg import Connection
 from src.db.connection import get_connection
 from src.db.queries import get_or_create_entity_id, upsert_entity_identifier #, get_entity_id
 from src.shared.paths import SCHEMA_DIR
-from src.shared.seed_loader import load_series_seed, load_identifiers_seed
+from src.shared.seed_loader import (
+    load_series_seed,
+    load_identifiers_seed,
+    load_portfolios_seed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +183,52 @@ def load_dim_security_skeleton(
         inserted += 1
     logger.info(f'dim_security skeleton: {inserted} rows inserted.')
 
+def load_dim_portfolio(
+    conn: Connection,
+    portfolios_df: pd.DataFrame,
+) -> None:
+    """
+    Registers portfolios from seeds/portfolios.csv into dim_portfolio.
+
+    ON CONFLICT (procode, source) DO NOTHING preserves the status of
+    existing rows - safe to re-run without resetting an already-'active'
+    portfolio back to 'backfill-pending'. FMS own accounts seed as
+    status='backfill-pending' so the forwards run flips them to 'active'
+    on first successful load.
+    """
+    cur = conn.cursor()
+    inserted = skipped = 0
+
+    for _, row in portfolios_df.iterrows():
+        cur.execute(
+            """
+            INSERT INTO dim_portfolio (
+                procode, source, portfolio_type,
+                display_name, base_currency, status
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (procode, source) DO NOTHING
+            """,
+            (
+                str(row['procode']),
+                row['source'],
+                row['portfolio_type'],
+                _none_if_nan(row.get('display_name')),
+                _none_if_nan(row.get('base_currency')),
+                row.get('status') if not pd.isna(row.get('status')) else 'backfill-pending',
+            ),
+        )
+        if cur.rowcount > 0:
+            inserted += 1
+        else:
+            skipped += 1
+    logger.info(f'dim_portfolio: {inserted} inserted, {skipped} already existed.')
+
+
+def _none_if_nan(v):
+    """Coerce a pandas NaN/NaT to None so it lands as SQL NULL, not 'NaN'."""
+    return None if pd.isna(v) else v
+
+
 def load_series_registry(
     conn: Connection,
     series_df: pd.DataFrame,
@@ -317,6 +367,7 @@ def run_bootstrap(
         2. Load dim_entity (unique procode/entity_type from series.csv)
         3. Load dim_entity_identifiers (from identifiers.csv - one row per id)
         4. Load dim_security skeleton (security_type only - vendor atts via enrichment)
+        4b. Load dim_portfolio (from portfolios.csv; optional, FMS-only)
         5. Load dim_macro
         6. Load series_registry (one row per procode/field/source)
         7. Load source priority
@@ -358,6 +409,20 @@ def run_bootstrap(
     logger.info('--- Step 4: Loading dim_security and dim_macro skeletons ---')
     with get_connection() as conn:
         load_dim_security_skeleton(conn, series_df, entity_map)
+
+    # Step 4b: dim_portfolio (from portfolios.csv; optional - FMS-only)
+    logger.info('--- Step 4b: Loading dim_portfolio ---')
+    try:
+        portfolios_df = load_portfolios_seed()
+    except FileNotFoundError:
+        logger.warning(
+            'portfolios.csv not found - skipping dim_portfolio seed. FMS '
+            'positions runs need portfolios registered; add '
+            'src/seeds/portfolios.csv and re-run.'
+        )
+    else:
+        with get_connection() as conn:
+            load_dim_portfolio(conn, portfolios_df)
 
     # Step 5: series_registry
     logger.info('--- Step 5: Loading series_registry ---')

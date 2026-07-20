@@ -3,7 +3,7 @@
 # CLI entry point for the FMS forwards pipeline.
 #
 # Thin shell: parses argparse, sets up logging, dispatches to the
-# run() wrappers in src/pipeline/positions/fms/forwards/run.py.
+# run() wrappers in src/pipelines/positions/fms/forwards/run.py.
 #
 # Usage:
 #   python scripts/run_fms_forwards.py --start-date 2026-06-22 --end-date 2026-06-22
@@ -17,11 +17,17 @@
 #   --from-stg                 skip FMS, rebuild fact from staging
 #   --batch-id STR             required with --from-stg
 #   --force                    override MAX_RANGE_DAYS guard in extract
+#   --allow-unresolved         don't fail when a fund can't be resolved
+#                              to a portfolio (e.g. historical backfills)
 # ---------------------------------------------------------------
 
 import argparse
 import logging
+import sys
 from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipelines.positions.fms.forwards.run import run_full, run_from_stg
 
@@ -39,6 +45,7 @@ def main() -> None:
             start_date=args.start_date,
             end_date=args.end_date,
             force=args.force,
+            allow_unresolved=args.allow_unresolved,
         )
 
 
@@ -54,6 +61,8 @@ def _parse_args() -> argparse.Namespace:
                    help="required with --from-stg")
     parser.add_argument("--force", action="store_true",
                    help="override MAX_RANGE_DAYS guard in extract (allows large backfills)")
+    parser.add_argument("--allow-unresolved", action="store_true", dest="allow_unresolved",
+                   help="don't fail when a codigo_fondo can't be resolved to a portfolio")
 
     args = parser.parse_args()
 

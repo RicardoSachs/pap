@@ -22,7 +22,7 @@ docs/
 
 # --- Ad-hoc SQL scratchpads ----------------------------------------
 # Not loaded by any code
-queries/
+queries_sql/
 
 # --- Reference data: security master --------------------------------
 # The instrument universe the fund tracks; partly vendor-derived.

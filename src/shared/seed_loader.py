@@ -14,3 +14,11 @@ def load_series_seed() -> pd.DataFrame:
 def load_identifiers_seed() -> pd.DataFrame:
     df = pd.read_csv(SEED_DIR / 'identifiers.csv')
     return df
+
+def load_portfolios_seed() -> pd.DataFrame:
+    df = pd.read_csv(
+        SEED_DIR / 'portfolios.csv',
+        dtype={'procode': str},
+        comment='#',
+    )
+    return df

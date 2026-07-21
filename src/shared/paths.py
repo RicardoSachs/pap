@@ -9,11 +9,13 @@ from pathlib import Path
 
 load_dotenv()
 
+# ETL_DIR is the repo root. This file is at <repo>/src/shared/paths.py
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ETL_DIR = Path(__file__).resolve().parents[2]
 
-# Main env dirs
+# Main env dirs. DATA_DIR defaults to /data sibling of /<repo>
+# overridden via .env when data lives elsewhere
 DATA_DIR = Path(os.getenv('DATA_DIR', PROJECT_ROOT / 'data'))
-ETL_DIR = Path(os.getenv('ETL_DIR', PROJECT_ROOT / 'pgetl'))
 
 #ETL paths
 CONFIG_DIR = ETL_DIR / 'config'

@@ -8,7 +8,7 @@
 #   - schema-guard: raise on a missing expected column, warn on an
 #     unexpected one (it still lands in raw_payload)
 #   - portfolio resolution and the unresolved-fund drop
-#   - mtm_soles = PrecioInversion - PrecioDesinversion (NOT PrecioVector)
+#   - mtm_soles = PrecioInversion + PrecioDesinversion (NOT PrecioVector)
 #   - fecha_vencimiento derivation
 #   - the nocional_soles = valor_nocional * tipo_cambio_spot invariant
 # ---------------------------------------------------------------
@@ -48,7 +48,7 @@ def _raw_row(**overrides) -> dict:
         "PrecioForward": 3.78,
         "PrecioVector": 999.0,          # deliberately NOT the MTM
         "PrecioInversion": 3800.0,
-        "PrecioDesinversion": 3750.0,
+        "PrecioDesinversion": -3750.0,
         "IndCxcCxp": "C",
         "MonedaNocional": "USD",
         "MonedaContraparte": "PEN",
@@ -57,7 +57,7 @@ def _raw_row(**overrides) -> dict:
         "IdCuentaCobrarPagar": 42,
         "ValorNocionalCarga": 1000.0,
         "PrecioInversionCarga": 3800.0,
-        "PrecioDesinversionCarga": 3750.0,
+        "PrecioDesinversionCarga": -3750.0,
     }
     base.update(overrides)
     return base
@@ -86,7 +86,7 @@ def test_staging_date_conversion_and_tier_split():
     payload = stg.loc[0, "raw_payload"]
     # Tier 2 preserved verbatim...
     assert payload["PrecioInversion"] == 3800.0
-    assert payload["PrecioDesinversion"] == 3750.0
+    assert payload["PrecioDesinversion"] == -3750.0
     # ...Tier 1 not duplicated into the payload
     assert "CodigoFondo" not in payload
 
@@ -114,7 +114,7 @@ def test_staging_empty_in_empty_out():
 
 def test_fact_mtm_is_inversion_minus_desinversion():
     stg = transform.transform_for_staging(
-        _raw_df([_raw_row(PrecioInversion=3800.0, PrecioDesinversion=3750.0)]), "b"
+        _raw_df([_raw_row(PrecioInversion=3800.0, PrecioDesinversion=-3750.0)]), "b"
     )
     fact = transform.transform_for_fact(stg, _portfolios({"FONDO0": 7}))
 

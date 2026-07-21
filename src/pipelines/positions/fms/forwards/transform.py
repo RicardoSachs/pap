@@ -212,7 +212,7 @@ def _yyyymmdd_to_date(v) -> date | None:
 
 def _mtm_soles(payload: dict | None) -> float | None:
     """
-    Mark-to-market in soles = PrecioInversion - PrecioDesinversion.
+    Mark-to-market in soles = PrecioInversion + PrecioDesinversion.
 
     Both operands come from the FMS forwards payload (Tier 2). Returns
     None if the payload is missing either operand, so a partial row
@@ -224,4 +224,4 @@ def _mtm_soles(payload: dict | None) -> float | None:
     des = payload.get("PrecioDesinversion")
     if inv is None or des is None:
         return None
-    return inv - des
+    return inv + des

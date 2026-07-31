@@ -252,6 +252,8 @@ def acquire_range(
     
     """
     # Resolve files to download:
+    download_dir = _resolve_raw_dir(raw_dir)
+
     files_to_download = _resolve_file_types(file_types, sbs_files)
     if not files_to_download:
         return {'succeeded': [], 'failed': [], 'skipped': []}
@@ -268,7 +270,7 @@ def acquire_range(
     )
 
      # Launch chrome(driver)
-    driver = create_driver(VP_SBS_DIR)
+    driver = create_driver(download_dir)
 
     # Step 1: login once
     driver.get('https://extranet.sbs.gob.pe/app/login.jsp')

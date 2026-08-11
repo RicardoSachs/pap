@@ -156,3 +156,19 @@ def test_fact_nocional_soles_invariant():
 
 def test_fact_empty_in_empty_out():
     assert transform.transform_for_fact(pd.DataFrame(), _portfolios({"FONDO0": 7})).empty
+
+
+# ---- null pass-through (proves the transforms are innocent) ----
+# A stale FMS TipoCambioSpot arrives NULL; the transforms must pass it through
+# unchanged (not fabricate a value, not drop the row). The NULL is a source/SQL
+# problem — these lock the transforms so nobody re-investigates them.
+
+def test_staging_preserves_null_spot():
+    stg = transform.transform_for_staging(_raw_df([_raw_row(TipoCambioSpot=None)]), "b")
+    assert pd.isna(stg.loc[0, "tipo_cambio_spot"])
+
+
+def test_fact_preserves_null_nocional_soles():
+    stg = transform.transform_for_staging(_raw_df([_raw_row(NocionalSoles=None)]), "b")
+    fact = transform.transform_for_fact(stg, _portfolios({"FONDO0": 7}))
+    assert pd.isna(fact.iloc[0]["nocional_soles"])

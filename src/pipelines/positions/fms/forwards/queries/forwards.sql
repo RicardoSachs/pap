@@ -40,8 +40,8 @@ SELECT
     fp.CodigoIsoMonedaNocional,
     fp.CodigoIsoMonedaContraparte,
     fp.ValorNocional,
-    fp.TipoCambioSpot,
-    fp.ValorNocional * fp.TipoCambioSpot                       AS NocionalSoles,
+    mc.TipoCambio                                              AS TipoCambioSpot,
+    fp.ValorNocional * mc.TipoCambio                           AS NocionalSoles,
     CASE
         WHEN fp.IdTipoOperacion = 1 THEN fp.CodigoIsoMonedaNocional
         ELSE fp.CodigoIsoMonedaContraparte
@@ -75,5 +75,8 @@ SELECT
 FROM FMS.ForwardPrecio fp
 JOIN FMS.FondoPension fond
     ON fp.IdFondo = fond.IdFondo
+JOIN FMS.MonedaCambio mc
+    ON fp.IdSecuencialFechaProceso = mc.IdFechaMonedaCambio
+        AND fp.IdMonedaNocional = mc.IdMoneda
 WHERE fp.IdSecuencialFechaProceso BETWEEN ? AND ?;
 

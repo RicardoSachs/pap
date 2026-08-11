@@ -11,10 +11,11 @@
 #   2. Build batch_id from timestamp
 #   3. Extract from FMS for start_date..end_date
 #   4. Transform to staging shape
-#   5. Load staging (idempotent upsert)
+#   5. Load staging (idempotent upsert) — its OWN transaction, committed
+#      before the fact step so a fact failure can't discard it
 #   6. Load dim_portfolio (fms slice) into memory
 #   7. Transform to fact shape (portfolio resolution)
-#   8. Load fact (idempotent upsert)
+#   8. Load fact (idempotent upsert) — second transaction
 #   9. Flip any backfill-pending portfolios to active
 #  10. Log a reconciliation summary; raise if any fund was left
 #      unresolved (unless allow_unresolved=True)
@@ -67,13 +68,20 @@ def run_full(
         return
 
     stg_df = transform.transform_for_staging(raw_df, batch_id)
+    _log_null_counts(stg_df, "staging")
 
+    # Transaction 1: staging commits on its own. A later fact failure must NOT
+    # discard the staged rows — otherwise run_from_stg has nothing to rebuild
+    # from and you'd have to re-hit FMS just to retry the fact step.
     with get_connection() as conn:
         staged = loader.load_staging(conn, stg_df)
 
+    # Transaction 2: fact. If this rolls back, staging above stays committed.
+    with get_connection() as conn:
         portfolios = _load_portfolios(conn)
         unresolved = _unresolved_funds(stg_df, portfolios)
         fact_df = transform.transform_for_fact(stg_df, portfolios)
+        _log_null_counts(fact_df, "fact")
         loaded = loader.load_fact(conn, fact_df)
 
         flipped = _flip_backfill_pending_to_active(conn, fact_df)
@@ -151,6 +159,19 @@ def _log_reconciliation(
     )
     if unresolved:
         logger.warning(f"unresolved codigo_fondo dropped from fact: {unresolved}")
+
+
+def _log_null_counts(df: pd.DataFrame, stage: str) -> None:
+    """
+    Log any columns carrying nulls at a stage, so a source-origin null (e.g. a
+    stale FMS TipoCambioSpot) is visible before it trips a NOT NULL insert.
+    Silent when nothing is null.
+    """
+    if df.empty:
+        return
+    nulls = {c: int(df[c].isna().sum()) for c in df.columns if df[c].isna().any()}
+    if nulls:
+        logger.info(f"null counts [{stage}]: {nulls}")
 
 
 def _load_portfolios(conn) -> pd.DataFrame:

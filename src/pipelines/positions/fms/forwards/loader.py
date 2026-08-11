@@ -68,6 +68,18 @@ FACT_COLUMNS = [
     "fecha_vencimiento", "precio_forward", "valor_strike", "mtm_soles",
 ]
 
+# Columns fact_positions_forwards declares NOT NULL (see 27_fact_positions_forwards.sql).
+# A null here is a data problem (usually a missing FMS field, e.g. a stale
+# TipoCambioSpot with no MonedaCambio fallback) — caught before the row-by-row
+# INSERT so the error names the column + codigo_sbs instead of surfacing as an
+# opaque psycopg NotNullViolation mid-loop.
+FACT_NOT_NULL_COLUMNS = [
+    "portfolio_id", "codigo_sbs", "date", "source",
+    "codigo_iso_moneda_nocional",
+    "valor_nocional", "tipo_cambio_spot", "nocional_soles",
+    "moneda_compra", "moneda_venta",
+]
+
 FACT_UPSERT = f"""
 INSERT INTO fact_positions_forwards ({", ".join(FACT_COLUMNS)})
 VALUES ({", ".join(["%s"] * len(FACT_COLUMNS))})
@@ -105,6 +117,7 @@ def load_fact(conn: Connection, fact_df: pd.DataFrame) -> int:
         return 0
 
     _validate_columns(fact_df, FACT_COLUMNS)
+    _validate_not_null(fact_df, FACT_NOT_NULL_COLUMNS)
     n = _execute_row_by_row(conn, FACT_UPSERT, fact_df, FACT_COLUMNS)
     logger.info(f"load_fact: upserted {n} rows into fact_positions_forwards")
     return n
@@ -114,6 +127,24 @@ def _validate_columns(df: pd.DataFrame, expected: list[str]) -> None:
     missing = [c for c in expected if c not in df.columns]
     if missing:
         raise ValueError(f"DataFrame missing expected columns: {missing}")
+
+
+def _validate_not_null(df: pd.DataFrame, columns: list[str]) -> None:
+    """
+    Raise a clear error if any NOT NULL fact column contains nulls, naming the
+    column and a sample of offending codigo_sbs — so a source-origin null (e.g.
+    a stale TipoCambioSpot) fails loudly here instead of as an opaque psycopg
+    NotNullViolation partway through the row loop.
+    """
+    for col in columns:
+        null_mask = df[col].isna()
+        if null_mask.any():
+            n = int(null_mask.sum())
+            sample = df.loc[null_mask, "codigo_sbs"].head(5).tolist()
+            raise ValueError(
+                f"fact_positions_forwards: {n} row(s) have NULL {col} (NOT NULL). "
+                f"Sample codigo_sbs: {sample}"
+            )
 
 
 def _execute_row_by_row(

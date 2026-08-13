@@ -11,6 +11,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from src.pipelines.positions.fms import _common
 from src.pipelines.positions.fms.cash import loader
 
 
@@ -34,31 +35,31 @@ def _fact_row(**overrides) -> dict:
 def test_validate_not_null_raises_on_null_soles():
     df = pd.DataFrame([_fact_row(monto_total_soles=None)])
     with pytest.raises(ValueError, match="monto_total_soles"):
-        loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)
+        _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS, table="fact_positions_cash", id_col="codigo_iso_moneda")
 
 
 def test_validate_not_null_raises_on_null_saldo_contable():
     df = pd.DataFrame([_fact_row(saldo_contable=None)])
     with pytest.raises(ValueError, match="saldo_contable"):
-        loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)
+        _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS, table="fact_positions_cash", id_col="codigo_iso_moneda")
 
 
 def test_validate_not_null_raises_on_null_institucion():
     df = pd.DataFrame([_fact_row(codigo_institucion=None)])
     with pytest.raises(ValueError, match="codigo_institucion"):
-        loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)
+        _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS, table="fact_positions_cash", id_col="codigo_iso_moneda")
 
 
 def test_validate_not_null_passes_when_complete():
     df = pd.DataFrame([_fact_row()])
-    loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)  # must not raise
+    _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS, table="fact_positions_cash", id_col="codigo_iso_moneda")  # must not raise
 
 
 def test_validate_not_null_ignores_nullable_name_and_interest():
     # nombre_institucion / tasa_interes / interes_acumulado are nullable
     df = pd.DataFrame([_fact_row(nombre_institucion=None, tasa_interes=None,
                                  interes_acumulado=None)])
-    loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)  # must not raise
+    _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS, table="fact_positions_cash", id_col="codigo_iso_moneda")  # must not raise
 
 
 def test_conflict_keys_include_institucion():

@@ -13,12 +13,9 @@
 #   (portfolio_id, codigo_sbs, date, source). Restatements land
 #   cleanly - matches the fact_positions upsert-DO-UPDATE policy.
 #
-# Both iterate the DataFrame row-by-row and call cur.execute per
-# row. This matches the pattern used by the Bloomberg prices
-# pipeline and keeps consistency across the ETL. Slower per-row
-# than batched inserts, but bounded by columns-per-statement
-# (never trips Postgres's 65535 parameter cap), simpler to
-# debug, and per-row errors point at the specific offending row.
+# The row-by-row upsert primitives and validators are shared across
+# feeds in src/pipelines/positions/fms/_common.py; only the per-feed
+# SQL and column lists live here.
 #
 # Both accept an already-open connection (caller controls the
 # transaction); empty DataFrames are no-ops.
@@ -28,7 +25,12 @@ import logging
 
 import pandas as pd
 from psycopg import Connection
-from psycopg.types.json import Jsonb
+
+from src.pipelines.positions.fms._common import (
+    validate_columns,
+    validate_not_null,
+    execute_row_by_row,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +106,8 @@ def load_staging(conn: Connection, stg_df: pd.DataFrame) -> int:
         logger.info("load_staging: empty DataFrame, nothing to write")
         return 0
 
-    _validate_columns(stg_df, STG_COLUMNS)
-    n = _execute_row_by_row(conn, STG_UPSERT, stg_df, STG_COLUMNS, jsonb_column="raw_payload")
+    validate_columns(stg_df, STG_COLUMNS)
+    n = execute_row_by_row(conn, STG_UPSERT, stg_df, STG_COLUMNS, jsonb_column="raw_payload")
     logger.info(f"load_staging: upserted {n} rows into stg_positions_fms_forwards")
     return n
 
@@ -116,69 +118,9 @@ def load_fact(conn: Connection, fact_df: pd.DataFrame) -> int:
         logger.info("load_fact: empty DataFrame, nothing to write")
         return 0
 
-    _validate_columns(fact_df, FACT_COLUMNS)
-    _validate_not_null(fact_df, FACT_NOT_NULL_COLUMNS)
-    n = _execute_row_by_row(conn, FACT_UPSERT, fact_df, FACT_COLUMNS)
+    validate_columns(fact_df, FACT_COLUMNS)
+    validate_not_null(fact_df, FACT_NOT_NULL_COLUMNS,
+                      table="fact_positions_forwards", id_col="codigo_sbs")
+    n = execute_row_by_row(conn, FACT_UPSERT, fact_df, FACT_COLUMNS)
     logger.info(f"load_fact: upserted {n} rows into fact_positions_forwards")
     return n
-
-
-def _validate_columns(df: pd.DataFrame, expected: list[str]) -> None:
-    missing = [c for c in expected if c not in df.columns]
-    if missing:
-        raise ValueError(f"DataFrame missing expected columns: {missing}")
-
-
-def _validate_not_null(df: pd.DataFrame, columns: list[str]) -> None:
-    """
-    Raise a clear error if any NOT NULL fact column contains nulls, naming the
-    column and a sample of offending codigo_sbs — so a source-origin null (e.g.
-    a stale TipoCambioSpot) fails loudly here instead of as an opaque psycopg
-    NotNullViolation partway through the row loop.
-    """
-    for col in columns:
-        null_mask = df[col].isna()
-        if null_mask.any():
-            n = int(null_mask.sum())
-            sample = df.loc[null_mask, "codigo_sbs"].head(5).tolist()
-            raise ValueError(
-                f"fact_positions_forwards: {n} row(s) have NULL {col} (NOT NULL). "
-                f"Sample codigo_sbs: {sample}"
-            )
-
-
-def _execute_row_by_row(
-    conn: Connection,
-    sql: str,
-    df: pd.DataFrame,
-    columns: list[str],
-    jsonb_column: str = None,
-) -> int:
-    """
-    Iterate the DataFrame row-by-row and execute one INSERT per row.
-    Matches the pattern used by the Bloomberg prices pipeline.
-    NaN/NaT converted to None. jsonb_column values wrapped in Jsonb.
-    """
-    with conn.cursor() as cur:
-        for i, row in df.iterrows():
-            params = _row_to_params(row, columns, jsonb_column)
-            try:
-                cur.execute(sql, params)
-            except Exception:
-                logger.error(f"insert failed for DataFrame row {i}: {dict(row[columns])}")
-                raise
-    return len(df)
-
-
-def _row_to_params(row: pd.Series, columns: list[str], jsonb_column: str = None) -> tuple:
-    """Convert a DataFrame row to a psycopg-ready parameter tuple."""
-    out = []
-    for col in columns:
-        v = row[col]
-        if pd.isna(v):
-            out.append(None)
-        elif col == jsonb_column:
-            out.append(Jsonb(v))
-        else:
-            out.append(v.item() if hasattr(v, "item") else v)
-    return tuple(out)

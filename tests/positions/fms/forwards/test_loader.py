@@ -11,6 +11,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from src.pipelines.positions.fms import _common
 from src.pipelines.positions.fms.forwards import loader
 
 
@@ -38,15 +39,18 @@ def _fact_row(**overrides) -> dict:
 def test_validate_not_null_raises_and_names_column_and_sbs():
     df = pd.DataFrame([_fact_row(tipo_cambio_spot=None)])
     with pytest.raises(ValueError, match="tipo_cambio_spot"):
-        loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)
+        _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS,
+                                  table="fact_positions_forwards", id_col="codigo_sbs")
 
 
 def test_validate_not_null_passes_when_complete():
     df = pd.DataFrame([_fact_row()])
-    loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)  # must not raise
+    _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS,
+                              table="fact_positions_forwards", id_col="codigo_sbs")  # must not raise
 
 
 def test_validate_not_null_ignores_nullable_columns():
     # mtm_soles / fecha_vencimiento are legitimately nullable and not in the list
     df = pd.DataFrame([_fact_row(mtm_soles=None, fecha_vencimiento=None)])
-    loader._validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS)  # must not raise
+    _common.validate_not_null(df, loader.FACT_NOT_NULL_COLUMNS,
+                              table="fact_positions_forwards", id_col="codigo_sbs")  # must not raise

@@ -10,22 +10,22 @@
 --
 -- POINT-IN-TIME / ONE DATE (unlike cash/forwards): this reconstructs the OPEN
 -- balance AS OF a single day — it does not scan a date range. extract.py loops
--- over the business days in the requested range and runs this once per day, so
--- the parameter is a single as-of date (NOT a BETWEEN range). The date is
--- echoed back into the result (IdSecuencialFechaReporte) so the transform can
--- derive `date` exactly like cash.
+-- over the business days in the requested range, runs this once per day, and
+-- stamps the `date` column itself (the as-of day is the loop variable, so it is
+-- NOT selected here — the query returns only the business data).
 --
--- Parameter (positional, pyodbc ? style):
---   1) as_of_date  INT yyyymmdd — the day whose open balance to reconstruct.
+-- Parameter (positional, pyodbc ? style) — the SAME as-of date, bound twice:
+--   1) as_of_date  INT yyyymmdd  (IdSecuencialFechaOperacion <= as_of)
+--   2) as_of_date  INT yyyymmdd  (IdSecuencialFechaLiquidacionReal > as_of)
 --
 -- Target staging:    stg_positions_fms_net_receivables
--- Grain:             (CodigoFondo, CodigoIsoMoneda, as_of_date)
+-- Grain:             (CodigoFondo, CodigoIsoMoneda, <date stamped by extract>)
 --
 -- OUTPUT CONTRACT — transform.py depends on these output column names:
 --   Tier 1 (typed staging columns):
---     IdSecuencialFechaReporte (= the as-of date, echoed for the `date` column),
 --     CodigoFondo, CodigoIsoMoneda, MontoCobrar, MontoPagar
 --     [optional soles: MontoCobrarSoles, MontoPagarSoles]
+--   `date` is added by extract.py (not selected here).
 --   Tier 2 -> raw_payload: none (the source is already aggregated per currency).
 --
 -- TODO(dev) — confirm/finalize before running:
@@ -40,12 +40,8 @@
 --       store original-currency amounts only.
 -- ---------------------------------------------------------------
 
-SET NOCOUNT ON;
-DECLARE @asof INT = ?;
-
 SELECT
     -- ===================== Tier 1 =====================
-    @asof                                                              AS IdSecuencialFechaReporte,
     FP.CodigoFondo                                                     AS CodigoFondo,
     M.CodigoISO                                                        AS CodigoIsoMoneda,   -- TODO(b): Simbolo vs CodigoISO
     SUM(CASE WHEN T.IdIndicador = 1 THEN ABS(CCP.Importe) ELSE 0 END)  AS MontoCobrar,       -- receivables (CxC)
@@ -60,12 +56,12 @@ JOIN FMS.FondoPension FP ON FP.IdFondo  = CCP.IdFondo
 JOIN FMS.Moneda       M  ON M.IdMoneda  = CCP.IdMoneda
 JOIN FMS.Indicador    T  ON T.Id        = CCP.IndCobrarPagar
 -- LEFT JOIN FMS.MonedaCambio mc                                        -- TODO(c): enable for soles
---        ON mc.IdFechaMonedaCambio = @asof AND mc.IdMoneda = CCP.IdMoneda
+--        ON mc.IdFechaMonedaCambio = ? AND mc.IdMoneda = CCP.IdMoneda   -- (would need a 3rd as-of bind)
 WHERE CCP.FlgActivo = 1
   AND T.IdIndicador IN (1, 2)
-  AND CCP.IdSecuencialFechaOperacion <= @asof
+  AND CCP.IdSecuencialFechaOperacion <= ?                                          -- as-of (bind #1)
   AND (CCP.IndEstado = 4168                                                        -- TODO(a): OPEN/pending
-       OR (CCP.IndEstado = 4169 AND CCP.IdSecuencialFechaLiquidacionReal > @asof)) -- settled after as-of
+       OR (CCP.IndEstado = 4169 AND CCP.IdSecuencialFechaLiquidacionReal > ?))     -- as-of (bind #2); settled after
 GROUP BY
     FP.CodigoFondo,
     M.CodigoISO;                                                        -- + mc.TipoCambio if soles enabled

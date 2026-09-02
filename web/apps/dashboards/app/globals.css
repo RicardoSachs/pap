@@ -261,3 +261,70 @@ tfoot th, tfoot td {
 .error { color: var(--rose); font-weight: 600; }
 .loading { color: var(--text-secondary); padding: 20px 0; }
 
+
+/* ----- SPP tablero (valor cuota) -------------------------------------------- */
+/* Sub-tab bar under the page title: one sidebar entry, three views. */
+.spp-tabs { display: flex; gap: 6px; margin: 0 0 16px; }
+.spp-tab {
+  padding: 6px 14px; border: 1px solid var(--s4); border-radius: 6px;
+  color: var(--text-secondary); font-size: 13px;
+}
+.spp-tab:hover { color: var(--text-primary); border-color: var(--blue); }
+.spp-tab.active { color: var(--text-primary); border-color: var(--blue); background: var(--s2); }
+
+/* Segmented button groups (metric / fund / window / scale / AFP). */
+.spp-controls { flex-wrap: wrap; row-gap: 12px; }
+.spp-seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.spp-seg-btn {
+  padding: 5px 10px; border: 1px solid var(--s4); border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-family: var(--font-sans); font-size: 12px; cursor: pointer;
+}
+.spp-seg-btn:hover { color: var(--text-primary); }
+.spp-seg-btn.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+/* AFP color chip in tables. */
+.spp-chip {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 7px; vertical-align: baseline;
+}
+
+/* Windows tables: AFP section rows + collapsibles. */
+.spp-vent table { min-width: 100%; }
+.spp-seccion td {
+  background: var(--s3); font-weight: 600; letter-spacing: .02em;
+  border-top: 1px solid var(--s4);
+}
+.spp-desplegable { margin-top: 14px; }
+.spp-desplegable > summary {
+  cursor: pointer; color: var(--text-secondary); font-size: 13px;
+  padding: 6px 0; user-select: none;
+}
+.spp-desplegable[open] > summary { color: var(--text-primary); }
+
+/* Monthly rank cells and the background-task log. */
+.spp-puesto { text-align: center; }
+.spp-bitacora {
+  margin-top: 10px; padding: 10px 12px; background: var(--s0);
+  border: 1px solid var(--s4); border-radius: 6px; font-size: 12px;
+  max-height: 220px; overflow-y: auto; white-space: pre-wrap;
+}
+
+/* Carga view: act on the left, see on the right. Collapses on narrow screens. */
+.spp-dos {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  margin-bottom: 16px;
+}
+.spp-dos .panel { margin-bottom: 0; }
+@media (max-width: 1100px) { .spp-dos { grid-template-columns: 1fr; } }
+
+/* Small key/value report tables (review reports, corrida automatica). */
+.spp-informe { border-collapse: collapse; margin-top: 10px; min-width: 60%; }
+.spp-informe td {
+  padding: 5px 12px 5px 0; border-bottom: 1px solid var(--s4);
+  font-size: 13px; color: var(--text-secondary);
+}
+.spp-informe td.num {
+  text-align: right; color: var(--text-primary);
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}

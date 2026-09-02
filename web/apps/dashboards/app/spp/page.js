@@ -1,0 +1,450 @@
+
+// web/apps/dashboards/app/spp/page.js
+// ---------------------------------------------------------------------------
+// SPP tablero · Panel: KPIs, historic series, close-by-AFP, performance
+// windows (levels / absolute / relative) and monthly rank positions.
+// Ported from the monitor's vista 01 onto the pap stack: Plotly instead of
+// hand-built SVG, pap panels/KPI bar, and the /api/spp/* contract.
+//
+// The interface names no AFP: names, colors, the house and which funds each
+// one operates all come from /api/spp/config, loaded before anything else.
+// ---------------------------------------------------------------------------
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { apiGet } from '../../lib/api';
+import {
+  METRICAS, NOMBRE_METRICA, ROTULO_KPI, VENTANAS,
+  desdeVentana, fFecha, fmtMetrica, fmtRend, nEnt, nf, signo, valorMostrado,
+} from '../../lib/spp';
+import KpiBar from '../../components/KpiBar';
+import SppSeg from '../../components/SppSeg';
+import SppTabs from '../../components/SppTabs';
+import { chartTheme } from '../../lib/theme';
+
+const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
+
+const colorDe = (cfg, afp, solido = false) => {
+  const a = (cfg?.afps || []).find((x) => x.nombre === afp);
+  return a ? (solido ? a.color_solido : a.color) : '#8892A4';
+};
+
+export default function SppPanelPage() {
+  const [cfg, setCfg] = useState(null);
+  const [estado, setEstado] = useState(null);
+  const [error, setError] = useState(null);
+
+  const [metrica, setMetrica] = useState('valor_cuota');
+  const [fondo, setFondo] = useState(2);
+  const [ventana, setVentana] = useState(1);
+  const [escala, setEscala] = useState('nivel');
+  const [afpsSel, setAfpsSel] = useState([]);
+
+  const [serieData, setSerieData] = useState(null);
+  const [vent, setVent] = useState(null);
+  const [pos, setPos] = useState(null);
+  const [fechaControl, setFechaControl] = useState('');
+  const [fondoPos, setFondoPos] = useState(2);
+  const [r12, setR12] = useState(null);
+
+  // Config first: without it we don't know how many AFPs exist.
+  useEffect(() => {
+    apiGet('/api/spp/config')
+      .then((c) => { setCfg(c); setAfpsSel(c.afps.map((a) => a.nombre)); })
+      .catch((e) => setError(e.message));
+    apiGet('/api/spp/estado').then(setEstado).catch((e) => setError(e.message));
+  }, []);
+
+  const nombres = useMemo(() => (cfg?.afps || []).map((a) => a.nombre), [cfg]);
+  const casa = cfg?.casa;
+  const opera = (afp, f) => {
+    const a = (cfg?.afps || []).find((x) => x.nombre === afp);
+    return a ? a.fondos.includes(f) : true;
+  };
+
+  // Historic series follows the metric/fund/window/AFP selection.
+  useEffect(() => {
+    if (!cfg || !afpsSel.length) return;
+    const desde = desdeVentana(ventana, estado, vent?.fechas);
+    const q = new URLSearchParams({
+      fondo: String(fondo), afps: afpsSel.join(','), metrica, desde,
+    });
+    apiGet(`/api/spp/serie?${q}`).then(setSerieData).catch((e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg, estado, metrica, fondo, ventana, afpsSel]);
+
+  // Windows + positions follow metric and control date.
+  useEffect(() => {
+    if (!cfg) return;
+    const q = new URLSearchParams({ metrica });
+    if (fechaControl) q.set('fecha', fechaControl);
+    apiGet(`/api/spp/ventanas?${q}`).then(setVent).catch((e) => setError(e.message));
+    const q2 = new URLSearchParams({ metrica, meses: '12' });
+    if (fechaControl) q2.set('fecha', fechaControl);
+    apiGet(`/api/spp/posiciones?${q2}`).then(setPos).catch((e) => setError(e.message));
+  }, [cfg, metrica, fechaControl]);
+
+  // 12M return is always computed on valor cuota - the definition of a
+  // fund's performance, whatever metric is on screen.
+  useEffect(() => {
+    if (!cfg || !casa) return;
+    const ref = afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
+    const desde = desdeVentana(1, estado, vent?.fechas);
+    const q = new URLSearchParams({ fondo: String(fondo), afps: ref, metrica: 'valor_cuota', desde });
+    apiGet(`/api/spp/serie?${q}`).then((d) => {
+      const p = d.series?.[0]?.puntos;
+      setR12(p && p.length > 1 ? { afp: ref, ret: p[p.length - 1][1] / p[0][1] - 1, desde: p[0][0] } : null);
+    }).catch(() => setR12(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg, estado, fondo, afpsSel]);
+
+  // ---- KPIs -------------------------------------------------------------
+  const afpRef = casa && afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
+  const sRef = (estado?.series || []).find((x) => x.afp === afpRef && x.fondo === fondo);
+  const campo = {
+    valor_cuota: ['valor', 'var_bps', 'fecha'],
+    cuotas: ['cuotas', 'cuotas_var_bps', 'cuotas_fecha'],
+    fondo: ['fondo_soles', 'fondo_var_bps', 'fondo_fecha'],
+  }[metrica];
+  const kVal = sRef ? sRef[campo[0]] : null;
+  const kBps = sRef ? sRef[campo[1]] : null;
+  const kCuando = sRef ? sRef[campo[2]] : null;
+
+  const finCompleta = estado?.hasta_completa || estado?.hasta;
+  let rezago = 0;
+  if (finCompleta) {
+    const c = new Date(`${finCompleta}T00:00:00`); const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    while (c < hoy) { c.setDate(c.getDate() + 1); const d = c.getDay(); if (d !== 0 && d !== 6 && c <= hoy) rezago++; }
+  }
+  const abiertos = (estado?.huecos || []).length;
+  const integridad = (rezago > 3 || abiertos > 1) ? 'Excedido'
+    : (abiertos === 1 || rezago > 1) ? 'Observación' : 'Dentro';
+
+  const kpis = [
+    {
+      label: ROTULO_KPI[metrica],
+      value: kVal == null ? '—' : fmtMetrica(kVal, metrica, true),
+      meta: `${afpRef || '—'} · Fondo ${fondo}${kCuando ? ` · al ${fFecha(kCuando)}` : ' · sin dato'}`,
+    },
+    {
+      label: 'Variación diaria',
+      value: kBps == null ? '—' : `${kBps >= 0 ? '+' : ''}${nEnt(kBps)} bps`,
+      tone: kBps == null ? undefined : (kBps >= 0 ? 'pos' : 'neg'),
+      meta: 'vs cierre previo',
+    },
+    {
+      label: 'Rentabilidad 12M',
+      value: r12 ? `${r12.ret >= 0 ? '+' : ''}${(r12.ret * 100).toFixed(2)}%` : '—',
+      tone: r12 ? (r12.ret >= 0 ? 'pos' : 'neg') : undefined,
+      meta: r12 ? `${r12.afp} F${fondo} · desde ${fFecha(r12.desde)}` : 'sin histórico suficiente',
+    },
+    {
+      label: 'Rezago de la serie',
+      value: `${rezago} d.h.`,
+      tone: rezago > 3 ? 'neg' : undefined,
+      meta: finCompleta ? `último cierre completo ${fFecha(finCompleta)}` : '—',
+    },
+    {
+      label: 'Integridad',
+      value: integridad,
+      tone: integridad === 'Dentro' ? 'pos' : (integridad === 'Excedido' ? 'neg' : undefined),
+      meta: abiertos ? `${abiertos} tramo(s) sin dato` : `${nEnt(estado?.completas)} fechas completas`,
+    },
+  ];
+
+  // ---- Chart traces ------------------------------------------------------
+  const series = serieData?.series || [];
+  const traces = useMemo(() => {
+    const conDatos = series.filter((s) => s.puntos.length);
+    let baseFecha = null;
+    if (escala === 'base' && conDatos.length) {
+      // First date with data in every AFP on screen: the only start that
+      // makes the rebased lines comparable.
+      const inicios = conDatos.map((s) => s.puntos[0][0]);
+      baseFecha = inicios.reduce((m, f) => (f > m ? f : m), inicios[0]);
+    }
+    return conDatos.map((s) => {
+      const color = colorDe(cfg, s.afp);
+      let pts = s.puntos;
+      let base = null;
+      if (escala === 'base') {
+        pts = s.puntos.filter((p) => p[0] >= baseFecha);
+        base = pts.length ? pts[0][1] : null;
+      }
+      return {
+        x: pts.map((p) => p[0]),
+        y: pts.map((p) => (base ? (p[1] / base) * 100 : p[1])),
+        type: 'scatter', mode: 'lines', name: s.afp,
+        line: { color, width: s.afp === casa ? 2.6 : 1.8 },
+        hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:,.4f}<extra></extra>`,
+        hoverlabel: { bordercolor: color },
+      };
+    });
+  }, [series, escala, cfg, casa]);
+
+  const ct = chartTheme();
+
+  // ---- Cierre por AFP ----------------------------------------------------
+  const cierres = (estado?.series || [])
+    .filter((x) => x.fondo === fondo && afpsSel.includes(x.afp));
+
+  // ---- Ventanas tables ---------------------------------------------------
+  const ordenRel = casa ? [casa, ...nombres.filter((a) => a !== casa)] : nombres;
+
+  function TablaVentanas({ cols, filas, conUnidad, orden }) {
+    return (
+      <div className="table-wrap spp-vent">
+        <table>
+          <thead><tr><th>Fondo</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
+          <tbody>
+            {(orden || nombres).map((afp) => {
+              const suyas = filas.filter((r) => r.afp === afp);
+              if (!suyas.length) return null;
+              const col = colorDe(cfg, afp);
+              const nota = suyas[0].absoluto === true ? ' · rendimiento absoluto' : '';
+              return [
+                <tr key={`${afp}-h`} className="spp-seccion">
+                  <td colSpan={cols.length + 1} style={{ color: col }}>{afp}{nota}</td>
+                </tr>,
+                ...suyas.map((r) => (
+                  <tr key={`${afp}-${r.fondo}`}>
+                    <td>Fondo {r.fondo}</td>
+                    {cols.map((c) => {
+                      const unidad = conUnidad ? c[2] : 'nivel';
+                      const v = r.valores[c[0]];
+                      const clase = unidad === 'nivel' ? 'num' : `num ${signo(valorMostrado(v, unidad))}`;
+                      return <td key={c[0]} className={v == null ? 'num dim' : clase}>{fmtRend(v, unidad, metrica)}</td>;
+                    })}
+                  </tr>
+                )),
+              ];
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // ---- Posiciones --------------------------------------------------------
+  const periodos = pos?.periodos || [];
+  const compitenPos = nombres.filter((a) => opera(a, fondoPos));
+  const totalPos = Math.max(2, compitenPos.length);
+  const trazasPos = useMemo(() => nombres.map((afp) => {
+    const fila = (pos?.filas || []).find((r) => r.fondo === fondoPos && r.afp === afp);
+    if (!fila) return null;
+    const xs = []; const ys = [];
+    periodos.forEach((p) => {
+      const q = fila.puestos[p.clave];
+      if (q) { xs.push(p.etiqueta); ys.push(q); }
+    });
+    if (!xs.length) return null;
+    const esCasa = afp === casa;
+    const color = esCasa ? colorDe(cfg, afp, true) : colorDe(cfg, afp);
+    return {
+      x: xs, y: ys, type: 'scatter', mode: 'lines+markers', name: afp,
+      line: { color, width: esCasa ? 3.2 : 2 },
+      marker: { size: esCasa ? 9 : 7 },
+      hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,
+    };
+  }).filter(Boolean), [pos, fondoPos, cfg, casa, nombres, periodos]);
+
+  if (error) {
+    return (
+      <div>
+        <h1 className="page-title">Valor Cuota SPP</h1>
+        <SppTabs />
+        <div className="panel error">Error: {error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="page-title">Valor Cuota SPP</h1>
+      <p className="page-sub">
+        Valor cuota diario del SPP · fuente SBS
+        {estado?.filas ? ` · ${nEnt(estado.filas)} fechas (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})` : ''}
+      </p>
+      <SppTabs />
+
+      <KpiBar tiles={kpis} />
+
+      <div className="panel">
+        <div className="controls spp-controls">
+          <div className="field"><label>Métrica</label>
+            <SppSeg items={METRICAS} value={metrica} onChange={setMetrica} /></div>
+          <div className="field"><label>Tipo de fondo</label>
+            <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
+              value={fondo}
+              onChange={(v) => {
+                setFondo(v);
+                const validas = afpsSel.filter((a) => opera(a, v));
+                setAfpsSel(validas.length ? validas : nombres.filter((a) => opera(a, v)));
+              }} /></div>
+          <div className="field"><label>Ventana</label>
+            <SppSeg items={VENTANAS} value={ventana} onChange={setVentana} /></div>
+          <div className="field"><label>Escala</label>
+            <SppSeg items={[['Nivel', 'nivel'], ['Log', 'log'], ['Base 100', 'base']]}
+              value={escala} onChange={setEscala} /></div>
+          <div className="field"><label>AFP en pantalla</label>
+            <SppSeg multi items={nombres.filter((a) => opera(a, fondo)).map((a) => [a, a])}
+              value={afpsSel} colorOf={(a) => colorDe(cfg, a)}
+              onChange={(v) => setAfpsSel((prev) => {
+                const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
+                return next.length ? next : [v];
+              })} /></div>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">
+          Serie histórica · {NOMBRE_METRICA[metrica].toLowerCase()}
+          {escala === 'base' ? ' · base 100' : ''}
+        </div>
+        {traces.length ? (
+          <PlotlyChart
+            data={traces}
+            layout={{
+              margin: { l: 70, r: 20, t: 10, b: 60 },
+              xaxis: { hoverformat: '%Y-%m-%d' },
+              yaxis: {
+                type: escala === 'log' ? 'log' : 'linear',
+                title: escala === 'base' ? 'Base 100' : NOMBRE_METRICA[metrica],
+                zeroline: false,
+              },
+            }}
+          />
+        ) : <div className="loading">Cargando…</div>}
+        {escala === 'base' && (
+          <p className="page-sub" style={{ marginTop: 8 }}>
+            En Base 100 las series parten de 100 en la primera fecha con dato en todas
+            las AFP en pantalla: es la única lectura comparable, porque cada fondo
+            arrancó en fechas y bases distintas.
+          </p>
+        )}
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">Cierre por AFP · Fondo {fondo}</div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>AFP</th><th className="num">Valor cuota</th><th className="num">Var. diaria</th>
+              <th className="num">Cuotas</th><th className="num">Fondo S/</th><th className="num">Desde</th>
+            </tr></thead>
+            <tbody>
+              {cierres.length ? cierres.map((s) => (
+                <tr key={s.afp}>
+                  <td><span className="spp-chip" style={{ background: colorDe(cfg, s.afp) }} />
+                    <b style={{ color: colorDe(cfg, s.afp, true) }}>{s.afp}</b></td>
+                  <td className="num">{nf(s.valor)}</td>
+                  <td className={`num ${signo(s.var_bps)}`}>
+                    {s.var_bps == null ? '—' : `${s.var_bps >= 0 ? '+' : ''}${s.var_bps} bps`}</td>
+                  <td className="num">{fmtMetrica(s.cuotas, 'cuotas', true)}</td>
+                  <td className="num">{fmtMetrica(s.fondo_soles, 'fondo', true)}</td>
+                  <td className="num">{s.inicio?.slice(0, 4)}</td>
+                </tr>
+              )) : <tr><td colSpan={6} className="dim">Sin datos para esta selección.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="controls" style={{ justifyContent: 'space-between' }}>
+          <div>
+            <div className="panel-title">Ventanas de rendimiento</div>
+            {vent?.control && (
+              <p className="page-sub" style={{ margin: '4px 0 0' }}>
+                Control {fFecha(vent.fechas.t)} · inicio de mes {fFecha(vent.fechas.mes)} ·
+                M-1 {fFecha(vent.fechas.mes1)} · inicio de año {fFecha(vent.fechas.anio)}
+              </p>
+            )}
+          </div>
+          <div className="field"><label>Fecha de control</label>
+            <input className="date-input" type="date" value={fechaControl}
+              onChange={(e) => setFechaControl(e.target.value)} /></div>
+        </div>
+
+        {vent?.control ? (
+          <>
+            <details className="spp-desplegable" open>
+              <summary>Valor cuota en cada fecha base</summary>
+              <TablaVentanas cols={vent.cols_nivel} filas={vent.niveles} conUnidad={false} />
+            </details>
+            <details className="spp-desplegable">
+              <summary>Rendimiento absoluto</summary>
+              <TablaVentanas cols={vent.cols_rend} filas={vent.absolutos} conUnidad />
+              <p className="page-sub">Hasta meses en puntos básicos; YTD y año pasado en porcentaje.
+                Las columnas diarias son el movimiento de ese día, no acumulados.</p>
+            </details>
+            <details className="spp-desplegable">
+              <summary>Rendimiento relativo · {casa} contra cada competidora</summary>
+              <TablaVentanas cols={(vent.cols_rend || []).filter((c) => c[2] !== 'nivel')}
+                filas={vent.relativos} conUnidad orden={ordenRel} />
+              <p className="page-sub">Cada sección es {casa} menos esa AFP: positivo significa que
+                {' '}{casa} rinde más. La sección de {casa} va en rendimiento absoluto.</p>
+            </details>
+          </>
+        ) : <div className="dim">Sin datos en el libro.</div>}
+      </div>
+
+      <div className="panel">
+        <div className="controls" style={{ justifyContent: 'space-between' }}>
+          <div className="panel-title">Posiciones mensuales por rendimiento</div>
+          <div className="field"><label>Tipo de fondo</label>
+            <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
+              value={fondoPos} onChange={setFondoPos} /></div>
+        </div>
+        {trazasPos.length ? (
+          <PlotlyChart
+            data={trazasPos}
+            style={{ height: '300px' }}
+            layout={{
+              margin: { l: 50, r: 20, t: 10, b: 50 },
+              yaxis: {
+                autorange: 'reversed', dtick: 1, range: [totalPos + 0.5, 0.5],
+                title: 'Puesto', zeroline: false,
+              },
+              xaxis: { type: 'category' },
+            }}
+          />
+        ) : <div className="dim">Sin meses cerrados suficientes.</div>}
+        <div className="table-wrap spp-vent">
+          <table>
+            <thead><tr><th>AFP</th>{periodos.map((p) => <th key={p.clave}>{p.etiqueta}</th>)}</tr></thead>
+            <tbody>
+              {compitenPos.map((afp) => {
+                const fila = (pos?.filas || []).find((r) => r.fondo === fondoPos && r.afp === afp);
+                if (!fila) return null;
+                return (
+                  <tr key={afp}>
+                    <td><span className="spp-chip" style={{ background: colorDe(cfg, afp) }} />
+                      <b style={{ color: colorDe(cfg, afp, true) }}>{afp}</b></td>
+                    {periodos.map((p) => {
+                      const q = fila.puestos[p.clave];
+                      if (!q) return <td key={p.clave} className="num dim">—</td>;
+                      const t = totalPos < 2 ? 1 : 1 - (q - 1) / (totalPos - 1);
+                      const pct = Math.round(7 + 93 * t);
+                      return (
+                        <td key={p.clave} className="num spp-puesto"
+                          style={{
+                            background: `color-mix(in srgb, ${colorDe(cfg, afp)} ${pct}%, transparent)`,
+                            color: pct >= 60 ? '#fff' : 'inherit',
+                            fontWeight: q === 1 ? 700 : 500,
+                          }}>{q}</td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="page-sub">Puesto 1 al {totalPos} por rendimiento del mes, dentro de cada tipo
+          de fondo. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
+      </div>
+    </div>
+  );
+}

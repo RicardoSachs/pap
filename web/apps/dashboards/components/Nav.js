@@ -9,6 +9,7 @@ const LINKS = [
   { href: '/prices/', label: 'Price Viewer' },
   { href: '/positioning/', label: 'Positioning' },
   { href: '/contribution/', label: 'Contribution' },
+  { href: '/spp/', label: 'Valor Cuota SPP' },
 ];
 
 export default function Nav() {

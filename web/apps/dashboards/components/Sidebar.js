@@ -16,6 +16,7 @@ const ITEMS = [
   { href: '/prices/', label: 'Prices' },
   { href: '/positioning/', label: 'Positioning' },
   { href: '/contribution/', label: 'Contribution' },
+  { href: '/spp/', label: 'Valor Cuota SPP' },
 ];
 const SOON = ['Attribution', 'Risk'];
 
@@ -24,7 +25,8 @@ export default function Sidebar({ expanded, onToggle }) {
   const params = useSearchParams();
   const qs = params.toString();
   const q = qs ? `?${qs}` : '';
-  const isActive = (href) => path === href || path === href.replace(/\/$/, '');
+  // Prefix match so sub-routes (/spp/libro) keep their sidebar entry lit.
+  const isActive = (href) => path === href || path === href.replace(/\/$/, '') || path.startsWith(href);
 
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : ''}`}>

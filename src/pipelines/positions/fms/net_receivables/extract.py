@@ -5,10 +5,10 @@
 #
 # POINT-IN-TIME, per day: unlike cash/forwards (one set-based range query),
 # the net-receivables query reconstructs the OPEN balance AS OF a single day.
-# So this loops over the XLIM (Lima) business days in [start_date, end_date],
-# runs the query once per day (the as-of date bound to both ? placeholders),
-# and stamps that day onto the rows as `date`. All days are concatenated into
-# one DataFrame for the transform.
+# So this loops over the SBS reporting days in [start_date, end_date] (a day
+# where NYSE or XLIM was open), runs the query once per day (the as-of date
+# bound to both ? placeholders), and stamps that day onto the rows as `date`.
+# All days are concatenated into one DataFrame for the transform.
 #
 # Range size validation lives here: reject ranges wider than MAX_RANGE_DAYS
 # unless force=True.
@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.vendors.fms import get_fms_connection
-from src.calendars.calendar_xlim import business_days_in_range
+from src.calendars.calendar_sbs import reporting_days_in_range
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ MAX_RANGE_DAYS = 90
 
 def extract(start_date: date, end_date: date, force: bool = False) -> pd.DataFrame:
     """
-    Pull FMS net receivables for each XLIM business day in the inclusive range.
+    Pull FMS net receivables for each SBS reporting day in the inclusive range.
 
     Returns a DataFrame with vendor-native (PascalCase) column names plus a
-    `date` column stamped per day. Empty DataFrame if no business days or no
+    `date` column stamped per day. Empty DataFrame if no reporting days or no
     rows in range.
 
     Raises ValueError if end_date < start_date, or if the range exceeds
@@ -50,14 +50,14 @@ def extract(start_date: date, end_date: date, force: bool = False) -> pd.DataFra
             f"pass force=True to override."
         )
 
-    days = business_days_in_range(start_date, end_date)
+    days = reporting_days_in_range(start_date, end_date)
     if not days:
-        logger.warning(f"no XLIM business days in {start_date}..{end_date}; nothing to extract")
+        logger.warning(f"no SBS reporting days in {start_date}..{end_date}; nothing to extract")
         return pd.DataFrame()
 
     sql = QUERY_PATH.read_text(encoding="utf-8")
     logger.info(
-        f"executing FMS net_receivables query for {len(days)} business day(s): "
+        f"executing FMS net_receivables query for {len(days)} reporting day(s): "
         f"{days[0]}..{days[-1]}"
     )
 

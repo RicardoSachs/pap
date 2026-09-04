@@ -21,6 +21,14 @@ import threading
 import traceback
 from collections import deque
 
+# The Windows scheduled-task name. Load-bearing on BOTH sides of the
+# cutover: scripts/"Programar extraccion SPP.ps1" ($Tarea, line ~34)
+# registers under this SAME name so it replaces the old monitor's task,
+# and /api/spp/programado queries it - if the two ever diverge, the
+# dashboard reports the automation dead while the scraper still runs.
+# Rename here and in the .ps1 together, or never.
+TAREA_WINDOWS = "Profuturo - Valor cuota SPP"
+
 _tarea = {"activa": False, "accion": None, "bitacora": deque(maxlen=200),
           "resultado": None, "error": None}
 _candado = threading.Lock()

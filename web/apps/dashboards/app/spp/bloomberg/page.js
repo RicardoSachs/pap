@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
 import SppTabs from '../../../components/SppTabs';
+import useSppTarea from '../../../components/useSppTarea';
 
 const INTERVALOS = ['diario', 'semanal', 'mensual', 'trimestral', 'semestral', 'anual'];
 
@@ -22,26 +23,15 @@ export default function SppBloombergPage() {
   const [estado, setEstado] = useState(null);
   const [error, setError] = useState(null);
   const [eco, setEco] = useState('');
-  const [tarea, setTarea] = useState(null);
   const [form, setForm] = useState({ ticker: '', campo: '', intervalo: 'diario', fecha_inicio: '', descripcion: '' });
   const fileRef = useRef(null);
   const [informe, setInforme] = useState(null);
-  const pollRef = useRef(null);
+
+  // Shared background-task poller (same hook as the carga tab).
+  const { tarea, iniciar } = useSppTarea();
 
   const cargar = () => apiGet('/api/spp/bloomberg').then(setEstado).catch((e) => setError(e.message));
-  useEffect(() => { cargar(); return () => clearInterval(pollRef.current); }, []);
-
-  // Poll the background task while active; refresh the registry when done.
-  const seguirTarea = () => {
-    clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const t = await apiGet('/api/spp/tarea');
-        setTarea(t);
-        if (!t.activa) { clearInterval(pollRef.current); cargar(); }
-      } catch { clearInterval(pollRef.current); }
-    }, 1200);
-  };
+  useEffect(() => { cargar(); }, []);
 
   const agregar = async () => {
     setEco('');
@@ -70,7 +60,7 @@ export default function SppBloombergPage() {
   const extraer = async (corregir) => {
     setEco('');
     const r = await apiSend('/api/spp/bloomberg/extraer', 'POST', { corregir });
-    if (r.ok) { setTarea({ activa: true, accion: 'descarga de Bloomberg', bitacora: [] }); seguirTarea(); }
+    if (r.ok) iniciar('descarga de Bloomberg', () => cargar());
     else setEco(`No se pudo lanzar: ${r.data.motivo || r.status}`);
   };
 

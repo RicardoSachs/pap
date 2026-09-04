@@ -106,7 +106,7 @@ def _fila_a_texto(fila: dict) -> dict:
 
 def registrar_serie(ticker, campo=CAMPO_POR_DEFECTO, intervalo="diario",
                     descripcion=None, moneda=None, fecha_inicio=None,
-                    activa=None) -> dict:
+                    activa=None, conn=None) -> dict:
     """
     Upserts a series by (folded ticker, campo, intervalo). What is not
     sent is not erased: redeclaring a series to fix its description
@@ -114,6 +114,8 @@ def registrar_serie(ticker, campo=CAMPO_POR_DEFECTO, intervalo="diario",
 
     :param activa: True/False to change it; None keeps the current
                    state. A new series is born active.
+    :param conn: Open connection to reuse (bulk registration passes one
+                 for the whole file instead of opening one per row).
     """
     ticker = _norm_ticker(ticker)
     campo = _norm_campo(campo)
@@ -122,38 +124,42 @@ def registrar_serie(ticker, campo=CAMPO_POR_DEFECTO, intervalo="diario",
     if inicio and inicio > dt.date.today():
         raise ValueError("La fecha de inicio no puede ser futura.")
 
-    with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO bloomberg_serie (
-                ticker, ticker_clave, campo, intervalo, descripcion,
-                moneda, fecha_inicio, activa
-            ) VALUES (%(ticker)s, %(clave)s, %(campo)s, %(intervalo)s,
-                      %(descripcion)s, %(moneda)s, %(inicio)s, %(activa)s)
-            ON CONFLICT (ticker_clave, campo, intervalo) DO UPDATE SET
-                ticker       = EXCLUDED.ticker,
-                descripcion  = COALESCE(EXCLUDED.descripcion, bloomberg_serie.descripcion),
-                moneda       = COALESCE(EXCLUDED.moneda, bloomberg_serie.moneda),
-                fecha_inicio = COALESCE(EXCLUDED.fecha_inicio, bloomberg_serie.fecha_inicio),
-                activa       = CASE WHEN %(cambia_activa)s
-                                    THEN EXCLUDED.activa
-                                    ELSE bloomberg_serie.activa END
-            """,
-            {
-                "ticker": ticker, "clave": clave_ticker(ticker),
-                "campo": campo, "intervalo": intervalo,
-                "descripcion": descripcion, "moneda": moneda, "inicio": inicio,
-                "activa": True if activa is None else bool(activa),
-                "cambia_activa": activa is not None,
-            },
-        )
-        fila = conn.execute(
-            """
-            SELECT * FROM bloomberg_serie
-            WHERE ticker_clave = %s AND campo = %s AND intervalo = %s
-            """,
-            (clave_ticker(ticker), campo, intervalo),
-        ).fetchone()
+    if conn is None:
+        with get_connection() as propia:
+            return registrar_serie(ticker, campo, intervalo, descripcion,
+                                   moneda, fecha_inicio, activa, conn=propia)
+
+    conn.execute(
+        """
+        INSERT INTO bloomberg_serie (
+            ticker, ticker_clave, campo, intervalo, descripcion,
+            moneda, fecha_inicio, activa
+        ) VALUES (%(ticker)s, %(clave)s, %(campo)s, %(intervalo)s,
+                  %(descripcion)s, %(moneda)s, %(inicio)s, %(activa)s)
+        ON CONFLICT (ticker_clave, campo, intervalo) DO UPDATE SET
+            ticker       = EXCLUDED.ticker,
+            descripcion  = COALESCE(EXCLUDED.descripcion, bloomberg_serie.descripcion),
+            moneda       = COALESCE(EXCLUDED.moneda, bloomberg_serie.moneda),
+            fecha_inicio = COALESCE(EXCLUDED.fecha_inicio, bloomberg_serie.fecha_inicio),
+            activa       = CASE WHEN %(cambia_activa)s
+                                THEN EXCLUDED.activa
+                                ELSE bloomberg_serie.activa END
+        """,
+        {
+            "ticker": ticker, "clave": clave_ticker(ticker),
+            "campo": campo, "intervalo": intervalo,
+            "descripcion": descripcion, "moneda": moneda, "inicio": inicio,
+            "activa": True if activa is None else bool(activa),
+            "cambia_activa": activa is not None,
+        },
+    )
+    fila = conn.execute(
+        """
+        SELECT * FROM bloomberg_serie
+        WHERE ticker_clave = %s AND campo = %s AND intervalo = %s
+        """,
+        (clave_ticker(ticker), campo, intervalo),
+    ).fetchone()
     return _fila_a_texto(fila) if fila else {}
 
 
@@ -174,6 +180,22 @@ def borrar_serie(serie_id: int, con_datos: bool = False) -> dict:
         conn.execute("DELETE FROM bloomberg_dato WHERE serie_id = %s", (serie_id,))
         conn.execute("DELETE FROM bloomberg_serie WHERE serie_id = %s", (serie_id,))
     return {"serie_id": serie_id, "datos_borrados": int(n)}
+
+
+def series_registro(conn=None) -> list[dict]:
+    """
+    The registry WITHOUT the coverage aggregation - for callers that
+    only need labels (ticker/campo/intervalo). series() LEFT JOINs and
+    aggregates the whole data table, which is a full-table scan once
+    bulk history is loaded; labeling a chart must not pay that.
+    """
+    sql = "SELECT * FROM bloomberg_serie ORDER BY ticker, campo, intervalo"
+    if conn is not None:
+        filas = conn.execute(sql).fetchall()
+    else:
+        with get_connection() as propia:
+            filas = propia.execute(sql).fetchall()
+    return [_fila_a_texto(f) for f in filas]
 
 
 def series(solo_activas: bool = False) -> list[dict]:
@@ -222,16 +244,15 @@ def leer(serie_ids: Optional[Iterable[int]] = None,
 def estado() -> dict:
     """Summary for the dashboard tab."""
     filas = series()
-    with get_connection() as conn:
-        total = conn.execute(
-            "SELECT COUNT(*) AS n FROM bloomberg_dato").fetchone()["n"]
     puede, motivo = disponible()
     return {
         "disponible": puede,
         "motivo": None if puede else motivo,
         "series": len(filas),
         "activas": len([f for f in filas if f["activa"]]),
-        "datos": int(total),
+        # Sum of the per-series counts the coverage query already
+        # aggregated - the FK guarantees no orphan rows exist.
+        "datos": int(sum(int(f["filas"] or 0) for f in filas)),
         "intervalos": list(INTERVALOS),
         "detalle": filas,
     }
@@ -388,16 +409,25 @@ def guardar(serie_id: int, puntos: pd.DataFrame, corregir: bool = False,
             ON CONFLICT (serie_id, fecha) DO NOTHING
         """
     with get_connection() as conn:
-        previas = {r["fecha"] for r in conn.execute(
-            "SELECT fecha FROM bloomberg_dato WHERE serie_id = %s",
-            (serie_id,)).fetchall()}
-        for fila in filas:
-            conn.execute(stmt, fila)
+        if corregir:
+            # DO UPDATE reports rowcount=1 for both paths, so splitting
+            # nuevos/actualizados still needs the existing dates - but
+            # only this branch pays for that fetch.
+            previas = {r["fecha"] for r in conn.execute(
+                "SELECT fecha FROM bloomberg_dato WHERE serie_id = %s",
+                (serie_id,)).fetchall()}
+            cur = conn.cursor()
+            cur.executemany(stmt, filas)
+            nuevos = len([f for f in filas if f[1] not in previas])
+        else:
+            # DO NOTHING: the aggregate rowcount IS the inserted count.
+            cur = conn.cursor()
+            cur.executemany(stmt, filas)
+            nuevos = cur.rowcount if cur.rowcount >= 0 else 0
         total = conn.execute(
             "SELECT COUNT(*) AS n FROM bloomberg_dato WHERE serie_id = %s",
             (serie_id,)).fetchone()["n"]
 
-    nuevos = len([f for f in filas if f[1] not in previas])
     res = {"nuevos": nuevos,
            "actualizados": (len(filas) - nuevos) if corregir else 0,
            "sin_cambio": 0 if corregir else (len(filas) - nuevos),
@@ -570,11 +600,8 @@ def leer_archivo_series(datos, hoja=None) -> dict:
         filas, _, _ = tabular.filas_de_csv(datos)
         origen, nombre_hoja = "csv", None
 
-    icab = None
-    for i, fila in enumerate(filas[:12]):
-        if any(_ALIAS_COL.get(tabular.clave_col(c)) == "ticker" for c in fila):
-            icab = i
-            break
+    icab = tabular.fila_cabecera(
+        filas, lambda c: _ALIAS_COL.get(tabular.clave_col(c)) == "ticker")
     if icab is None:
         vistas = [str(c) for f in filas[:3] for c in f
                   if str(c).strip() and str(c) != "nan"]
@@ -582,8 +609,7 @@ def leer_archivo_series(datos, hoja=None) -> dict:
             "Falta la columna 'ticker'. No se encontro una fila de encabezados "
             f"en las primeras filas. Se leyo: {', '.join(vistas[:10]) or 'nada'}")
 
-    cabecera = ["" if c is None or (isinstance(c, float) and c != c)
-                else str(c).strip() for c in filas[icab]]
+    cabecera = tabular.limpiar_cabecera(filas[icab])
     porcol, avisos = {}, []
     for i, c in enumerate(cabecera):
         if not c:
@@ -662,12 +688,19 @@ def registrar_series_archivo(datos, hoja=None, log=logger.info) -> dict:
     for a in lectura["avisos"]:
         log(f"Aviso: {a}")
 
-    previas = {(s["ticker_clave"], s["campo"], s["intervalo"]) for s in series()}
-    nuevas = 0
-    for s in lectura.pop("series"):
-        registrar_serie(**s)
-        if (clave_ticker(s["ticker"]), s["campo"], s["intervalo"]) not in previas:
-            nuevas += 1
+    # One connection for the whole file, and a keys-only previas SELECT:
+    # a per-row connection plus the coverage aggregation was pure
+    # handshake overhead for a bulk registration.
+    with get_connection() as conn:
+        previas = {(r["ticker_clave"], r["campo"], r["intervalo"])
+                   for r in conn.execute(
+                       "SELECT ticker_clave, campo, intervalo "
+                       "FROM bloomberg_serie").fetchall()}
+        nuevas = 0
+        for s in lectura.pop("series"):
+            registrar_serie(**s, conn=conn)
+            if (clave_ticker(s["ticker"]), s["campo"], s["intervalo"]) not in previas:
+                nuevas += 1
     lectura["nuevas"] = nuevas
     lectura["actualizadas"] = lectura["total"] - nuevas
     log(f"Registro: {nuevas} nuevas, {lectura['actualizadas']} actualizadas.")
@@ -698,7 +731,7 @@ def exportar_datos(serie_ids=None, desde=None, hasta=None) -> bytes:
     to a spreadsheet wants it in columns.
     """
     df = leer(serie_ids, desde, hasta)
-    reg = {s["serie_id"]: s for s in series()}
+    reg = {s["serie_id"]: s for s in series_registro()}
     if df.empty:
         ancho = pd.DataFrame(columns=["fecha"])
     else:

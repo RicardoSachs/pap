@@ -62,6 +62,49 @@ def _metrica_valida(metrica) -> str:
     return m if m in SUFIJO else "valor_cuota"
 
 
+def _metricas_pedidas(metrica: str) -> list[str]:
+    """'todas' -> the three metrics, anything else -> its valid one."""
+    return list(METRICAS) if metrica == "todas" else [_metrica_valida(metrica)]
+
+
+def _fecha_control(fechas: list, fecha) -> dt.date | None:
+    """Snaps the requested control date to the last close <= it (the
+    common rule of ventanas() and posiciones()); None when nothing
+    precedes it."""
+    control = pd.to_datetime(fecha).date() if fecha else fechas[-1]
+    if control in fechas:
+        return control
+    anteriores = [f for f in fechas if f <= control]
+    return anteriores[-1] if anteriores else None
+
+
+def _valor(porfecha: pd.DataFrame, col: str, f):
+    """One cell of the wide book, None-safe (shared lookup of
+    ventanas() and posiciones())."""
+    if f is None or col not in porfecha.columns:
+        return None
+    try:
+        v = porfecha.at[f, col]
+    except KeyError:
+        return None
+    return None if pd.isna(v) else float(v)
+
+
+def _ultima_fecha():
+    """Cheap MAX(date) probe so heavy readers can bound leer() relative
+    to the book's real end instead of fetching 30 years to use two."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT MAX(fp.date) AS ultima
+            FROM fact_prices fp
+            JOIN series_registry sr ON sr.series_id = fp.series_id
+            JOIN dim_entity e ON e.entity_id = sr.entity_id
+            WHERE e.procode LIKE 'SPP\\_%%' AND sr.source = %s
+            """, (reg.SOURCE_SBS,)).fetchone()
+    return row["ultima"] if row else None
+
+
 # ---- Book reader ----------------------------------------------------------
 
 def leer(metricas: list[str] | None = None,
@@ -209,6 +252,23 @@ def estado() -> dict:
     base["posteriores_parciales"] = (
         int((df["fecha"] > fechas_ok.max()).sum()) if len(fechas_ok) else 0)
 
+    # Staleness KPI, owned here next to the coverage semantics it depends
+    # on (the dashboard only renders tone): business days elapsed since
+    # the last COMPLETE close, and the data-quality classification.
+    fin = fechas_ok.max() if len(fechas_ok) else df["fecha"].max()
+    hoy = dt.date.today()
+    rezago = int(np.busday_count(fin + dt.timedelta(days=1),
+                                 hoy + dt.timedelta(days=1))) if fin < hoy else 0
+    abiertos = len(base["huecos"])
+    if rezago > 3 or abiertos > 1:
+        integridad = "Excedido"
+    elif abiertos == 1 or rezago > 1:
+        integridad = "Observación"
+    else:
+        integridad = "Dentro"
+    base["rezago_habiles"] = max(rezago, 0)
+    base["integridad"] = integridad
+
     def ultimo_y_var(col):
         if col not in df.columns:
             return None, None, None
@@ -329,31 +389,29 @@ def ventanas(fecha=None, metrica: str = "valor_cuota") -> dict:
     competitor) per AFP and fund, on the common closing grid.
     """
     metrica = _metrica_valida(metrica)
-    df = leer([metrica])
     vacio = {"control": None, "fechas": {}, "niveles": [], "absolutos": [],
              "relativos": [], "cols_nivel": [], "cols_rend": []}
+    # Every window base (t-5, month starts, Jan 1 of the prior year) lives
+    # within two calendar years of the control date: bound the read there
+    # instead of pulling the book since 1993 on every request.
+    tope = _ultima_fecha()
+    if tope is None:
+        return vacio
+    ancla = min(pd.to_datetime(fecha).date(), tope) if fecha else tope
+    df = leer([metrica], desde=dt.date(ancla.year - 2, 1, 1))
     if df.empty:
         return vacio
 
     fechas = sorted(df["fecha"].tolist())
-    control = pd.to_datetime(fecha).date() if fecha else fechas[-1]
-    if control not in fechas:
-        anteriores = [f for f in fechas if f <= control]
-        if not anteriores:
-            return vacio
-        control = anteriores[-1]
+    control = _fecha_control(fechas, fecha)
+    if control is None:
+        return vacio
 
     ref = fechas_referencia(fechas, control)
     porfecha = df.set_index("fecha")
 
     def valor(col, f):
-        if f is None or col not in porfecha.columns:
-            return None
-        try:
-            v = porfecha.at[f, col]
-        except KeyError:
-            return None
-        return None if pd.isna(v) else float(v)
+        return _valor(porfecha, col, f)
 
     nombres = reg.nombres()
     niveles, absolutos, rend = [], [], {}
@@ -432,18 +490,22 @@ def posiciones(fecha=None, meses: int = 24, metrica: str = "valor_cuota") -> dic
     month returns close-vs-prior-close; the last period is the MTD.
     """
     metrica = _metrica_valida(metrica)
-    df = leer([metrica])
     vacio = {"control": None, "periodos": [], "filas": [], "metrica": metrica}
+    # meses closed months plus the extra base month and MTD: bound the
+    # read to that window instead of the whole book.
+    tope = _ultima_fecha()
+    if tope is None:
+        return vacio
+    ancla = min(pd.to_datetime(fecha).date(), tope) if fecha else tope
+    inicio = _primer_dia_mes(ancla, int(meses) + 2)
+    df = leer([metrica], desde=inicio)
     if df.empty:
         return vacio
 
     fechas = sorted(df["fecha"].tolist())
-    control = pd.to_datetime(fecha).date() if fecha else fechas[-1]
-    if control not in fechas:
-        previos = [f for f in fechas if f <= control]
-        if not previos:
-            return vacio
-        control = previos[-1]
+    control = _fecha_control(fechas, fecha)
+    if control is None:
+        return vacio
 
     por_mes: dict[tuple, dt.date] = {}
     for f in fechas:
@@ -469,13 +531,7 @@ def posiciones(fecha=None, meses: int = 24, metrica: str = "valor_cuota") -> dic
     porfecha = df.set_index("fecha")
 
     def valor(col, f):
-        if f is None or col not in porfecha.columns:
-            return None
-        try:
-            v = porfecha.at[f, col]
-        except KeyError:
-            return None
-        return None if pd.isna(v) else float(v)
+        return _valor(porfecha, col, f)
 
     nombres = reg.nombres()
     filas = []
@@ -515,10 +571,7 @@ def columnas_pedidas(metrica: str, fondo_arg: str) -> list[dict]:
     what is on screen. Only combinations that exist: an AFP that does
     not operate a fund must not contribute a dash column.
     """
-    if metrica == "todas":
-        metricas = list(METRICAS)
-    else:
-        metricas = [_metrica_valida(metrica)]
+    metricas = _metricas_pedidas(metrica)
 
     if fondo_arg == "todos":
         fondos_sel = reg.fondos()
@@ -534,11 +587,37 @@ def columnas_pedidas(metrica: str, fondo_arg: str) -> list[dict]:
             for m in metricas]
 
 
+def _corte_reciente(metricas: list[str], n: int, hasta=None):
+    """
+    First date of the last `n` distinct dates carrying any of the given
+    metrics - resolved in SQL so a 60-row view does not fetch and pivot
+    the book since 1993 to keep 60 dates.
+    """
+    fields = [reg.METRICA_FIELD[m] for m in metricas]
+    sql = """
+        SELECT DISTINCT fp.date
+        FROM fact_prices fp
+        JOIN series_registry sr ON sr.series_id = fp.series_id
+        JOIN dim_entity e ON e.entity_id = sr.entity_id
+        WHERE e.procode LIKE 'SPP\\_%%'
+          AND sr.source = %s AND sr.field = ANY(%s)
+    """
+    params: list = [reg.SOURCE_SBS, fields]
+    if hasta:
+        sql += " AND fp.date <= %s::date"
+        params.append(str(hasta))
+    sql += " ORDER BY fp.date DESC LIMIT %s"
+    params.append(int(n))
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return rows[-1]["date"] if rows else None
+
+
 def tabla(limite, metrica: str, fondo_arg: str) -> dict:
     columnas_sel = columnas_pedidas(metrica, fondo_arg)
-    metricas = ([m for m in METRICAS]
-                if metrica == "todas" else [_metrica_valida(metrica)])
-    df = leer(metricas)
+    metricas = _metricas_pedidas(metrica)
+    desde = _corte_reciente(metricas, limite) if limite else None
+    df = leer(metricas, desde=desde)
     if df.empty:
         return {"columnas": columnas_sel, "metrica": metrica,
                 "fondo": fondo_arg, "filas": []}
@@ -558,8 +637,11 @@ def exportar_csv(metrica: str, fondo_arg: str, limite,
                  desde=None, hasta=None) -> bytes:
     """The same cut as tabla(), as CSV bytes built in memory."""
     columnas_sel = [c["col"] for c in columnas_pedidas(metrica, fondo_arg)]
-    metricas = ([m for m in METRICAS]
-                if metrica == "todas" else [_metrica_valida(metrica)])
+    metricas = _metricas_pedidas(metrica)
+    if limite:
+        corte = _corte_reciente(metricas, limite, hasta=hasta)
+        if corte is not None:
+            desde = max(pd.to_datetime(desde).date(), corte) if desde else corte
     df = leer(metricas, desde, hasta)
     presentes = [c for c in columnas_sel if c in df.columns]
     df = df[["fecha"] + presentes] if not df.empty else df

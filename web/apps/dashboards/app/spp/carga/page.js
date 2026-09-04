@@ -14,9 +14,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import {
-  METRICAS, NOMBRE_METRICA, apiSend, apiUrl, fFecha, fmtMetrica, hoyLocal, nEnt,
+  apiSend, apiUrl, fFecha, fmtMetrica, fondosDe as fondosDeCfg, hoyLocal,
+  metricasDe, nEnt, nombreMetrica,
 } from '../../../lib/spp';
 import SppTabs from '../../../components/SppTabs';
+import useSppTarea from '../../../components/useSppTarea';
 
 const fHora = (t) => {
   if (!t) return '—';
@@ -68,28 +70,15 @@ export default function SppCargaPage() {
   const [cfg, setCfg] = useState(null);
   const [estado, setEstado] = useState(null);
 
-  // ---- shared background task ----
-  const [tarea, setTarea] = useState(null);
-  const [ocupado, setOcupado] = useState(false);
-  const pollRef = useRef(null);
+  // ---- shared background task (hook shared with the Bloomberg tab) ----
+  const { tarea, ocupado, iniciar } = useSppTarea();
 
   const cargarEstado = () => apiGet('/api/spp/estado').then(setEstado).catch(() => {});
 
-  const sondear = (alTerminar) => {
-    clearInterval(pollRef.current);
-    setOcupado(true);
-    pollRef.current = setInterval(async () => {
-      try {
-        const t = await apiGet('/api/spp/tarea');
-        setTarea(t);
-        if (!t.activa) {
-          clearInterval(pollRef.current);
-          setOcupado(false);
-          cargarEstado(); cargarProgramado();
-          if (alTerminar) alTerminar(t);
-        }
-      } catch { clearInterval(pollRef.current); setOcupado(false); }
-    }, 900);
+  const alTerminarTarea = (despues) => (t) => {
+    cargarEstado();
+    cargarProgramado();
+    if (despues) despues(t);
   };
 
   // ---- extraccion + corrida automatica ----
@@ -103,8 +92,7 @@ export default function SppCargaPage() {
     setEcoExtraer('');
     const r = await apiSend('/api/spp/extraer', 'POST', { refrescar });
     if (!r.ok) { setEcoExtraer(r.data.motivo || `Error ${r.status}`); return; }
-    setTarea({ activa: true, accion: 'extraccion SBS', bitacora: [] });
-    sondear();
+    iniciar('extraccion SBS', alTerminarTarea());
   };
 
   // ---- registro manual ----
@@ -118,11 +106,7 @@ export default function SppCargaPage() {
   const [rTick, setRTick] = useState(0);   // bumps to reload the preload after writing
 
   const nombres = (cfg?.afps || []).map((a) => a.nombre);
-  const opera = (afp, f) => {
-    const a = (cfg?.afps || []).find((x) => x.nombre === afp);
-    return a ? a.fondos.includes(f) : true;
-  };
-  const fondosDe = (afp) => (cfg?.fondos || []).filter((f) => opera(afp, f));
+  const fondosDe = (afp) => fondosDeCfg(cfg, afp);
 
   useEffect(() => {
     apiGet('/api/spp/config').then((c) => {
@@ -132,7 +116,6 @@ export default function SppCargaPage() {
     setRFecha(hoyLocal());
     cargarEstado();
     cargarProgramado();
-    return () => clearInterval(pollRef.current);
   }, []);
 
   // Preload the fund boxes with what the book already holds (±12 days for
@@ -144,7 +127,7 @@ export default function SppCargaPage() {
     if (!cfg || !rFecha || !rAfp) return undefined;
     const fondos = fondosDe(rAfp);
     setRValores(Object.fromEntries(fondos.map((fo) => [fo, ''])));
-    setRActual(`${rAfp} · ${NOMBRE_METRICA[rMetrica]} · ${fFecha(rFecha)} — cargando…`);
+    setRActual(`${rAfp} · ${nombreMetrica(cfg, rMetrica)} · ${fFecha(rFecha)} — cargando…`);
     setRVecinos({ fondos, fechas: [], series: {} });
     let vigente = true;
 
@@ -168,8 +151,8 @@ export default function SppCargaPage() {
       });
       setRValores(vals);
       setRActual(cargados
-        ? `${rAfp} · ${NOMBRE_METRICA[rMetrica]} · ${fFecha(rFecha)} — ${cargados} de ${fondos.length} fondos ya registrados.`
-        : `${rAfp} · ${NOMBRE_METRICA[rMetrica]} · ${fFecha(rFecha)} — sin datos ese día.`);
+        ? `${rAfp} · ${nombreMetrica(cfg, rMetrica)} · ${fFecha(rFecha)} — ${cargados} de ${fondos.length} fondos ya registrados.`
+        : `${rAfp} · ${nombreMetrica(cfg, rMetrica)} · ${fFecha(rFecha)} — sin datos ese día.`);
       const fechas = [...new Set(fondos.flatMap((fo) => series[fo].map((p) => p[0])))]
         .sort().slice(-9).reverse();
       setRVecinos({ fondos, fechas, series });
@@ -180,29 +163,40 @@ export default function SppCargaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, rFecha, rAfp, rMetrica, rTick]);
 
+  // Shared grammar of both manual forms (valor cuota / benchmark): the
+  // {fondo: null|Number} payload and the result-summary wording live once.
+  const construirValores = (fondos, valores, vaciarTodo) => Object.fromEntries(
+    fondos.map((fo) => {
+      const v = String(valores[fo] ?? '').trim();
+      return [fo, vaciarTodo ? null : (v === '' ? null : Number(v))];
+    }));
+  const resumenRegistro = (x, { extra = '', nueva = ' · fila nueva',
+    borrada = ' · la fecha salió de la tabla' } = {}) => {
+    const g = Object.keys(x.guardados).length; const b = x.borrados.length;
+    return `${g} valor(es) guardados${b ? ` · ${b} borrados` : ''}${extra}`
+      + (x.fila_nueva ? nueva : '') + (x.fila_borrada ? borrada : '');
+  };
+
   const registrar = async (vaciarTodo) => {
     if (!vaciarTodo && !Object.values(rValores).some((v) => String(v).trim() !== '')) {
       setRMensaje({ ok: false, texto: 'No hay ningún valor escrito. Para borrar la fecha usa «Anular la fecha».' });
       return;
     }
     if (vaciarTodo && !window.confirm(
-      `Anular ${rAfp} · ${NOMBRE_METRICA[rMetrica]} · ${fFecha(rFecha)}: borra los valores de todos sus fondos en esa fecha. ¿Continuar?`)) return;
-    const valores = {};
-    fondosDe(rAfp).forEach((fo) => {
-      const v = String(rValores[fo] ?? '').trim();
-      valores[fo] = vaciarTodo ? null : (v === '' ? null : Number(v));
-    });
+      `Anular ${rAfp} · ${nombreMetrica(cfg, rMetrica)} · ${fFecha(rFecha)}: borra los valores de todos sus fondos en esa fecha. ¿Continuar?`)) return;
+    const valores = construirValores(fondosDe(rAfp), rValores, vaciarTodo);
     const r = await apiSend('/api/spp/valor', 'POST', {
       fecha: rFecha, afp: rAfp, metrica: rMetrica, valores,
     });
     if (!r.ok) { setRMensaje({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
     const x = r.data.resultado;
-    const g = Object.keys(x.guardados).length; const b = x.borrados.length;
     setRMensaje({
       ok: true,
-      texto: `${g} valor(es) guardados${b ? ` · ${b} borrados` : ''} · ${x.afp} · ${NOMBRE_METRICA[x.metrica]} · ${fFecha(x.fecha)}`
-        + (x.fila_nueva ? ' · fila nueva en el libro' : '')
-        + (x.fila_borrada ? ' · la fecha quedó sin datos y salió del libro' : ''),
+      texto: resumenRegistro(x, {
+        extra: ` · ${x.afp} · ${nombreMetrica(cfg, x.metrica)} · ${fFecha(x.fecha)}`,
+        nueva: ' · fila nueva en el libro',
+        borrada: ' · la fecha quedó sin datos y salió del libro',
+      }),
     });
     setRTick((t) => t + 1);   // reload the boxes and neighbors with what was written
     cargarEstado();
@@ -240,14 +234,14 @@ export default function SppCargaPage() {
     const r = await apiSend('/api/spp/historico/cargar', 'POST', { vale: hVale, modo });
     if (!r.ok) { setHEco(r.data.motivo || `Error ${r.status}`); return; }
     setHEco('Guardando en la base…');
-    sondear((t) => {
+    iniciar(`carga historica (${modo})`, alTerminarTarea((t) => {
       if (t.error) {
         setHEco('La carga falló y no se guardó nada nuevo. Puedes reintentar sin volver a subir el archivo.');
       } else {
         setHEco(`Cargado en modo ${modo === 'faltantes' ? 'solo lo que falta' : 'corregir'}.`);
         setHVale(null);
       }
-    });
+    }));
   };
 
   const filasInformeH = (i) => {
@@ -304,18 +298,10 @@ export default function SppCargaPage() {
     }
     if (vaciarTodo && !window.confirm(
       `Anular el benchmark del ${fFecha(bFecha)} en todos los fondos. ¿Continuar?`)) return;
-    const valores = {};
-    fondosBench.forEach((fo) => {
-      const v = String(bValores[fo] ?? '').trim();
-      valores[fo] = vaciarTodo ? null : (v === '' ? null : Number(v));
-    });
+    const valores = construirValores(fondosBench, bValores, vaciarTodo);
     const r = await apiSend('/api/spp/benchmark/valor', 'POST', { fecha: bFecha, valores });
     if (!r.ok) { setBEco(r.data.motivo || `Error ${r.status}`); return; }
-    const x = r.data.resultado;
-    const g = Object.keys(x.guardados).length; const b = x.borrados.length;
-    let t = `${g} valor(es) guardados${b ? ` · ${b} borrados` : ''}`;
-    if (x.fila_nueva) t += ' · fila nueva';
-    if (x.fila_borrada) t += ' · la fecha salió de la tabla';
+    const t = resumenRegistro(r.data.resultado);
     await verBench(bFecha); cargarBench();
     setBEco(t);
   };
@@ -410,7 +396,7 @@ export default function SppCargaPage() {
               </select></div>
             <div className="field"><label>Métrica</label>
               <select className="select" value={rMetrica} onChange={(e) => setRMetrica(e.target.value)}>
-                {METRICAS.map(([et, v]) => <option key={v} value={v}>{et}</option>)}
+                {metricasDe(cfg).map(([et, v]) => <option key={v} value={v}>{et}</option>)}
               </select></div>
           </div>
           <div className="controls spp-controls" style={{ marginTop: 10 }}>

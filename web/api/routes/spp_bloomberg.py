@@ -19,14 +19,12 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from src.pipelines.prices.bloomberg import manual_series as bbg
+from web.api.routes._spp_comun import XLSX, es_si, leer_archivo, parse_ids
 from web.api.services.spp_tarea import estado_tarea, lanzar
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/spp", tags=["spp-bloomberg"])
-
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-MAX_SUBIDA = 40 * 10**6
 
 
 @router.get("/tarea")
@@ -68,7 +66,7 @@ def post_serie(datos: dict) -> JSONResponse:
 @router.delete("/bloomberg/serie/{serie_id}")
 def delete_serie(serie_id: int, datos: str = Query("")) -> JSONResponse:
     """Refuses when the series has data unless ?datos=1 confirms it."""
-    con_datos = datos.lower() in ("1", "true", "si")
+    con_datos = es_si(datos)
     try:
         return JSONResponse({"ok": True,
                              "resultado": bbg.borrar_serie(serie_id, con_datos)})
@@ -87,14 +85,10 @@ async def post_archivo(archivo: UploadFile = File(...),
     Bulk registration from an Excel/CSV. With revisar=1 only reports what
     was read - nothing registers without having been shown first.
     """
-    crudo = await archivo.read()
-    if not crudo:
-        return JSONResponse({"ok": False, "motivo": "No llego ningun archivo."},
-                            status_code=400)
-    if len(crudo) > MAX_SUBIDA:
-        return JSONResponse({"ok": False, "motivo": "El archivo es demasiado grande."},
-                            status_code=400)
-    solo_revisar = revisar.lower() in ("1", "true", "si")
+    crudo, error = await leer_archivo(archivo)
+    if error:
+        return error
+    solo_revisar = es_si(revisar)
     try:
         if solo_revisar:
             informe = bbg.leer_archivo_series(crudo, hoja=hoja.strip() or None)
@@ -139,17 +133,12 @@ def get_datos(series: str = Query(""),
               desde: str | None = Query(None),
               hasta: str | None = Query(None)) -> JSONResponse:
     """Points of one or several series, to chart them."""
-    ids = None
-    crudo = series.strip()
-    if crudo:
-        try:
-            ids = [int(x) for x in crudo.split(",") if x.strip()]
-        except ValueError:
-            return JSONResponse({"ok": False, "motivo": "Lista de series no valida."},
-                                status_code=400)
+    ids, error = parse_ids(series)
+    if error:
+        return error
 
     df = bbg.leer(ids, desde or None, hasta or None)
-    registro = {s["serie_id"]: s for s in bbg.series()}
+    registro = {s["serie_id"]: s for s in bbg.series_registro()}
     salida = []
     for sid, grupo in (df.groupby("serie_id") if not df.empty else []):
         s = registro.get(int(sid), {})
@@ -176,14 +165,9 @@ def get_plantilla() -> Response:
 def get_exportar(series: str = Query(""),
                  desde: str | None = Query(None),
                  hasta: str | None = Query(None)):
-    ids = None
-    crudo = series.strip()
-    if crudo:
-        try:
-            ids = [int(x) for x in crudo.split(",") if x.strip()]
-        except ValueError:
-            return JSONResponse({"ok": False, "motivo": "Lista de series no valida."},
-                                status_code=400)
+    ids, error = parse_ids(series)
+    if error:
+        return error
     datos = bbg.exportar_datos(ids, desde or None, hasta or None)
     return Response(datos, media_type=XLSX,
                     headers={"Content-Disposition":

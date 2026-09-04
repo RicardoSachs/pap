@@ -26,6 +26,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 from src.pipelines.prices.sbs.valor_cuota.afps import clave_de, opera
+from src.shared import tabular
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +43,12 @@ STG_COLUMNS = ["afp", "fondo", "valor_cuota", "cuotas", "fondo_soles",
 
 
 def _num(valor):
-    if valor is None:
-        return None
-    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
-        # NaN (an empty Excel cell) is "no value", not a value: letting it
-        # through would create fact rows with NaN prices.
-        return None if valor != valor else float(valor)
-    limpio = str(valor).strip().replace(",", "").replace("%", "")
-    if limpio in ("", "-", "--", "n.d.", "N.D."):
-        return None
-    try:
-        return float(limpio)
-    except ValueError:
-        return None
+    """SBS cell -> float|None. Delegates to the shared tolerant parser
+    (typed passthrough, NaN guard, null tokens, thousands commas); only
+    the '%' strip is local because the shared reader never sees one."""
+    if isinstance(valor, str):
+        valor = valor.replace("%", "")
+    return tabular.num_flexible(valor, coma_decimal=False)
 
 
 def parse_daily(html: str, no_registradas: set | None = None) -> pd.DataFrame:
@@ -201,33 +195,40 @@ def prepare_stg(df: pd.DataFrame, fuente: str) -> pd.DataFrame:
     return out[STG_COLUMNS]
 
 
+STG_INSERT = """
+    INSERT INTO stg_prices_sbs_valor_cuota (
+        afp, fondo, valor_cuota, cuotas, fondo_soles,
+        fuente, date, loaded_at
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (afp, fondo, date, loaded_at) DO NOTHING
+"""
+
+# Same batching threshold rationale as loader.py: the daily scrape (~100
+# rows) keeps the per-row convention, the historical XLS (~100k rows)
+# goes through executemany in one round trip.
+LOTE_MINIMO = 1000
+
+
 def load_stg(conn, df: pd.DataFrame) -> int:
-    """
-    Row-by-row INSERT into stg_prices_sbs_valor_cuota (project-wide
-    convention: never trips the parameter cap, and per-row errors name
-    the offending row).
-    """
     if df.empty:
         return 0
-    inserted = 0
-    for _, row in df.iterrows():
-        cur = conn.execute(
-            """
-            INSERT INTO stg_prices_sbs_valor_cuota (
-                afp, fondo, valor_cuota, cuotas, fondo_soles,
-                fuente, date, loaded_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (afp, fondo, date, loaded_at) DO NOTHING
-            """,
-            (
-                row["afp"], int(row["fondo"]),
-                _f(row.get("valor_cuota")), _f(row.get("cuotas")),
-                _f(row.get("fondo_soles")),
-                row.get("fuente"), row["date"], row["loaded_at"],
-            ),
-        )
-        if cur.rowcount > 0:
-            inserted += 1
+    params = [
+        (row["afp"], int(row["fondo"]),
+         _f(row.get("valor_cuota")), _f(row.get("cuotas")),
+         _f(row.get("fondo_soles")),
+         row.get("fuente"), row["date"], row["loaded_at"])
+        for _, row in df.iterrows()
+    ]
+    if len(params) >= LOTE_MINIMO:
+        cur = conn.cursor()
+        cur.executemany(STG_INSERT, params)
+        inserted = cur.rowcount if cur.rowcount >= 0 else 0
+    else:
+        inserted = 0
+        for p in params:
+            cur = conn.execute(STG_INSERT, p)
+            if cur.rowcount > 0:
+                inserted += 1
     logger.info(f"stg_prices_sbs_valor_cuota: {inserted} rows staged.")
     return inserted
 

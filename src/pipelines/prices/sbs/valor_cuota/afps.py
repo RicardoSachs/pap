@@ -25,13 +25,13 @@
 # ---------------------------------------------------------------
 
 import logging
-import unicodedata
 from datetime import date
 from functools import lru_cache
 
 import yaml
 
 from src.shared.paths import CONFIG_DIR
+from src.shared.tabular import sin_tildes as _sin_tildes
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,6 @@ ETIQUETA_METRICA = {
 # only exist from the first daily-page extraction onward, but the
 # registry start date is informational, not a hard floor.
 DEFAULT_START = date(1993, 8, 2)
-
-
-def _sin_tildes(t: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFD", t)
-                   if unicodedata.category(c) != "Mn")
 
 
 def _norm(t) -> str:

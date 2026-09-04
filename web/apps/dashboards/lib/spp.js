@@ -7,7 +7,7 @@
 // Peruvian desk convention (M = thousands, MM = millions).
 // ---------------------------------------------------------------------------
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+import { BASE } from './api';
 
 // Absolute URL for download links (CSV/XLSX) that bypass fetch.
 export const apiUrl = (path) => `${BASE}${path}`;
@@ -27,18 +27,41 @@ export async function apiSend(path, method, body, isForm = false) {
   return { ok: res.ok, status: res.status, data };
 }
 
+// FALLBACKS only, for the instant before /api/spp/config arrives: the
+// metric universe and its labels are owned by the backend (cfg.metricas)
+// - use metricasDe(cfg) / nombreMetrica(cfg, clave) below.
 export const METRICAS = [
   ['Valor cuota', 'valor_cuota'],
   ['Cuotas', 'cuotas'],
-  ['Fondo S/', 'fondo'],
+  ['Fondo (S/)', 'fondo'],
 ];
 export const NOMBRE_METRICA = {
   valor_cuota: 'Valor cuota', cuotas: 'Cuotas', fondo: 'Fondo (S/)',
 };
+// Presentation copy, legitimately client-side ("Último cuotas" can't be said).
 export const ROTULO_KPI = {
   valor_cuota: 'Último valor cuota', cuotas: 'Cuotas al cierre',
   fondo: 'Fondo al cierre (S/)',
 };
+
+// ---- Config-driven helpers ------------------------------------------------
+// The interface names no AFP and no metric: everything comes from
+// /api/spp/config. These are the one copy of the cfg lookups the pages share.
+export const afpDe = (cfg, afp) => (cfg?.afps || []).find((a) => a.nombre === afp);
+export const opera = (cfg, afp, f) => {
+  const a = afpDe(cfg, afp);
+  return a ? a.fondos.includes(f) : true;
+};
+export const fondosDe = (cfg, afp) => (cfg?.fondos || []).filter((f) => opera(cfg, afp, f));
+export const colorDe = (cfg, afp, solido = false) => {
+  const a = afpDe(cfg, afp);
+  return a ? (solido ? a.color_solido : a.color) : '#8892A4';
+};
+export const metricasDe = (cfg) =>
+  (cfg?.metricas?.length ? cfg.metricas.map((m) => [m.etiqueta, m.clave]) : METRICAS);
+export const nombreMetrica = (cfg, clave) =>
+  (cfg?.metricas || []).find((m) => m.clave === clave)?.etiqueta
+    || NOMBRE_METRICA[clave] || clave;
 export const VENTANAS = [
   ['MTD', 'mtd'], ['YTD', 'ytd'], ['1A', 1], ['3A', 3], ['5A', 5], ['10A', 10],
 ];

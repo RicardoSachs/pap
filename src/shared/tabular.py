@@ -158,6 +158,28 @@ def estilo_decimal(celdas: list):
     return coma > punto
 
 
+def fila_cabecera(filas: list, es_cabecera, limite: int = 12):
+    """
+    Index of the first row satisfying `es_cabecera(celda)` for any cell,
+    or None. Hand-made spreadsheets bring titles, cut-off dates or blank
+    lines before the headers, so the table is FOUND, never assumed to
+    start at row one.
+
+    :param es_cabecera: Predicate over a raw cell value
+    :rtype: int | None
+    """
+    for i, fila in enumerate(filas[:limite]):
+        if any(es_cabecera(c) for c in fila):
+            return i
+    return None
+
+
+def limpiar_cabecera(fila: list) -> list:
+    """Header cells as stripped strings, NaN/None as empty."""
+    return ["" if c is None or (isinstance(c, float) and c != c)
+            else str(c).strip() for c in fila]
+
+
 def fecha_flexible(texto):
     """
     A date from any reasonable form: date/datetime objects, Excel

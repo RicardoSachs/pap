@@ -15,8 +15,8 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  METRICAS, NOMBRE_METRICA, ROTULO_KPI, VENTANAS,
-  desdeVentana, fFecha, fmtMetrica, fmtRend, nEnt, nf, signo, valorMostrado,
+  ROTULO_KPI, VENTANAS, colorDe, desdeVentana, fFecha, fmtMetrica, fmtRend,
+  metricasDe, nEnt, nf, nombreMetrica, opera as operaCfg, signo, valorMostrado,
 } from '../../lib/spp';
 import KpiBar from '../../components/KpiBar';
 import SppSeg from '../../components/SppSeg';
@@ -24,11 +24,6 @@ import SppTabs from '../../components/SppTabs';
 import { chartTheme } from '../../lib/theme';
 
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
-
-const colorDe = (cfg, afp, solido = false) => {
-  const a = (cfg?.afps || []).find((x) => x.nombre === afp);
-  return a ? (solido ? a.color_solido : a.color) : '#8892A4';
-};
 
 export default function SppPanelPage() {
   const [cfg, setCfg] = useState(null);
@@ -58,10 +53,7 @@ export default function SppPanelPage() {
 
   const nombres = useMemo(() => (cfg?.afps || []).map((a) => a.nombre), [cfg]);
   const casa = cfg?.casa;
-  const opera = (afp, f) => {
-    const a = (cfg?.afps || []).find((x) => x.nombre === afp);
-    return a ? a.fondos.includes(f) : true;
-  };
+  const opera = (afp, f) => operaCfg(cfg, afp, f);
 
   // Historic series follows the metric/fund/window/AFP selection.
   useEffect(() => {
@@ -111,15 +103,12 @@ export default function SppPanelPage() {
   const kBps = sRef ? sRef[campo[1]] : null;
   const kCuando = sRef ? sRef[campo[2]] : null;
 
+  // Staleness policy lives with the coverage semantics in the backend
+  // (estado.rezago_habiles / estado.integridad) - the page only renders tone.
   const finCompleta = estado?.hasta_completa || estado?.hasta;
-  let rezago = 0;
-  if (finCompleta) {
-    const c = new Date(`${finCompleta}T00:00:00`); const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    while (c < hoy) { c.setDate(c.getDate() + 1); const d = c.getDay(); if (d !== 0 && d !== 6 && c <= hoy) rezago++; }
-  }
+  const rezago = estado?.rezago_habiles ?? 0;
   const abiertos = (estado?.huecos || []).length;
-  const integridad = (rezago > 3 || abiertos > 1) ? 'Excedido'
-    : (abiertos === 1 || rezago > 1) ? 'Observación' : 'Dentro';
+  const integridad = estado?.integridad || 'Dentro';
 
   const kpis = [
     {
@@ -273,7 +262,7 @@ export default function SppPanelPage() {
       <div className="panel">
         <div className="controls spp-controls">
           <div className="field"><label>Métrica</label>
-            <SppSeg items={METRICAS} value={metrica} onChange={setMetrica} /></div>
+            <SppSeg items={metricasDe(cfg)} value={metrica} onChange={setMetrica} /></div>
           <div className="field"><label>Tipo de fondo</label>
             <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
               value={fondo}
@@ -299,7 +288,7 @@ export default function SppPanelPage() {
 
       <div className="panel">
         <div className="panel-title">
-          Serie histórica · {NOMBRE_METRICA[metrica].toLowerCase()}
+          Serie histórica · {nombreMetrica(cfg, metrica).toLowerCase()}
           {escala === 'base' ? ' · base 100' : ''}
         </div>
         {traces.length ? (
@@ -310,7 +299,7 @@ export default function SppPanelPage() {
               xaxis: { hoverformat: '%Y-%m-%d' },
               yaxis: {
                 type: escala === 'log' ? 'log' : 'linear',
-                title: escala === 'base' ? 'Base 100' : NOMBRE_METRICA[metrica],
+                title: escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
                 zeroline: false,
               },
             }}

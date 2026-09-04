@@ -46,14 +46,18 @@ def transform(stg_df: pd.DataFrame,
     fact_rows = []
     sin_serie: set[str] = set()
 
-    for _, row in stg_df.iterrows():
+    # Column-wise zip instead of iterrows: the historical XLS brings
+    # ~100k staged rows through here inside a request the user waits on,
+    # and materializing a Series per row costs ~10x for nothing.
+    columnas = [stg_df["afp"], stg_df["fondo"], stg_df["date"]]
+    columnas += [stg_df[c] for c in STG_METRICA]
+    for afp, fondo, fecha, *metricas in zip(*columnas):
         try:
-            code = procode(row["afp"], int(row["fondo"]))
+            code = procode(afp, int(fondo))
         except ValueError:
-            sin_serie.add(f"{row['afp']}_f{row['fondo']}")
+            sin_serie.add(f"{afp}_f{fondo}")
             continue
-        for stg_col, metrica in STG_METRICA.items():
-            val = row.get(stg_col)
+        for (stg_col, metrica), val in zip(STG_METRICA.items(), metricas):
             if val is None or pd.isna(val):
                 continue
             serie = series_map.get((code, METRICA_FIELD[metrica]))
@@ -62,7 +66,7 @@ def transform(stg_df: pd.DataFrame,
                 continue
             fact_rows.append({
                 "series_id": serie["series_id"],
-                "date": row["date"],
+                "date": fecha,
                 "value": float(val),
                 "source": SOURCE_SBS,
             })

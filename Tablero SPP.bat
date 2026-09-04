@@ -1,7 +1,10 @@
 @echo off
 rem Doble clic para levantar el tablero: API FastAPI + dashboard compilado
-rem en un solo origen (puerto 8000), y abre el navegador en la vista SPP.
+rem en un solo origen, y abre el navegador en la vista SPP.
 rem Cerrar la ventana "Tablero SPP (API)" detiene el servidor.
+
+rem Un solo lugar para el puerto: guardia, uvicorn y navegador deben coincidir.
+set "PUERTO=8000"
 
 cd /d "%~dp0"
 
@@ -19,14 +22,16 @@ if not exist "web\apps\dashboards\out\index.html" (
   pause
 )
 
-rem Si ya hay un servidor en el 8000, no levantar otro: solo abrir el navegador.
-netstat -ano | findstr ":8000" | findstr "LISTENING" >nul
+rem Si el tablero ya responde en el puerto, no levantar otro: solo abrir el
+rem navegador. Se comprueba contra /api/health y no contra netstat, para no
+rem confundir cualquier otro proceso que escuche en el puerto con el tablero.
+curl -s -m 2 http://127.0.0.1:%PUERTO%/api/health | findstr "ok" >nul
 if %errorlevel%==0 (
   echo El tablero ya esta corriendo; abriendo el navegador...
-  start "" http://127.0.0.1:8000/spp/
+  start "" http://127.0.0.1:%PUERTO%/spp/
   exit /b 0
 )
 
-start "Tablero SPP (API)" .venv\Scripts\python.exe -m uvicorn web.api.main:app --port 8000
+start "Tablero SPP (API)" .venv\Scripts\python.exe -m uvicorn web.api.main:app --port %PUERTO%
 timeout /t 3 /nobreak >nul
-start "" http://127.0.0.1:8000/spp/
+start "" http://127.0.0.1:%PUERTO%/spp/

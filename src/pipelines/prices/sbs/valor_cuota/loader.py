@@ -1,6 +1,10 @@
 # src/pipelines/prices/sbs/valor_cuota/loader.py
 # ---------------------------------------------------------------
-# Loads transformed valor cuota rows into fact_prices.
+# Loads valor cuota rows into fact_prices, and owns the ONE pair of
+# fact_prices upsert statements every SPP write path shares (daily
+# load, manual registration, benchmark, migration). The SQL lives
+# here once so a change to the conflict clause or source semantics
+# cannot drift between writers.
 #
 # Default is ON CONFLICT DO NOTHING: re-running never duplicates and
 # never overwrites. refresh=True switches to DO UPDATE for the case
@@ -15,36 +19,55 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+UPSERT_NADA = """
+    INSERT INTO fact_prices (series_id, date, price, source)
+    VALUES (%s, %s, %s, %s)
+    ON CONFLICT (series_id, date) DO NOTHING
+"""
+UPSERT_CORRIGE = """
+    INSERT INTO fact_prices (series_id, date, price, source)
+    VALUES (%s, %s, %s, %s)
+    ON CONFLICT (series_id, date) DO UPDATE SET
+        price = EXCLUDED.price,
+        source = EXCLUDED.source
+"""
+
+# Above this many rows the per-row convention (which exists so an error
+# names the offending row) costs more than it informs: the historical
+# XLS brings ~100k values and one round trip per value dominates the
+# load. executemany keeps the same statement and the aggregate counts.
+LOTE_MINIMO = 1000
+
+
+def upsert_fact(conn, series_id: int, fecha, valor: float, source: str,
+                refresh: bool = False) -> bool:
+    """One fact row through the shared statement. True when written."""
+    cur = conn.execute(UPSERT_CORRIGE if refresh else UPSERT_NADA,
+                       (int(series_id), fecha, float(valor), source))
+    return cur.rowcount > 0
+
 
 def load_facts(conn, df: pd.DataFrame, refresh: bool = False) -> tuple[int, int]:
     """Returns (loaded, skipped_or_updated)."""
     if df.empty:
         return 0, 0
-    if refresh:
-        stmt = """
-            INSERT INTO fact_prices (series_id, date, price, source)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (series_id, date) DO UPDATE SET
-                price = EXCLUDED.price,
-                source = EXCLUDED.source
-        """
+    stmt = UPSERT_CORRIGE if refresh else UPSERT_NADA
+    params = [(int(r.series_id), r.date, float(r.value), r.source)
+              for r in df.itertuples(index=False)]
+
+    if len(params) >= LOTE_MINIMO:
+        cur = conn.cursor()
+        cur.executemany(stmt, params)
+        loaded = cur.rowcount if cur.rowcount >= 0 else 0
+        other = len(params) - loaded
     else:
-        stmt = """
-            INSERT INTO fact_prices (series_id, date, price, source)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (series_id, date) DO NOTHING
-        """
-    loaded = other = 0
-    for _, row in df.iterrows():
-        cur = conn.execute(
-            stmt,
-            (int(row["series_id"]), row["date"],
-             float(row["value"]), row["source"]),
-        )
-        if cur.rowcount > 0:
-            loaded += 1
-        else:
-            other += 1
+        loaded = other = 0
+        for p in params:
+            cur = conn.execute(stmt, p)
+            if cur.rowcount > 0:
+                loaded += 1
+            else:
+                other += 1
     logger.info(
         f"fact_prices (valor_cuota): {loaded} "
         f"{'written' if refresh else 'loaded'}, {other} skipped.")

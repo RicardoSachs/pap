@@ -23,20 +23,13 @@ from src.pipelines.prices.sbs.valor_cuota import benchmark as bench
 from src.pipelines.prices.sbs.valor_cuota.registro import registrar_valores
 from src.pipelines.prices.sbs.valor_cuota.run import (
     MODOS_CARGA, cargar_historico, revisar_historico, run_daily, ultima_corrida)
+from web.api.routes._spp_comun import XLSX, es_si, leer_archivo
 from web.api.services.spp_tarea import (
-    con_bitacora, guardar_subida, lanzar, leer_subida)
+    TAREA_WINDOWS, con_bitacora, guardar_subida, lanzar, leer_subida)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/spp", tags=["spp-carga"])
-
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-MAX_SUBIDA = 40 * 10**6  # the SBS historical Excel is ~5 MB
-
-# The Windows task name. The SAME name the monitor used on purpose: the
-# cutover script re-registers it pointing here, and there must never be
-# two scrapers racing for the same page.
-TAREA_WINDOWS = "Profuturo - Valor cuota SPP"
 
 
 # ---- Extraccion -----------------------------------------------------------
@@ -125,16 +118,9 @@ async def post_historico_revisar(archivo: UploadFile = File(...)) -> JSONRespons
     First half: review the Excel without writing. The file is kept in
     memory under a vale so confirming loads exactly what was reviewed.
     """
-    crudo = await archivo.read()
-    if not crudo:
-        return JSONResponse({"ok": False, "motivo": "No llego ningun archivo."},
-                            status_code=400)
-    if len(crudo) > MAX_SUBIDA:
-        return JSONResponse(
-            {"ok": False, "motivo":
-             f"El archivo pesa {round(len(crudo) / 1e6, 1)} MB; "
-             f"el limite son {MAX_SUBIDA // 10**6} MB."},
-            status_code=400)
+    crudo, error = await leer_archivo(archivo)
+    if error:
+        return error
     try:
         informe = revisar_historico(crudo)
     except (ValueError, TypeError) as exc:
@@ -207,15 +193,11 @@ async def post_benchmark_archivo(archivo: UploadFile = File(...),
     Benchmark load by file. With revisar=1 only reports what was read;
     nothing reaches the base without having been shown first.
     """
-    crudo = await archivo.read()
-    if not crudo:
-        return JSONResponse({"ok": False, "motivo": "No llego ningun archivo."},
-                            status_code=400)
-    if len(crudo) > MAX_SUBIDA:
-        return JSONResponse({"ok": False, "motivo": "El archivo es demasiado grande."},
-                            status_code=400)
-    solo_revisar = revisar.lower() in ("1", "true", "si")
-    con_refresco = refrescar.lower() in ("1", "true", "si")
+    crudo, error = await leer_archivo(archivo)
+    if error:
+        return error
+    solo_revisar = es_si(revisar)
+    con_refresco = es_si(refrescar)
     try:
         if solo_revisar:
             informe = bench.leer_archivo_benchmark(crudo)

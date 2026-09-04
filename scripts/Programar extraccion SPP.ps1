@@ -10,6 +10,10 @@
 # USA EL MISMO NOMBRE DE TAREA que el monitor standalone a proposito:
 # registrarla aqui ES el corte - reemplaza la tarea vieja (-Force), y asi
 # nunca hay dos scrapers compitiendo por la misma pagina de la SBS.
+# El nombre tiene un gemelo en web/api/services/spp_tarea.py
+# (TAREA_WINDOWS): /api/spp/programado consulta la tarea por ese nombre,
+# asi que un cambio aqui sin su gemelo deja al tablero reportando la
+# automatizacion como muerta mientras el scrape sigue corriendo.
 #
 # No requiere permisos de administrador: la tarea corre en la sesion del
 # usuario (-LogonType Interactive), que es justo lo que hace falta para que

@@ -31,11 +31,13 @@ import pandas as pd
 
 from src.db.connection import get_connection
 from src.pipelines.prices.sbs.valor_cuota import afps as reg
+from src.pipelines.prices.sbs.valor_cuota.loader import (
+    UPSERT_CORRIGE, UPSERT_NADA)
+from src.pipelines.prices.sbs.valor_cuota.registro import (
+    escribir_fecha, limpiar_valores, validar_fecha)
 from src.shared import tabular
 
 logger = logging.getLogger(__name__)
-
-FUENTES = ("excel", "csv", "manual")
 
 
 def columna_bench(fondo: int) -> str:
@@ -138,32 +140,22 @@ def estado_benchmark() -> dict:
 
 def registrar_benchmark(fecha, valores: dict) -> dict:
     """
-    Manual registration of one date, all funds at once. Same rules as
-    the valor cuota form: None deletes that value, an absent fund is
-    left alone, and a date with nothing left leaves the table on its
-    own (in long format there is no row to clean up).
+    Manual registration of one date, all funds at once. Same grammar as
+    the valor cuota form - the shared limpiar_valores/escribir_fecha in
+    registro.py carry the rules: None deletes that value, an absent
+    fund is left alone, and a date with nothing left leaves the table
+    on its own.
     """
-    fecha = pd.to_datetime(fecha).date()
-    if fecha > dt.date.today():
-        raise ValueError("La fecha no puede ser futura.")
-
+    fecha = validar_fecha(fecha)
     fondos_b = reg.fondos_benchmark()
-    limpios: dict[int, float | None] = {}
-    for f, v in (valores or {}).items():
-        f = int(f)
+
+    def validar_fondo(f: int) -> None:
         if f not in fondos_b:
             raise ValueError(
                 f"El Fondo {f} no lleva benchmark. Solo "
                 + ", ".join(f"Fondo {x}" for x in fondos_b) + ".")
-        if v is None or v == "":
-            limpios[f] = None
-        else:
-            v = float(v)
-            if v <= 0:
-                raise ValueError(f"El benchmark del Fondo {f} debe ser mayor que cero.")
-            limpios[f] = v
-    if not limpios:
-        raise ValueError("No se recibio ningun valor.")
+
+    limpios = limpiar_valores(valores, validar_fondo, "El benchmark")
 
     with get_connection() as conn:
         series = _series_bench(conn)
@@ -172,37 +164,10 @@ def registrar_benchmark(fecha, valores: dict) -> dict:
             raise ValueError(
                 f"No hay serie de benchmark registrada para Fondo {faltan}. "
                 "Corre scripts/run_sbs_valor_cuota.py --solo-registro.")
-        ids = list(series.values())
-        existia = bool(conn.execute(
-            "SELECT 1 FROM fact_prices WHERE date = %s AND series_id = ANY(%s) LIMIT 1",
-            (fecha, ids)).fetchone())
-
-        guardados, borrados = {}, []
-        for f, v in limpios.items():
-            if v is None:
-                cur = conn.execute(
-                    "DELETE FROM fact_prices WHERE series_id = %s AND date = %s",
-                    (series[f], fecha))
-                if cur.rowcount > 0:
-                    borrados.append(f)
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO fact_prices (series_id, date, price, source)
-                    VALUES (%s, %s, %s, 'manual')
-                    ON CONFLICT (series_id, date) DO UPDATE SET
-                        price = EXCLUDED.price, source = EXCLUDED.source
-                    """,
-                    (series[f], fecha, v))
-                guardados[f] = v
-
-        fila_borrada = existia and not conn.execute(
-            "SELECT 1 FROM fact_prices WHERE date = %s AND series_id = ANY(%s) LIMIT 1",
-            (fecha, ids)).fetchone()
-
-    return {"fecha": str(fecha),
-            "guardados": guardados, "borrados": borrados,
-            "fila_nueva": not existia, "fila_borrada": bool(fila_borrada)}
+        resultado = escribir_fecha(conn, fecha, limpios,
+                                   serie_de=lambda f: series[f],
+                                   ids_fecha=list(series.values()))
+    return {"fecha": str(fecha), **resultado}
 
 
 # ---- Carga por archivo ----------------------------------------------
@@ -216,13 +181,10 @@ def _fondo_de_cabecera(texto: str):
 
 
 def _fila_cabecera(filas: list, limite: int = 12):
-    """First row that names the date column - hand-made Excels bring
-    titles and blank lines before the headers."""
-    for i, fila in enumerate(filas[:limite]):
-        for c in fila:
-            if tabular.clave_col(c) in ("fecha", "date", "dia", "periodo"):
-                return i
-    return None
+    """First row that names the date column."""
+    return tabular.fila_cabecera(
+        filas, lambda c: tabular.clave_col(c) in ("fecha", "date", "dia", "periodo"),
+        limite)
 
 
 def leer_archivo_benchmark(datos, hoja=None) -> dict:
@@ -259,8 +221,7 @@ def leer_archivo_benchmark(datos, hoja=None) -> dict:
         avisos.append(f"Los encabezados estaban en la fila {icab + 1}; "
                       "lo anterior se ignoro.")
 
-    cabecera = ["" if c is None or (isinstance(c, float) and c != c)
-                else str(c).strip() for c in filas[icab]]
+    cabecera = tabular.limpiar_cabecera(filas[icab])
     claves = [tabular.clave_col(c) for c in cabecera]
     icol_fecha = next(i for i, c in enumerate(claves)
                       if c in ("fecha", "date", "dia", "periodo"))
@@ -411,16 +372,7 @@ def guardar_bench(df: pd.DataFrame, fuente: str = "csv",
 
         nuevas_fechas: set = set()
         celdas = celdas_conocidas = sin_cambio = 0
-        stmt_nada = """
-            INSERT INTO fact_prices (series_id, date, price, source)
-            VALUES (%s, %s, %s, %s) ON CONFLICT (series_id, date) DO NOTHING
-        """
-        stmt_corrige = """
-            INSERT INTO fact_prices (series_id, date, price, source)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (series_id, date) DO UPDATE SET
-                price = EXCLUDED.price, source = EXCLUDED.source
-        """
+        stmt = UPSERT_CORRIGE if refrescar else UPSERT_NADA
         for _, fila in df.iterrows():
             fecha = pd.to_datetime(fila["fecha"]).date()
             for f, sid in series.items():
@@ -428,8 +380,7 @@ def guardar_bench(df: pd.DataFrame, fuente: str = "csv",
                 v = fila.get(col)
                 if v is None or pd.isna(v):
                     continue
-                cur = conn.execute(stmt_corrige if refrescar else stmt_nada,
-                                   (sid, fecha, float(v), fuente))
+                cur = conn.execute(stmt, (sid, fecha, float(v), fuente))
                 if cur.rowcount > 0:
                     celdas += 1
                     if fecha in previas:

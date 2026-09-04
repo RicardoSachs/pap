@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiGet } from '../../../lib/api';
-import { METRICAS, NOMBRE_METRICA, apiUrl, fFecha, fmtMetrica, nEnt } from '../../../lib/spp';
+import { apiUrl, fFecha, fmtMetrica, metricasDe, nEnt, nombreMetrica } from '../../../lib/spp';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
 
@@ -41,7 +41,7 @@ export default function SppLibroPage() {
 
   const cab = (c) => {
     const base = `${c.afp} F${c.fondo}`;
-    return metrica === 'todas' ? `${base} · ${NOMBRE_METRICA[c.metrica]}` : base;
+    return metrica === 'todas' ? `${base} · ${nombreMetrica(cfg, c.metrica)}` : base;
   };
 
   return (
@@ -53,7 +53,7 @@ export default function SppLibroPage() {
       <div className="panel">
         <div className="controls spp-controls">
           <div className="field"><label>Métrica</label>
-            <SppSeg items={[...METRICAS, ['Todas', 'todas']]} value={metrica} onChange={setMetrica} /></div>
+            <SppSeg items={[...metricasDe(cfg), ['Todas', 'todas']]} value={metrica} onChange={setMetrica} /></div>
           <div className="field"><label>Tipo de fondo</label>
             <SppSeg items={[...(cfg?.fondos || []).map((f) => [`Fondo ${f}`, String(f)]), ['Todos', 'todos']]}
               value={fondo} onChange={setFondo} /></div>

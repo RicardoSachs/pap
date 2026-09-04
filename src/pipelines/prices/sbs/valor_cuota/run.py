@@ -204,22 +204,24 @@ def revisar_historico(contenido: bytes) -> dict:
 
     celdas_nuevas = llenaria = cambiaria = iguales = 0
     ejemplos = []
-    for _, fila in df.iterrows():
-        clave_celda = (fila["afp"], int(fila["fondo"]), fila["date"])
-        v = float(fila["valor_cuota"])
-        if fila["date"] in nuevas:
+    # zip instead of iterrows: ~100k cells inside the request the user
+    # is waiting on for the review report.
+    for afp, fondo, fecha, v in zip(df["afp"], df["fondo"],
+                                    df["date"], df["valor_cuota"]):
+        v = float(v)
+        if fecha in nuevas:
             celdas_nuevas += 1
             continue
-        actual = libro.get(clave_celda)
+        actual = libro.get((afp, int(fondo), fecha))
         if actual is None:
             llenaria += 1
         elif abs(actual - v) > 1e-9:
             cambiaria += 1
             if len(ejemplos) < 12:
                 ejemplos.append({
-                    "fecha": str(fila["date"]),
-                    "columna": f"{fila['afp']}_f{fila['fondo']}",
-                    "serie": f"{afps.nombre_de(fila['afp'])} F{fila['fondo']}",
+                    "fecha": str(fecha),
+                    "columna": f"{afp}_f{fondo}",
+                    "serie": f"{afps.nombre_de(afp)} F{fondo}",
                     "libro": actual, "archivo": v})
         else:
             iguales += 1

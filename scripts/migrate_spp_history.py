@@ -63,7 +63,8 @@ def src_connection(args) -> psycopg.Connection:
 
 def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int, int]:
     """Melts spp.valor_cuota_diario into fact_prices. Returns (read, loaded)."""
-    from src.pipelines.prices.sbs.valor_cuota.afps import METRICA_FIELD, procode
+    from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_SBS, procode
+    from src.pipelines.prices.sbs.valor_cuota.loader import upsert_fact
 
     cur = src.execute(f'SELECT * FROM "{schema}"."valor_cuota_diario" ORDER BY fecha')
     leidas = cargadas = 0
@@ -92,15 +93,8 @@ def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int
             if dry_run:
                 cargadas += 1
                 continue
-            r = dest.execute(
-                """
-                INSERT INTO fact_prices (series_id, date, price, source)
-                VALUES (%s, %s, %s, 'sbs')
-                ON CONFLICT (series_id, date) DO NOTHING
-                """,
-                (serie["series_id"], fecha, float(valor)),
-            )
-            if r.rowcount > 0:
+            if upsert_fact(dest, serie["series_id"], fecha, float(valor),
+                           SOURCE_SBS):
                 cargadas += 1
     if sin_serie:
         logger.warning("Columnas del libro sin serie destino (revisar afps.yaml): %s",
@@ -109,7 +103,8 @@ def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int
 
 
 def migrate_bench(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int, int]:
-    from src.pipelines.prices.sbs.valor_cuota.afps import procode_bench
+    from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_BENCH, procode_bench
+    from src.pipelines.prices.sbs.valor_cuota.loader import upsert_fact
 
     try:
         cur = src.execute(f'SELECT * FROM "{schema}"."benchmark_diario" ORDER BY fecha')
@@ -131,15 +126,8 @@ def migrate_bench(src, dest, schema: str, series_map, dry_run: bool) -> tuple[in
             if dry_run:
                 cargadas += 1
                 continue
-            r = dest.execute(
-                """
-                INSERT INTO fact_prices (series_id, date, price, source)
-                VALUES (%s, %s, %s, 'benchmark')
-                ON CONFLICT (series_id, date) DO NOTHING
-                """,
-                (serie["series_id"], fecha, float(valor)),
-            )
-            if r.rowcount > 0:
+            if upsert_fact(dest, serie["series_id"], fecha, float(valor),
+                           SOURCE_BENCH):
                 cargadas += 1
     return leidas, cargadas
 

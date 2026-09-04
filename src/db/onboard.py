@@ -64,7 +64,7 @@ def run_onboard(
     )
 
     with get_connection() as conn:
-        entity_map = load_dim_entity(conn, series_df)
+        entity_map = load_dim_entity(conn, series_df, identifiers_df)
 
     with get_connection() as conn:
         load_dim_entity_identifiers(conn, identifiers_df, entity_map)

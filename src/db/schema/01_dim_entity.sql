@@ -12,5 +12,10 @@ CREATE TABLE IF NOT EXISTS dim_entity (
 
     -- Audit
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- Natural key. get_or_create_entity_id() relies on this constraint for
+    -- race-safe INSERT ... ON CONFLICT registration; without it, concurrent
+    -- pipelines (two-machine schedulers) can silently fork the identity graph.
+    CONSTRAINT uq_dim_entity_procode_type UNIQUE (procode, entity_type)
 );

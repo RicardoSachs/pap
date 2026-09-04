@@ -11,7 +11,12 @@ import pandas as pd
 from psycopg import Connection
 
 from src.db.connection import get_connection
-from src.db.queries import get_or_create_entity_id, upsert_entity_identifier #, get_entity_id
+from src.db.queries import (
+    get_entity_id,
+    get_or_create_entity_id,
+    upsert_entity_identifier,
+    resolve_entity_id_from_identifier,
+)
 from src.shared.paths import SCHEMA_DIR
 from src.shared.seed_loader import (
     load_series_seed,
@@ -78,32 +83,76 @@ def create_schema(conn: Connection) -> None:
 def load_dim_entity(
     conn: Connection,
     series_df: pd.DataFrame,
+    identifiers_df: pd.DataFrame | None = None,
 ) -> dict[tuple, int]:
     """
     Inserts unique (procode, entity_type) pairs into dim_entity.
     Returns a mapping {(procode, entity_type): entity_id} for downstream use.
+
+    Adoption of SBS-discovered entities: the SBS registry auto-creates
+    entities with procode='SBS_<codigo>' before an instrument is ever
+    hand-curated in the seeds. When a seed row's (procode, entity_type)
+    is unknown but its seeded ISIN (from identifiers.csv) resolves to an
+    existing entity, that entity is ADOPTED - its procode/name are upgraded
+    to the curated seed values - instead of creating a duplicate. This
+    makes registration order-independent: SBS-first then seeds now links
+    the same as seeds-first then SBS (which already linked via ISIN in
+    the SBS registry).
     """
     unique_entities = (
         series_df[['procode', 'entity_type', 'name']]
         .drop_duplicates(subset=['procode', 'entity_type'])
     )
 
-    
+    # (procode, entity_type) -> seeded ISIN, for adoption lookups
+    isin_map: dict[tuple, str] = {}
+    if identifiers_df is not None and not identifiers_df.empty:
+        isin_rows = identifiers_df[identifiers_df['id_type'] == 'isin']
+        for _, r in isin_rows.iterrows():
+            isin_map[(r['procode'], r['entity_type'])] = str(r['id_value']).strip()
 
     entity_map = {}
-    inserted = 0
+    resolved = adopted = 0
 
     for _, row in unique_entities.iterrows():
-        entity_id = get_or_create_entity_id(
-            conn,
-            procode=row['procode'],
-            entity_type=row['entity_type'],
-            name=row.get('name'),
-        )
-        entity_map[(row['procode'], row['entity_type'])] = entity_id
-        inserted += 1
+        key = (row['procode'], row['entity_type'])
+        name = _none_if_nan(row.get('name'))
 
-    logger.info(f'dim_entity: {inserted} entities resolved.')
+        entity_id = get_entity_id(conn, procode=key[0], entity_type=key[1])
+
+        # Unknown procode: before creating, try to adopt an entity the SBS
+        # registry already discovered, matching on the seeded ISIN.
+        if entity_id is None and key in isin_map:
+            candidate = resolve_entity_id_from_identifier(
+                conn, id_type='isin', id_value=isin_map[key]
+            )
+            if candidate is not None:
+                conn.execute(
+                    """
+                    UPDATE dim_entity
+                    SET procode    = %s,
+                        name       = COALESCE(%s, name),
+                        updated_at = NOW()
+                    WHERE entity_id = %s
+                    """,
+                    (key[0], name, candidate),
+                )
+                logger.info(
+                    f'dim_entity: adopted discovered entity_id={candidate} '
+                    f'as ({key[0]}, {key[1]}) via ISIN {isin_map[key]}'
+                )
+                entity_id = candidate
+                adopted += 1
+
+        if entity_id is None:
+            entity_id = get_or_create_entity_id(
+                conn, procode=key[0], entity_type=key[1], name=name,
+            )
+
+        entity_map[key] = entity_id
+        resolved += 1
+
+    logger.info(f'dim_entity: {resolved} entities resolved ({adopted} adopted).')
     return entity_map
 
 
@@ -164,7 +213,7 @@ def load_dim_security_skeleton(
     )
 
     cur = conn.cursor()
-    inserted = 0
+    inserted = skipped = 0
     for _, row in security_df.iterrows():
         entity_id = entity_map.get((row['procode'], 'security'))
         if not entity_id:
@@ -180,8 +229,11 @@ def load_dim_security_skeleton(
             """,
             (entity_id, row.get('security_type'))
         )
-        inserted += 1
-    logger.info(f'dim_security skeleton: {inserted} rows inserted.')
+        if cur.rowcount > 0:
+            inserted += 1
+        else:
+            skipped += 1
+    logger.info(f'dim_security skeleton: {inserted} inserted, {skipped} already existed.')
 
 def load_dim_portfolio(
     conn: Connection,
@@ -396,9 +448,10 @@ def run_bootstrap(
         create_schema(conn)
 
     # Step 2: dim_entity - one row per unique procode/entity_type
+    # (identifiers_df enables ISIN-adoption of SBS-discovered entities)
     logger.info('--- Step 2: Loading dim_entity ---')
     with get_connection() as conn:
-        entity_map = load_dim_entity(conn, series_df)
+        entity_map = load_dim_entity(conn, series_df, identifiers_df)
     
     # Step 3: identifiers - one row per identifier from identifiers.csv
     logger.info('--- Step 3: Loading dim_entity_identifiers---')

@@ -6,7 +6,7 @@
 --
 -- Grain: (portfolio_id, security_entity_id, date, source) - one row per fund
 -- per security per date. ENTITY-RESOLVED: codigo_sbs -> dim_entity via
--- dim_entity_identifiers (id_type='sbs'); security attributes (name, class,
+-- dim_entity_identifiers (id_type='codigo_sbs'); security attributes (name, class,
 -- currency) live on dim_security. This is the only entity-resolved positions
 -- fact (deposits/cash/forwards/net_receivables are not).
 --

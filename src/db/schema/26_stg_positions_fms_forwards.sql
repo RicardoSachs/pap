@@ -66,6 +66,6 @@ CREATE INDEX IF NOT EXISTS idx_stg_positions_fms_forwards_fondo
 -- ---------------------------------------------------------------
 -- Identifier resolution expectations (used by transform.py):
 --   codigo_fondo -> dim_portfolio.procode (source='fms')
---   codigo_sbs   -> dim_entity_identifiers.id_value (id_type='sbs')
+--   codigo_sbs   -> dim_entity_identifiers.id_value (id_type='codigo_sbs')
 -- ---------------------------------------------------------------
 

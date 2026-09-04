@@ -115,7 +115,7 @@ def transform_for_fact_securities(
     Security lines (codigo_sbs NOT '60…') -> fact_positions_securities.
 
     portfolios: (procode, portfolio_id). securities: (codigo_sbs,
-    security_entity_id) from dim_entity_identifiers (id_type='sbs'). Rows whose
+    security_entity_id) from dim_entity_identifiers (id_type='codigo_sbs'). Rows whose
     fund OR security can't be resolved are dropped with a WARNING.
     """
     if stg_df.empty:

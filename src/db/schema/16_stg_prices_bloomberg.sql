@@ -1,8 +1,7 @@
 -- =============================================================
 -- stg_prices_bloomberg
 -- Raw price observations as returned by Bloomberg API calls.
--- Long format: one row per (id, field, date)
--- One row per (entity_id, id_type, source) combination.
+-- Long format: one row per (parsekyable, field, date, loaded_at).
 -- Populated by pipelines/prices/bloomberg/extract.py.
 -- Fact loader reads this table and writes to fact_prices.
 -- Retained after loading for audit and re-processing.

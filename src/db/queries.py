@@ -3,23 +3,26 @@
 # Reusable SQL query helpers (psycopg3, %s-parameterized) for the series
 # registry, entities and identifiers: lookups, upserts and status filters.
 
+import logging
+
 from psycopg import sql
 from psycopg import Connection as connection
 from datetime import date
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 # ── Entity ──────────────────────────────────────────────────────
 
-def get_or_create_entity_id(
+def get_entity_id(
     conn: connection,
     procode: str,
     entity_type: str,
-    name: Optional[str] = None,
-) -> int:
+) -> Optional[int]:
     """
     Returns entity_id for an existing (procode, entity_type) pair,
-    or inserts a new row and returns the new entity_id.
-    Always safe to call multiple times – idempotent.
+    or None if not registered. Read-only counterpart of
+    get_or_create_entity_id().
     """
     cur = conn.cursor()
     cur.execute(
@@ -31,19 +34,43 @@ def get_or_create_entity_id(
         (procode, entity_type),
     )
     row = cur.fetchone()
+    return row['entity_id'] if row else None
 
-    if row:
-        return row['entity_id']
 
+def get_or_create_entity_id(
+    conn: connection,
+    procode: str,
+    entity_type: str,
+    name: Optional[str] = None,
+) -> int:
+    """
+    Returns entity_id for an existing (procode, entity_type) pair,
+    or inserts a new row and returns the new entity_id.
+
+    Race-safe: relies on uq_dim_entity_procode_type. A concurrent insert
+    of the same pair makes our INSERT a no-op (ON CONFLICT DO NOTHING),
+    and the final SELECT picks up the winner's row. Idempotent.
+    """
+    entity_id = get_entity_id(conn, procode, entity_type)
+    if entity_id is not None:
+        return entity_id
+
+    cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO dim_entity (procode, entity_type, name)
         VALUES (%s, %s, %s)
+        ON CONFLICT (procode, entity_type) DO NOTHING
         RETURNING entity_id
         """,
         (procode, entity_type, name),
     )
-    return cur.fetchone()['entity_id']
+    row = cur.fetchone()
+    if row:
+        return row['entity_id']
+
+    # Lost a concurrent race - the row exists now.
+    return get_entity_id(conn, procode, entity_type)
 
 
 # ── Entity identifiers ─────────────────────────────────────────
@@ -57,12 +84,17 @@ def resolve_entity_id_from_identifier(
     """
     Reverse lookup: given a vendor identifier value, returns entity_id.
     Optionally scoped by source for disambiguation.
+
+    Returns None when not found OR when the identifier is ambiguous
+    (matches more than one entity). Ambiguity is logged and left for
+    manual resolution - callers make linking decisions on this result,
+    so guessing an arbitrary entity would silently fork the identity graph.
     """
     cur = conn.cursor()
     if source:
         cur.execute(
             """
-            SELECT entity_id FROM dim_entity_identifiers
+            SELECT DISTINCT entity_id FROM dim_entity_identifiers
             WHERE id_type = %s AND id_value = %s AND source = %s
             """,
             (id_type, id_value, source),
@@ -70,20 +102,28 @@ def resolve_entity_id_from_identifier(
     else:
         cur.execute(
             """
-            SELECT entity_id FROM dim_entity_identifiers
+            SELECT DISTINCT entity_id FROM dim_entity_identifiers
             WHERE id_type = %s AND id_value = %s
             """,
             (id_type, id_value),
         )
 
-    row = cur.fetchone()
-    return row['entity_id'] if row else None
+    rows = cur.fetchall()
+    if len(rows) == 1:
+        return rows[0]['entity_id']
+    if len(rows) > 1:
+        logger.warning(
+            f"identifier {id_type}={id_value!r} (source={source}) matched "
+            f"{len(rows)} entities: {[r['entity_id'] for r in rows]}. "
+            f"Refusing to resolve - fix the duplicate registration."
+        )
+    return None
 
 
 def get_last_loaded_date(conn: connection, security_id: int, table: str):
     """
     Returns the most recent date loaded for a given security_id.
-    Uses psycopg2.sql.Identifier to safely inject the table name.
+    Uses psycopg.sql.Identifier to safely inject the table name.
     """
     cur = conn.cursor()
     cur.execute(
@@ -109,9 +149,31 @@ def upsert_entity_identifier(
 ) -> None:
     """
     Inserts or updates a single identifier mapping.
-    Called by bootstrap seed loader and enrichment pipelines.
+    Called by bootstrap seed loader, SBS registry, and enrichment pipelines.
+
+    Semantics when the (entity_id, id_type, source) row already exists:
+    - id_value: last writer wins, but a change of value is logged as a
+      WARNING so vendor disagreements (e.g. SBS vs Bloomberg ISIN) leave
+      a trace instead of being silently overwritten.
+    - is_primary is sticky: once TRUE it stays TRUE (OR semantics), so the
+      SBS registry (is_primary=False) cannot demote a primary flag set by
+      enrichment, and vice versa - eliminates last-writer churn.
     """
     cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id_value FROM dim_entity_identifiers
+        WHERE entity_id = %s AND id_type = %s AND source = %s
+        """,
+        (entity_id, id_type, source),
+    )
+    row = cur.fetchone()
+    if row and row['id_value'] != id_value:
+        logger.warning(
+            f"identifier change entity_id={entity_id} {id_type}/{source}: "
+            f"{row['id_value']!r} -> {id_value!r}"
+        )
+
     cur.execute(
         """
         INSERT INTO dim_entity_identifiers
@@ -119,17 +181,13 @@ def upsert_entity_identifier(
         VALUES (%s, %s, %s, %s, %s)
         ON CONFLICT (entity_id, id_type, source) DO UPDATE SET
             id_value   = EXCLUDED.id_value,
-            is_primary = EXCLUDED.is_primary
+            is_primary = dim_entity_identifiers.is_primary OR EXCLUDED.is_primary
         """,
         (entity_id, id_type, id_value, source, is_primary),
     )
 
 
 # ── Series registry ────────────────────────────────────────────
-
-def get_series_id():
-    return
-
 
 def get_active_series(
     conn: connection,

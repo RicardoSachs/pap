@@ -1,4 +1,4 @@
--- 34_bloomberg_dato.sql
+-- 38_bloomberg_dato.sql
 -- ---------------------------------------------------------------
 -- Data points for the manual Bloomberg series registry. Long
 -- format, one row per (serie, fecha): adding a ticker is an INSERT,

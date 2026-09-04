@@ -1,4 +1,4 @@
--- 32_stg_prices_sbs_valor_cuota.sql
+-- 36_stg_prices_sbs_valor_cuota.sql
 -- ---------------------------------------------------------------
 -- Staging table for the SPP daily "valor cuota" feed (SBS variables
 -- page scrape + monthly historical XLS).

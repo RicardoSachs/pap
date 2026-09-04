@@ -1,4 +1,9 @@
--- 36_stg_prices_sbs_valor_cuota.sql
+-- 50_stg_prices_sbs_valor_cuota.sql
+-- ---------------------------------------------------------------
+-- NOTE on numbering: the 50+ block is reserved for the tables that
+-- came from the SPP monitor integration (50-52 today). Upstream
+-- pipelines keep numbering from 36 upward, so the two lines of work
+-- can add tables without ever colliding on a slot again.
 -- ---------------------------------------------------------------
 -- Staging table for the SPP daily "valor cuota" feed (SBS variables
 -- page scrape + monthly historical XLS).

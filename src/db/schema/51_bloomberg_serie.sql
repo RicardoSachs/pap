@@ -1,4 +1,4 @@
--- 37_bloomberg_serie.sql
+-- 51_bloomberg_serie.sql
 -- ---------------------------------------------------------------
 -- Manual Bloomberg series registry, ported as-is from the SPP
 -- monitor. One row per (ticker, campo, intervalo): what to request

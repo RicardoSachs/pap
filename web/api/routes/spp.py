@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from fastapi import APIRouter, Query, Response
 
@@ -27,6 +28,18 @@ def _entero(crudo, por_defecto: int, minimo: int, maximo: int) -> int:
     except (TypeError, ValueError):
         return por_defecto
     return max(minimo, min(maximo, v))
+
+
+def _fecha(crudo) -> str | None:
+    """
+    ISO date from the URL, or None. Same philosophy as _entero: malformed
+    browser input is treated as absent, never forwarded into a ::date cast
+    or pd.to_datetime where it would become a 500.
+    """
+    try:
+        return date.fromisoformat(str(crudo).strip()).isoformat() if crudo else None
+    except ValueError:
+        return None
 
 
 def _nombre_seguro(nombre: str, por_defecto: str) -> str:
@@ -54,20 +67,20 @@ def get_serie(
 ) -> dict:
     pedidas = [a.strip().upper() for a in afps.split(",") if a.strip()]
     return svc.serie(_entero(fondo, 2, 0, 99), pedidas, metrica,
-                     desde or None, hasta or None)
+                     _fecha(desde), _fecha(hasta))
 
 
 @router.get("/ventanas")
 def get_ventanas(fecha: str | None = Query(None),
                  metrica: str = Query("valor_cuota")) -> dict:
-    return svc.ventanas(fecha or None, metrica)
+    return svc.ventanas(_fecha(fecha), metrica)
 
 
 @router.get("/posiciones")
 def get_posiciones(fecha: str | None = Query(None),
                    meses: str = Query("24"),
                    metrica: str = Query("valor_cuota")) -> dict:
-    return svc.posiciones(fecha or None, _entero(meses, 24, 1, 120), metrica)
+    return svc.posiciones(_fecha(fecha), _entero(meses, 24, 1, 120), metrica)
 
 
 @router.get("/tabla")
@@ -96,7 +109,7 @@ def get_exportar(metrica: str = Query("todas"),
     nombre = _nombre_seguro("_".join(partes), "spp")
 
     datos = svc.exportar_csv(metrica.strip(), fondo_arg, lim,
-                             desde or None, hasta or None)
+                             _fecha(desde), _fecha(hasta))
     return Response(
         content=datos, media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{nombre}.csv"'})

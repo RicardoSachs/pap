@@ -207,7 +207,13 @@ def num_flexible(texto, coma_decimal):
         return None
     if isinstance(texto, (int, float)):
         return None if texto != texto else float(texto)
-    t = str(texto if texto is not None else "").replace(" ", " ").strip()
+    t = str(texto if texto is not None else "")
+    # Both non-breaking spaces Excel/es-locale emit as thousands
+    # separators: U+202F (narrow) and U+00A0 (plain NBSP). Missing one
+    # made every value >= 1000 fail float() and vanish as an empty cell.
+    for espacio in (" ", " "):
+        t = t.replace(espacio, " ")
+    t = t.strip()
     if t in ("", "-", "--", "n.d.", "N.D.", "NA", "#N/A"):
         return None
     if coma_decimal:

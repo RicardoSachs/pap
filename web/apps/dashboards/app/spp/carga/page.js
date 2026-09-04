@@ -137,11 +137,19 @@ export default function SppCargaPage() {
 
   // Preload the fund boxes with what the book already holds (±12 days for
   // the neighboring closes), like the monitor's verDato().
+  // The boxes are CLEARED synchronously on every selection change: stale
+  // values from the previous AFP/date must never be submittable against the
+  // new one, and a late response from an old selection must not land either.
   useEffect(() => {
-    if (!cfg || !rFecha || !rAfp) return;
+    if (!cfg || !rFecha || !rAfp) return undefined;
+    const fondos = fondosDe(rAfp);
+    setRValores(Object.fromEntries(fondos.map((fo) => [fo, ''])));
+    setRActual(`${rAfp} · ${NOMBRE_METRICA[rMetrica]} · ${fFecha(rFecha)} — cargando…`);
+    setRVecinos({ fondos, fechas: [], series: {} });
+    let vigente = true;
+
     const desde = new Date(`${rFecha}T00:00:00`); desde.setDate(desde.getDate() - 12);
     const hasta = new Date(`${rFecha}T00:00:00`); hasta.setDate(hasta.getDate() + 12);
-    const fondos = fondosDe(rAfp);
     Promise.all(fondos.map(async (fo) => {
       const q = new URLSearchParams({
         fondo: String(fo), afps: rAfp, metrica: rMetrica,
@@ -150,6 +158,7 @@ export default function SppCargaPage() {
       const d = await apiGet(`/api/spp/serie?${q}`);
       return [fo, d.series?.[0]?.puntos || []];
     })).then((pares) => {
+      if (!vigente) return;
       const series = Object.fromEntries(pares);
       const vals = {}; let cargados = 0;
       fondos.forEach((fo) => {
@@ -164,7 +173,10 @@ export default function SppCargaPage() {
       const fechas = [...new Set(fondos.flatMap((fo) => series[fo].map((p) => p[0])))]
         .sort().slice(-9).reverse();
       setRVecinos({ fondos, fechas, series });
-    }).catch(() => {});
+    }).catch(() => {
+      if (vigente) setRActual('No se pudo leer el libro para precargar; los cuadros quedan vacíos.');
+    });
+    return () => { vigente = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, rFecha, rAfp, rMetrica, rTick]);
 

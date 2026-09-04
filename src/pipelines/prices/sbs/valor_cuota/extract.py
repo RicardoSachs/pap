@@ -168,7 +168,10 @@ def parse_historico(contenido: bytes,
 
     filas = []
     for _, fila in crudo.iloc[4:].iterrows():
-        fecha = pd.to_datetime(fila.iloc[0], errors="coerce")
+        # dayfirst: the SBS file carries typed dates, but a re-saved or
+        # hand-edited workbook can bring them as dd/mm TEXT - without this,
+        # days <= 12 silently parse month-first and land on wrong dates.
+        fecha = pd.to_datetime(fila.iloc[0], errors="coerce", dayfirst=True)
         if pd.isna(fecha):
             continue                     # footnotes and blank rows
         for i, (clave, fondo) in mapa.items():

@@ -64,3 +64,11 @@ def test_parse_historico_accumulates_unknown_afps():
     vistas: set = set()
     parse_historico(_xls(SBS_ROWS), vistas)
     assert vistas == {"AFP DESCONOCIDA"}
+
+
+def test_parse_historico_text_dates_are_dayfirst():
+    # A re-saved workbook can bring the date column as dd/mm TEXT: without
+    # dayfirst, '05/08/1993' would silently land on May 8.
+    rows = [r[:] for r in SBS_ROWS[:4]] + [["05/08/1993", 10.0, None]]
+    df = parse_historico(_xls(rows))
+    assert list(df["date"]) == [dt.date(1993, 8, 5)]

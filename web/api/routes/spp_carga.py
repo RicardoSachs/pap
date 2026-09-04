@@ -48,7 +48,9 @@ def post_extraer(datos: dict | None = None) -> JSONResponse:
         return JSONResponse(
             {"ok": False, "motivo":
              f"El scraper no esta habilitado en esta maquina ({machine_id()}). "
-             "Activa scraper_enabled en machine_config.local.yaml."},
+             "Activa scraper_enabled: true en "
+             "%USERPROFILE%\\Documents\\Tools\\config\\market_data_config.yaml "
+             "y reinicia la API (la configuracion se cachea al arrancar)."},
             status_code=503)
     refrescar = bool((datos or {}).get("refrescar"))
     ok, motivo = lanzar("extraccion SBS",

@@ -18,6 +18,7 @@ import logging
 import time
 from datetime import date
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -120,11 +121,16 @@ def download_historic_xls() -> Path:
     if not url:
         raise RuntimeError("No se encontro el enlace del XLS historico.")
 
-    logger.info(f"Descargando {url.rsplit('/', 1)[-1]}")
+    # The href may come relative (usual in ASP pages) and may carry a query
+    # string: resolve it against the index URL and name the file from the
+    # path only - '?' is not a legal filename character on Windows.
+    url = urljoin(URL_INDICE_HISTORICO, url)
+    nombre = Path(urlsplit(url).path).name or "valores_cuota.xls"
+    logger.info(f"Descargando {nombre}")
     r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=180)
     r.raise_for_status()
     SPP_RAW_DIR.mkdir(parents=True, exist_ok=True)
-    destino = SPP_RAW_DIR / Path(url).name
+    destino = SPP_RAW_DIR / nombre
     destino.write_bytes(r.content)
     logger.info(f"Descargados {len(r.content):,} bytes -> {destino}")
     return destino

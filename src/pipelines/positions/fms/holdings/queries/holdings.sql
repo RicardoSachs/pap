@@ -71,7 +71,7 @@ SELECT
     vi.CantidadAnterior                           AS CantidadAnterior,
     vi.PrecioAnteriorPEN                          AS PrecioAnteriorPEN,
     vi.ImporteAnteriorPEN                         AS ImporteAnteriorPEN,
-    vi.MontoInteresVencimientoCupon               AS MontoInteresVencimientoCupon,   -- coupon at maturity (flow)
+    vi.MontoInteresesVencimientoCupon             AS MontoInteresesVencimientoCupon, -- coupon at maturity (flow)
     vi.MontoOrdenesRenta                          AS MontoOrdenesRenta,              -- income orders (flow)
     vi.MontoAccionesLiberadas                     AS MontoAccionesLiberadas,         -- bonus shares / splits (flow)
     vi.MontoDividendos                            AS MontoDividendos,                -- dividends (flow)

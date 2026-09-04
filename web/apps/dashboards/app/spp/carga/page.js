@@ -104,6 +104,10 @@ export default function SppCargaPage() {
   const [rVecinos, setRVecinos] = useState({ fondos: [], fechas: [], series: {} });
   const [rMensaje, setRMensaje] = useState(null);
   const [rTick, setRTick] = useState(0);   // bumps to reload the preload after writing
+  // Gate for the write buttons: an empty box means DELETE server-side, so
+  // registering must be impossible while the boxes are unfilled because the
+  // preload is in flight or failed - not because the operator emptied them.
+  const [rPrecarga, setRPrecarga] = useState('cargando');   // cargando | ok | error
 
   const nombres = (cfg?.afps || []).map((a) => a.nombre);
   const fondosDe = (afp) => fondosDeCfg(cfg, afp);
@@ -129,6 +133,7 @@ export default function SppCargaPage() {
     setRValores(Object.fromEntries(fondos.map((fo) => [fo, ''])));
     setRActual(`${rAfp} · ${nombreMetrica(cfg, rMetrica)} · ${fFecha(rFecha)} — cargando…`);
     setRVecinos({ fondos, fechas: [], series: {} });
+    setRPrecarga('cargando');
     let vigente = true;
 
     const desde = new Date(`${rFecha}T00:00:00`); desde.setDate(desde.getDate() - 12);
@@ -156,8 +161,11 @@ export default function SppCargaPage() {
       const fechas = [...new Set(fondos.flatMap((fo) => series[fo].map((p) => p[0])))]
         .sort().slice(-9).reverse();
       setRVecinos({ fondos, fechas, series });
+      setRPrecarga('ok');
     }).catch(() => {
-      if (vigente) setRActual('No se pudo leer el libro para precargar; los cuadros quedan vacíos.');
+      if (!vigente) return;
+      setRPrecarga('error');
+      setRActual('No se pudo leer el libro para precargar; el registro queda bloqueado hasta reconectar.');
     });
     return () => { vigente = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,6 +271,7 @@ export default function SppCargaPage() {
   const [bValores, setBValores] = useState({});
   const [bEco, setBEco] = useState('');
   const [bEstado, setBEstado] = useState(null);
+  const [bPrecarga, setBPrecarga] = useState('cargando');   // same gate as the valor cuota form
   const bRef = useRef(null);
   const [bNombre, setBNombre] = useState('Ningún archivo seleccionado');
   const [bInforme, setBInforme] = useState(null);
@@ -275,6 +284,8 @@ export default function SppCargaPage() {
 
   const verBench = async (f) => {
     if (!f) return;
+    setBPrecarga('cargando');
+    setBValores(Object.fromEntries(fondosBench.map((fo) => [fo, ''])));
     try {
       const j = await apiGet(`/api/spp/benchmark/fecha?fecha=${f}`);
       const vals = {};
@@ -284,7 +295,11 @@ export default function SppCargaPage() {
       setBEco(j.existe
         ? `${n} de ${fondosBench.length} fondos ya registrados en ${fFecha(f)}.`
         : `${fFecha(f)} no está en la tabla de benchmark.`);
-    } catch { /* ignore */ }
+      setBPrecarga('ok');
+    } catch {
+      setBPrecarga('error');
+      setBEco('No se pudo leer el benchmark actual; el registro queda bloqueado hasta reconectar.');
+    }
   };
 
   useEffect(() => { if (cfg) { setBFecha(hoyLocal()); cargarBench(); } }, [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -409,8 +424,10 @@ export default function SppCargaPage() {
             ))}
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn" onClick={() => registrar(false)}>Registrar valores</button>
-            <button className="btn" onClick={() => registrar(true)}>Anular la fecha</button>
+            <button className="btn" disabled={rPrecarga !== 'ok'}
+              onClick={() => registrar(false)}>Registrar valores</button>
+            <button className="btn" disabled={rPrecarga !== 'ok'}
+              onClick={() => registrar(true)}>Anular la fecha</button>
           </div>
           {rMensaje && (
             <p className="page-sub" style={{ marginTop: 10 }}>
@@ -576,8 +593,10 @@ export default function SppCargaPage() {
             ))}
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn" onClick={() => registrarBench(false)}>Registrar benchmark</button>
-            <button className="btn" onClick={() => registrarBench(true)}>Anular la fecha</button>
+            <button className="btn" disabled={bPrecarga !== 'ok'}
+              onClick={() => registrarBench(false)}>Registrar benchmark</button>
+            <button className="btn" disabled={bPrecarga !== 'ok'}
+              onClick={() => registrarBench(true)}>Anular la fecha</button>
           </div>
           {bEco && <p className="page-sub"><b>{bEco}</b></p>}
         </div>

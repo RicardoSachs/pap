@@ -11,6 +11,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { rutaActiva } from '../lib/rutas';
 
 const ITEMS = [
   { href: '/prices/', label: 'Prices' },
@@ -25,8 +26,9 @@ export default function Sidebar({ expanded, onToggle }) {
   const params = useSearchParams();
   const qs = params.toString();
   const q = qs ? `?${qs}` : '';
-  // Prefix match so sub-routes (/spp/libro) keep their sidebar entry lit.
-  const isActive = (href) => path === href || path === href.replace(/\/$/, '') || path.startsWith(href);
+  // Shared matcher (lib/rutas): sub-routes keep their entry lit, and Nav
+  // uses the same rule so the two indicators cannot disagree.
+  const isActive = (href) => rutaActiva(path, href);
 
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : ''}`}>

@@ -4,6 +4,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { rutaActiva } from '../lib/rutas';
 
 const LINKS = [
   { href: '/prices/', label: 'Price Viewer' },
@@ -18,7 +19,7 @@ export default function Nav() {
     <nav className="nav">
       <span className="brand">Portfolio Analytics</span>
       {LINKS.map((l) => {
-        const active = path === l.href || path === l.href.replace(/\/$/, '');
+        const active = rutaActiva(path, l.href);
         return (
           <Link key={l.href} href={l.href} className={active ? 'active' : ''}>
             {l.label}

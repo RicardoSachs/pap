@@ -8,11 +8,25 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MAX_SUBIDA = 40 * 10**6  # the SBS historical Excel is ~5 MB
+
+
+def fecha_iso(crudo) -> str | None:
+    """
+    ISO date from the URL, or None. Malformed browser input is treated
+    as absent - never forwarded into a ::date cast or pd.to_datetime
+    where it would become a 500.
+    """
+    try:
+        return date.fromisoformat(str(crudo).strip()).isoformat() if crudo else None
+    except ValueError:
+        return None
 
 
 def es_si(flag: str | None) -> bool:

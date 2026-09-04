@@ -13,10 +13,10 @@
 from __future__ import annotations
 
 import re
-from datetime import date
 
 from fastapi import APIRouter, Query, Response
 
+from web.api.routes._spp_comun import fecha_iso as _fecha
 from web.api.services import spp as svc
 
 router = APIRouter(prefix="/api/spp", tags=["spp"])
@@ -28,18 +28,6 @@ def _entero(crudo, por_defecto: int, minimo: int, maximo: int) -> int:
     except (TypeError, ValueError):
         return por_defecto
     return max(minimo, min(maximo, v))
-
-
-def _fecha(crudo) -> str | None:
-    """
-    ISO date from the URL, or None. Same philosophy as _entero: malformed
-    browser input is treated as absent, never forwarded into a ::date cast
-    or pd.to_datetime where it would become a 500.
-    """
-    try:
-        return date.fromisoformat(str(crudo).strip()).isoformat() if crudo else None
-    except ValueError:
-        return None
 
 
 def _nombre_seguro(nombre: str, por_defecto: str) -> str:

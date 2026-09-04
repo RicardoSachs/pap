@@ -23,7 +23,7 @@ from src.pipelines.prices.sbs.valor_cuota import benchmark as bench
 from src.pipelines.prices.sbs.valor_cuota.registro import registrar_valores
 from src.pipelines.prices.sbs.valor_cuota.run import (
     MODOS_CARGA, cargar_historico, revisar_historico, run_daily, ultima_corrida)
-from web.api.routes._spp_comun import XLSX, es_si, leer_archivo
+from web.api.routes._spp_comun import XLSX, es_si, fecha_iso, leer_archivo
 from web.api.services.spp_tarea import (
     TAREA_WINDOWS, con_bitacora, guardar_subida, lanzar, leer_subida)
 
@@ -224,7 +224,7 @@ def get_benchmark_plantilla() -> Response:
 @router.get("/benchmark/exportar")
 def get_benchmark_exportar(desde: str | None = None,
                            hasta: str | None = None) -> Response:
-    return Response(bench.exportar_benchmark_datos(desde or None, hasta or None),
+    return Response(bench.exportar_benchmark_datos(fecha_iso(desde), fecha_iso(hasta)),
                     media_type=XLSX,
                     headers={"Content-Disposition":
                              "attachment; filename=benchmark_diario.xlsx"})

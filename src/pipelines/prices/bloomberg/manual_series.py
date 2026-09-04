@@ -336,8 +336,16 @@ def pedir_historico(tickers: list, campos: list, desde, hasta,
                     continue
                 for sec in (datos if isinstance(datos, list) else [datos]):
                     ticker = sec.get("security")
-                    for err in sec.get("securityError", []) or []:
-                        avisos.append(f"{ticker}: {err}")
+                    # toPy() delivers securityError as a single dict, not a
+                    # list; iterating it bare would log its KEYS. Normalize
+                    # and surface the actual message.
+                    errores = sec.get("securityError") or []
+                    if isinstance(errores, dict):
+                        errores = [errores]
+                    for err in errores:
+                        motivo = (err.get("message") or err.get("category")
+                                  or str(err)) if isinstance(err, dict) else str(err)
+                        avisos.append(f"{ticker}: {motivo}")
                     campos_datos = sec.get("fieldData") or []
                     if isinstance(campos_datos, dict):
                         campos_datos = [campos_datos]
@@ -458,13 +466,18 @@ def _marcar(serie_id: int, resultado: str, error=None, ultima_fecha=None) -> Non
 
 # ---- Extraction -----------------------------------------------------
 
-def _ventana(serie: dict, hasta: dt.date):
+def _ventana(serie: dict, hasta: dt.date, corregir: bool = False):
     """
     Request window per series: a new one starts at its declared date, a
     loaded one the day after its last point, and an up-to-date one
     returns None and burns no quota.
+
+    corregir re-requests the WHOLE declared window: a corrective run
+    exists to re-fetch figures Bloomberg restated, and starting after
+    the last stored point would never touch an already-loaded date -
+    the DO UPDATE branch in guardar() would be dead code.
     """
-    ultima = serie.get("hasta") or serie.get("ultima_fecha")
+    ultima = None if corregir else (serie.get("hasta") or serie.get("ultima_fecha"))
     if ultima:
         desde = pd.to_datetime(ultima).date() + dt.timedelta(days=1)
     elif serie.get("fecha_inicio"):
@@ -499,7 +512,7 @@ def extraer(serie_ids=None, hasta=None, corregir: bool = False,
     grupos: dict[tuple, list] = {}
     al_dia = []
     for s in registro:
-        ventana = _ventana(s, hasta)
+        ventana = _ventana(s, hasta, corregir=corregir)
         if ventana is None:
             al_dia.append(s["serie_id"])
             continue

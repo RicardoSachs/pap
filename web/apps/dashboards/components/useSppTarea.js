@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../lib/api';
 
 const INTERVALO_MS = 1000;
+const MAX_FALLOS = 5;
 
 export default function useSppTarea() {
   const [tarea, setTarea] = useState(null);
@@ -24,17 +25,30 @@ export default function useSppTarea() {
 
   const seguir = (alTerminar) => {
     clearInterval(pollRef.current);
+    // A single failed poll must NOT read as success: the task may still
+    // be running server-side. Tolerate a few consecutive blips; only
+    // after giving up mark the state as lost - with an error, never as
+    // a clean finish.
+    let fallos = 0;
     pollRef.current = setInterval(async () => {
       try {
         const t = await apiGet('/api/spp/tarea');
+        fallos = 0;
         setTarea(t);
         if (!t.activa) {
           clearInterval(pollRef.current);
           if (alTerminar) alTerminar(t);
         }
       } catch {
-        clearInterval(pollRef.current);
-        setTarea((t) => (t ? { ...t, activa: false } : t));
+        fallos += 1;
+        if (fallos >= MAX_FALLOS) {
+          clearInterval(pollRef.current);
+          setTarea((t) => ({
+            ...(t || {}),
+            activa: false,
+            error: 'Se perdió el seguimiento de la tarea (sin conexión con la API); puede seguir corriendo en el servidor. Recarga la página para reconectar.',
+          }));
+        }
       }
     }, INTERVALO_MS);
   };

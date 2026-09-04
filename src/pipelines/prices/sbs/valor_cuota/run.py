@@ -120,6 +120,10 @@ def cargar_historico(contenido: bytes, modo: str = "faltantes") -> dict:
     if modo not in MODOS_CARGA:
         raise ValueError(f"Modo de carga no valido: {modo}. "
                          f"Usa {' o '.join(MODOS_CARGA)}.")
+    # The web upload path enters here directly (no run_daily before it):
+    # on a fresh database an empty series_map would silently drop every
+    # value and report the load as done.
+    ensure_registered()
     raw_df = parse_historico(contenido)
     # Future dates in a hand-edited file must not enter the book.
     raw_df = raw_df[raw_df["date"] <= date.today()].reset_index(drop=True)
@@ -166,6 +170,7 @@ def revisar_historico(contenido: bytes) -> dict:
     The report it returns is what the dashboard shows before choosing
     the load mode.
     """
+    ensure_registered()
     no_registradas: set[str] = set()
     df = parse_historico(contenido, no_registradas)
 

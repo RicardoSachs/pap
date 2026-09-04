@@ -58,11 +58,15 @@ def optional(key: str, default: str | None = None) -> str | None:
     Reads a non-secret value that has a safe default (a port, a flag).
     Never use this for a credential - use required().
 
+    An EMPTY value counts as unset on purpose: .env.example ships every
+    key blank (KEY=), and os.getenv's own default would lose to that
+    empty string - which once turned every data path CWD-relative.
+
     :param key: Environment variable name
     :type key: str
-    :param default: Value to use when the key is unset
+    :param default: Value to use when the key is unset or empty
     :type default: str | None
     :return: The value or the default
     :rtype: str | None
     """
-    return os.getenv(key, default)
+    return os.getenv(key) or default

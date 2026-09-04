@@ -19,7 +19,8 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from src.pipelines.prices.bloomberg import manual_series as bbg
-from web.api.routes._spp_comun import XLSX, es_si, leer_archivo, parse_ids
+from web.api.routes._spp_comun import (XLSX, es_si, fecha_iso, leer_archivo,
+                                       parse_ids)
 from web.api.services.spp_tarea import estado_tarea, lanzar
 
 logger = logging.getLogger(__name__)
@@ -137,7 +138,7 @@ def get_datos(series: str = Query(""),
     if error:
         return error
 
-    df = bbg.leer(ids, desde or None, hasta or None)
+    df = bbg.leer(ids, fecha_iso(desde), fecha_iso(hasta))
     registro = {s["serie_id"]: s for s in bbg.series_registro()}
     salida = []
     for sid, grupo in (df.groupby("serie_id") if not df.empty else []):
@@ -168,7 +169,7 @@ def get_exportar(series: str = Query(""),
     ids, error = parse_ids(series)
     if error:
         return error
-    datos = bbg.exportar_datos(ids, desde or None, hasta or None)
+    datos = bbg.exportar_datos(ids, fecha_iso(desde), fecha_iso(hasta))
     return Response(datos, media_type=XLSX,
                     headers={"Content-Disposition":
                              "attachment; filename=bloomberg.xlsx"})

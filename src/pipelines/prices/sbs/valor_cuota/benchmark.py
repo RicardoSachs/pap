@@ -366,13 +366,21 @@ def guardar_bench(df: pd.DataFrame, fuente: str = "csv",
     with get_connection() as conn:
         series = _series_bench(conn)
         ids = list(series.values())
-        previas = {r["date"] for r in conn.execute(
-            "SELECT DISTINCT date FROM fact_prices WHERE series_id = ANY(%s)",
-            (ids,)).fetchall()} if ids else set()
+        # Existing values, not just dates: under refrescar the DO UPDATE
+        # rowcount is 1 for every row, so honest nuevas/actualizadas/
+        # sin_cambio counts require comparing against what is stored -
+        # the whole point of the review-then-load audit. An identical
+        # value is skipped entirely (no write, no count).
+        existentes: dict[tuple, float] = {}
+        if ids:
+            for r in conn.execute(
+                    "SELECT series_id, date, price FROM fact_prices "
+                    "WHERE series_id = ANY(%s)", (ids,)).fetchall():
+                existentes[(r["series_id"], r["date"])] = float(r["price"])
+        fechas_previas = {d for (_, d) in existentes}
 
         nuevas_fechas: set = set()
         celdas = celdas_conocidas = sin_cambio = 0
-        stmt = UPSERT_CORRIGE if refrescar else UPSERT_NADA
         for _, fila in df.iterrows():
             fecha = pd.to_datetime(fila["fecha"]).date()
             for f, sid in series.items():
@@ -380,13 +388,17 @@ def guardar_bench(df: pd.DataFrame, fuente: str = "csv",
                 v = fila.get(col)
                 if v is None or pd.isna(v):
                     continue
-                cur = conn.execute(stmt, (sid, fecha, float(v), fuente))
-                if cur.rowcount > 0:
+                v = float(v)
+                previo = existentes.get((sid, fecha))
+                if previo is None:
+                    conn.execute(UPSERT_NADA, (sid, fecha, v, fuente))
                     celdas += 1
-                    if fecha in previas:
-                        celdas_conocidas += 1
-                    else:
+                    if fecha not in fechas_previas:
                         nuevas_fechas.add(fecha)
+                elif refrescar and abs(previo - v) > 1e-9:
+                    conn.execute(UPSERT_CORRIGE, (sid, fecha, v, fuente))
+                    celdas += 1
+                    celdas_conocidas += 1
                 else:
                     sin_cambio += 1
 

@@ -4,18 +4,39 @@
 // Fixed top header: brand, portfolio selector, period control (quick buttons +
 // Custom date inputs), source selector, freshness indicator, theme toggle.
 // All bound to DashboardProvider.
+//
+// On the SPP tablero (/spp/*) the dashboard context does not apply - that
+// view has its own VENTANA control and no portfolio/source dimension - so
+// the context controls are hidden there to avoid a dead selector that looks
+// like it should drive the page.
 // ---------------------------------------------------------------------------
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
 import ThemeToggle from './ThemeToggle';
 import { fmtDisplay } from '../lib/period';
+import { rutaActiva } from '../lib/rutas';
 
 export default function Header() {
   const d = useDashboard();
+  const path = usePathname();
   if (!d) return null;
 
   const isCustom = d.period === 'Custom';
+
+  if (rutaActiva(path, '/spp/')) {
+    return (
+      <header className="header">
+        <span className="brand">Profuturo Analytics</span>
+        <div className="spacer" />
+        <span className="freshness" title="Reference data — current as of the latest load">
+          <span className="dot" /> Data current
+        </span>
+        <ThemeToggle />
+      </header>
+    );
+  }
 
   return (
     <header className="header">

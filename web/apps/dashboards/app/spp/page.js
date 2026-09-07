@@ -15,8 +15,9 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  ROTULO_KPI, VENTANAS, colorDe, desdeVentana, fFecha, fmtMetrica, fmtRend,
-  metricasDe, nEnt, nf, nombreMetrica, opera as operaCfg, signo, valorMostrado,
+  GRIS_COMPETIDOR, ROTULO_KPI, VENTANAS, colorDe, desdeVentana, fFecha,
+  fmtMetrica, fmtRend, grisLinea, metricasDe, nEnt, nf, nombreMetrica,
+  opera as operaCfg, ordenCasa, signo, valorMostrado,
 } from '../../lib/spp';
 import KpiBar from '../../components/KpiBar';
 import SppSeg from '../../components/SppSeg';
@@ -78,18 +79,20 @@ export default function SppPanelPage() {
   }, [cfg, metrica, fechaControl]);
 
   // 12M return is always computed on valor cuota - the definition of a
-  // fund's performance, whatever metric is on screen.
+  // fund's performance, whatever metric is on screen. Keyed on the derived
+  // reference AFP, not the whole multi-select: toggling a competitor chip
+  // must not re-fetch a year of data the KPI does not use.
+  const afpRef12 = casa && afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
   useEffect(() => {
-    if (!cfg || !casa) return;
-    const ref = afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
+    if (!cfg || !afpRef12) return;
     const desde = desdeVentana(1, estado, vent?.fechas);
-    const q = new URLSearchParams({ fondo: String(fondo), afps: ref, metrica: 'valor_cuota', desde });
+    const q = new URLSearchParams({ fondo: String(fondo), afps: afpRef12, metrica: 'valor_cuota', desde });
     apiGet(`/api/spp/serie?${q}`).then((d) => {
       const p = d.series?.[0]?.puntos;
-      setR12(p && p.length > 1 ? { afp: ref, ret: p[p.length - 1][1] / p[0][1] - 1, desde: p[0][0] } : null);
+      setR12(p && p.length > 1 ? { afp: afpRef12, ret: p[p.length - 1][1] / p[0][1] - 1, desde: p[0][0] } : null);
     }).catch(() => setR12(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, estado, fondo, afpsSel]);
+  }, [cfg, estado, fondo, afpRef12]);
 
   // ---- KPIs -------------------------------------------------------------
   const afpRef = casa && afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
@@ -151,7 +154,7 @@ export default function SppPanelPage() {
     const otras = enPantalla.filter((a) => a !== casa);
     const i = otras.indexOf(afp);
     const alpha = otras.length < 2 ? 0.8 : 0.85 - (0.5 * i) / (otras.length - 1);
-    return `rgba(128, 138, 152, ${alpha.toFixed(2)})`;
+    return grisLinea(alpha.toFixed(2));
   };
 
   const series = serieData?.series || [];
@@ -180,7 +183,7 @@ export default function SppPanelPage() {
         type: 'scatter', mode: 'lines', name: s.afp,
         // legendrank puts the house first in the LEGEND while the trace
         // order (house last) keeps its line drawn on top of the grays.
-        legendrank: esCasa ? 1 : 2 + enPantalla.indexOf(s.afp),
+        legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
         line: { color, width: esCasa ? 2.8 : 1.6 },
         hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:,.4f}<extra></extra>`,
         hoverlabel: { bordercolor: esCasa ? color : colorDe(cfg, s.afp) },
@@ -191,13 +194,14 @@ export default function SppPanelPage() {
 
   const ct = chartTheme();
 
-  // ---- Cierre por AFP (house first, same criterion as the charts) --------
+  // ---- Cierre por AFP (house first via the one shared ordering) ----------
+  const ordenGlobal = ordenCasa(cfg, nombres);
   const cierres = (estado?.series || [])
     .filter((x) => x.fondo === fondo && afpsSel.includes(x.afp))
-    .sort((a, b) => (a.afp === casa ? -1 : b.afp === casa ? 1 : 0));
+    .sort((a, b) => ordenGlobal.indexOf(a.afp) - ordenGlobal.indexOf(b.afp));
 
   // ---- Ventanas tables ---------------------------------------------------
-  const ordenRel = casa ? [casa, ...nombres.filter((a) => a !== casa)] : nombres;
+  const ordenRel = ordenCasa(cfg, nombres);
 
   function TablaVentanas({ cols, filas, conUnidad, orden }) {
     // House first and in its brand color; competitor section headers stay
@@ -256,7 +260,7 @@ export default function SppPanelPage() {
     const color = esCasa ? colorDe(cfg, afp, true) : grisDe(afp, compitenPos);
     return {
       x: xs, y: ys, type: 'scatter', mode: 'lines+markers', name: afp,
-      legendrank: esCasa ? 1 : 2 + compitenPos.indexOf(afp),
+      legendrank: ordenCasa(cfg, compitenPos).indexOf(afp) + 1,
       line: { color, width: esCasa ? 3.2 : 2 },
       marker: { size: esCasa ? 9 : 7 },
       hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,
@@ -433,12 +437,11 @@ export default function SppPanelPage() {
               {/* House row first (it is the question this table answers),
                   heat in its brand ramp; competitors share ONE gray ramp so
                   intensity reads as rank everywhere, not as identity. */}
-              {[...(compitenPos.includes(casa) ? [casa] : []),
-                ...compitenPos.filter((a) => a !== casa)].map((afp) => {
+              {ordenCasa(cfg, compitenPos).map((afp) => {
                 const fila = (pos?.filas || []).find((r) => r.fondo === fondoPos && r.afp === afp);
                 if (!fila) return null;
                 const esCasa = afp === casa;
-                const base = esCasa ? colorDe(cfg, afp, true) : 'rgb(128, 138, 152)';
+                const base = esCasa ? colorDe(cfg, afp, true) : GRIS_COMPETIDOR;
                 return (
                   <tr key={afp}>
                     <td><span className="spp-chip" style={{ background: colorDe(cfg, afp) }} />

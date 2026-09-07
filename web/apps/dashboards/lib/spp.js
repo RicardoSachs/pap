@@ -47,6 +47,21 @@ export const ROTULO_KPI = {
 // ---- Config-driven helpers ------------------------------------------------
 // The interface names no AFP and no metric: everything comes from
 // /api/spp/config. These are the one copy of the cfg lookups the pages share.
+// The ONE neutral gray of the house-vs-grays scheme (charts, heatmap,
+// fallback chip) - retune it here and every consumer follows.
+export const GRIS_COMPETIDOR = 'rgb(128, 138, 152)';
+export const GRIS_HEX = '#8892A4';
+export const grisLinea = (alpha) => `rgba(128, 138, 152, ${alpha})`;
+
+// The ONE house-first ordering (legends, tables, heatmap rows): the house
+// AFP (cfg.casa) leads, the rest keep their relative order.
+export const ordenCasa = (cfg, lista) => {
+  const casa = cfg?.casa;
+  return casa && lista.includes(casa)
+    ? [casa, ...lista.filter((a) => a !== casa)]
+    : [...lista];
+};
+
 export const afpDe = (cfg, afp) => (cfg?.afps || []).find((a) => a.nombre === afp);
 export const opera = (cfg, afp, f) => {
   const a = afpDe(cfg, afp);
@@ -55,7 +70,7 @@ export const opera = (cfg, afp, f) => {
 export const fondosDe = (cfg, afp) => (cfg?.fondos || []).filter((f) => opera(cfg, afp, f));
 export const colorDe = (cfg, afp, solido = false) => {
   const a = afpDe(cfg, afp);
-  return a ? (solido ? a.color_solido : a.color) : '#8892A4';
+  return a ? (solido ? a.color_solido : a.color) : GRIS_HEX;
 };
 export const metricasDe = (cfg) =>
   (cfg?.metricas?.length ? cfg.metricas.map((m) => [m.etiqueta, m.clave]) : METRICAS);

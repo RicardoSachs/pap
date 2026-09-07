@@ -20,10 +20,14 @@ import {
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 
+// The API serializes task timestamps as ISO at the source (see
+// _tarea_windows: locale-formatted [string]$date casts swapped day and
+// month depending on the machine's culture), so plain Date parsing here
+// is unambiguous.
 const fHora = (t) => {
   if (!t) return '—';
   const d = new Date(t);
-  return Number.isNaN(d.getTime()) ? t : d.toLocaleString('es-PE',
+  return Number.isNaN(d.getTime()) ? String(t) : d.toLocaleString('es-PE',
     { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
@@ -272,6 +276,7 @@ export default function SppCargaPage() {
   const [bEco, setBEco] = useState('');
   const [bEstado, setBEstado] = useState(null);
   const [bPrecarga, setBPrecarga] = useState('cargando');   // same gate as the valor cuota form
+  const bReq = useRef(0);   // stale-response guard, same as the valor cuota preload
   const bRef = useRef(null);
   const [bNombre, setBNombre] = useState('Ningún archivo seleccionado');
   const [bInforme, setBInforme] = useState(null);
@@ -284,10 +289,15 @@ export default function SppCargaPage() {
 
   const verBench = async (f) => {
     if (!f) return;
+    // Stale-response guard: a slow reply for a previously selected date
+    // must never overwrite the boxes of the current one (the race the
+    // valor cuota preload already guards with `vigente`).
+    const req = ++bReq.current;
     setBPrecarga('cargando');
     setBValores(Object.fromEntries(fondosBench.map((fo) => [fo, ''])));
     try {
       const j = await apiGet(`/api/spp/benchmark/fecha?fecha=${f}`);
+      if (req !== bReq.current) return;
       const vals = {};
       fondosBench.forEach((fo) => { vals[fo] = j.valores?.[fo] == null ? '' : String(j.valores[fo]); });
       setBValores(vals);
@@ -297,6 +307,7 @@ export default function SppCargaPage() {
         : `${fFecha(f)} no está en la tabla de benchmark.`);
       setBPrecarga('ok');
     } catch {
+      if (req !== bReq.current) return;
       setBPrecarga('error');
       setBEco('No se pudo leer el benchmark actual; el registro queda bloqueado hasta reconectar.');
     }

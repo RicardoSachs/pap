@@ -205,6 +205,17 @@ def leer_archivo_benchmark(datos, hoja=None) -> dict:
                   if isinstance(c, str) and re.fullmatch(r"-?[\d.,\s]+", c.strip())
                   and re.search(r"\d", c)]
         coma_decimal = tabular.estilo_decimal(textos)
+        # Undecidable style with separator-bearing TEXT cells is refused,
+        # not guessed: num_flexible would treat None as point-decimal and
+        # strip the commas as thousands separators - a 1000x inflation
+        # that passes every later check. Typed numeric cells are safe
+        # (they bypass the separator logic entirely).
+        if coma_decimal is None and any("," in t or "." in t for t in textos):
+            raise ValueError(
+                "No se pudo decidir si la coma o el punto es el separador "
+                "decimal del archivo (las celdas de texto son ambiguas). "
+                "Da formato numerico a las celdas en Excel, o exporta a "
+                "CSV, y vuelve a subirlo.")
     else:
         filas, sep, coma_decimal = tabular.filas_de_csv(datos)
         origen, nombre_hoja, hojas = "csv", None, []
@@ -372,10 +383,14 @@ def guardar_bench(df: pd.DataFrame, fuente: str = "csv",
         # the whole point of the review-then-load audit. An identical
         # value is skipped entirely (no write, no count).
         existentes: dict[tuple, float] = {}
+        fechas_df = pd.to_datetime(df["fecha"]).dt.date
         if ids:
+            # Bounded to the file's date span: a 10-row correction must not
+            # fetch the whole (unboundedly growing) benchmark history.
             for r in conn.execute(
                     "SELECT series_id, date, price FROM fact_prices "
-                    "WHERE series_id = ANY(%s)", (ids,)).fetchall():
+                    "WHERE series_id = ANY(%s) AND date BETWEEN %s AND %s",
+                    (ids, fechas_df.min(), fechas_df.max())).fetchall():
                 existentes[(r["series_id"], r["date"])] = float(r["price"])
         fechas_previas = {d for (_, d) in existentes}
 

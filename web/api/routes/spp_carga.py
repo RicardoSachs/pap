@@ -68,12 +68,17 @@ def _tarea_windows() -> dict:
     """
     if os.name != "nt":
         return {"disponible": False, "motivo": "Solo en Windows."}
+    # Timestamps go out as ISO ('s' = yyyy-MM-ddTHH:mm:ss), NEVER as
+    # [string]$date: that cast formats with the powershell process's
+    # culture, which varies per machine (dd/MM vs MM/dd) and made the
+    # dashboard swap day and month depending on where the API ran.
     guion = (
         f"$t = Get-ScheduledTask -TaskName '{TAREA_WINDOWS}' -ErrorAction SilentlyContinue; "
         "if (-not $t) { '{\"registrada\":false}' } else { "
         "$i = $t | Get-ScheduledTaskInfo; "
         "[pscustomobject]@{ registrada=$true; estado=[string]$t.State; "
-        "  proxima=[string]$i.NextRunTime; ultima=[string]$i.LastRunTime; "
+        "  proxima=if ($i.NextRunTime) { $i.NextRunTime.ToString('s') } else { '' }; "
+        "  ultima=if ($i.LastRunTime) { $i.LastRunTime.ToString('s') } else { '' }; "
         "  resultado=$i.LastTaskResult; omitidas=$i.NumberOfMissedRuns; "
         "  disparo=[string]($t.Triggers | ForEach-Object { $_.StartBoundary }) "
         "} | ConvertTo-Json -Compress }")

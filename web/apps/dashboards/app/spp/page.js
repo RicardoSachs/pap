@@ -143,6 +143,17 @@ export default function SppPanelPage() {
   ];
 
   // ---- Chart traces ------------------------------------------------------
+  // The house AFP stands out in its brand color; competitors render in a
+  // gray scale of decreasing weight (the monitor's positions-chart design):
+  // one glance says how the house is doing without losing who it competes
+  // against. Grays are spread over however many competitors are on screen.
+  const grisDe = (afp, enPantalla) => {
+    const otras = enPantalla.filter((a) => a !== casa);
+    const i = otras.indexOf(afp);
+    const alpha = otras.length < 2 ? 0.8 : 0.85 - (0.5 * i) / (otras.length - 1);
+    return `rgba(128, 138, 152, ${alpha.toFixed(2)})`;
+  };
+
   const series = serieData?.series || [];
   const traces = useMemo(() => {
     const conDatos = series.filter((s) => s.puntos.length);
@@ -153,8 +164,10 @@ export default function SppPanelPage() {
       const inicios = conDatos.map((s) => s.puntos[0][0]);
       baseFecha = inicios.reduce((m, f) => (f > m ? f : m), inicios[0]);
     }
+    const enPantalla = conDatos.map((s) => s.afp);
     return conDatos.map((s) => {
-      const color = colorDe(cfg, s.afp);
+      const esCasa = s.afp === casa;
+      const color = esCasa ? colorDe(cfg, s.afp, true) : grisDe(s.afp, enPantalla);
       let pts = s.puntos;
       let base = null;
       if (escala === 'base') {
@@ -165,11 +178,12 @@ export default function SppPanelPage() {
         x: pts.map((p) => p[0]),
         y: pts.map((p) => (base ? (p[1] / base) * 100 : p[1])),
         type: 'scatter', mode: 'lines', name: s.afp,
-        line: { color, width: s.afp === casa ? 2.6 : 1.8 },
+        line: { color, width: esCasa ? 2.8 : 1.6 },
         hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:,.4f}<extra></extra>`,
-        hoverlabel: { bordercolor: color },
+        hoverlabel: { bordercolor: esCasa ? color : colorDe(cfg, s.afp) },
       };
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [series, escala, cfg, casa]);
 
   const ct = chartTheme();
@@ -229,13 +243,15 @@ export default function SppPanelPage() {
     });
     if (!xs.length) return null;
     const esCasa = afp === casa;
-    const color = esCasa ? colorDe(cfg, afp, true) : colorDe(cfg, afp);
+    // Same house-vs-grays scheme as the historic series chart.
+    const color = esCasa ? colorDe(cfg, afp, true) : grisDe(afp, compitenPos);
     return {
       x: xs, y: ys, type: 'scatter', mode: 'lines+markers', name: afp,
       line: { color, width: esCasa ? 3.2 : 2 },
       marker: { size: esCasa ? 9 : 7 },
       hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }).filter(Boolean), [pos, fondoPos, cfg, casa, nombres, periodos]);
 
   if (error) {

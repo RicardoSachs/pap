@@ -40,6 +40,11 @@ def extract(run_date: date) -> pd.DataFrame:
         if col not in raw.columns:
             raw[col] = None
     raw = raw[list(dict.fromkeys(RAW_COLUMNS.values()))].copy().dropna(how="all")
+    # Canonical codigo_sbs is DASHLESS (the FMS format) - strip the SBS
+    # dash separators at the ingestion boundary.
+    raw["codigo_sbs"] = raw["codigo_sbs"].map(
+        lambda v: v.replace("-", "") if isinstance(v, str) else v
+    )
     for col in DATE_COLS:
         if col in raw.columns:
             raw[col] = pd.to_datetime(raw[col], errors="coerce", dayfirst=True).dt.date

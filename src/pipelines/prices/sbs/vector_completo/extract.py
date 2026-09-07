@@ -36,6 +36,13 @@ def read_raw(run_date: date) -> pd.DataFrame:
         if col not in raw.columns:
             raw[col] = None
     raw = raw[list(RAW_COLUMNS.values())].copy().dropna(how="all")
+    # Canonical codigo_sbs is DASHLESS (the FMS format). SBS files publish
+    # it with dash separators (01-1000-01-12B29); strip at the ingestion
+    # boundary so the dashed form never enters staging, the registry, or
+    # dim_entity_identifiers.
+    raw["codigo_sbs"] = raw["codigo_sbs"].map(
+        lambda v: v.replace("-", "") if isinstance(v, str) else v
+    )
     logger.info(f"vector_completo: {len(raw)} rows read.")
     return raw
 

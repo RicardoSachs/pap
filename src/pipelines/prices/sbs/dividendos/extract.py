@@ -56,7 +56,7 @@ def load_stg(conn, df: pd.DataFrame) -> int:
             """
             INSERT INTO stg_prices_sbs_dividendos (
                 fecha_vector, codigo_sbs, isin, nemonico,
-                emisor, moneda, factor_de_ajuste, tipo_entrega,
+                emisor, moneda, factor_ajuste, tipo_entrega,
                 date, loaded_at
             ) VALUES (
                 %s, %s, %s, %s,

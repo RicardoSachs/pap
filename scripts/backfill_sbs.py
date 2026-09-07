@@ -1,21 +1,24 @@
 # scripts/backfill_sbs.py
 # ---------------------------------------------------------------
-# File-driven backfill for SBS price pipelines.
-# Iterates through all available raw files oldest to newest
-# and runs the ingestion pipeline for each date.
+# File-driven backfill for SBS price pipelines - set-based path.
 #
-# Unlike Bloomberg backfill which calls an API with a date range,
-# SBS backfill reads local files already acquired by the scraper.
-# No API calls are made - purely file-to-DB ingestion.
+# Discovers available dates from raw filenames and hands them to
+# src/pipelines/prices/sbs/backfill.py, which stages the whole range
+# with bulk COPY, registers instruments ONCE for the span, loads
+# fact_prices with one INSERT..SELECT per field inside Postgres, and
+# sweeps series_registry / dim_security in single statements.
+#
+# The per-day incremental pipelines (each vector's run.py) are NOT
+# used here - they remain the scheduler's daily path. This script
+# replaced the old per-day loop, which re-ran registration and
+# per-series classification for every date (tens of thousands of
+# no-op statements per day per file type).
 #
 # Usage:
 #   # Backfill all file types
 #   python scripts/backfill_sbs.py
 #
-#   # Backfill specific file type only
-#   python scripts/backfill_sbs.py --file-type rf_local
-#
-#   # Backfill multiple specific file types
+#   # Backfill specific file type(s)
 #   python scripts/backfill_sbs.py --file-type rf_local rf_exterior
 #
 #   # Backfill within a date range
@@ -24,15 +27,12 @@
 #   # Dry run: show available dates without loading
 #   python scripts/backfill_sbs.py --file-type vector_completo --dry-run
 #
-#   # Skip dates already fully loaded (default behaviour)
-#   python scripts/backfill_sbs.py --file-type rf_local
-#
-#   # Force reload even for dates already loaded
+#   # Re-stage dates even if already staged (facts are ON CONFLICT
+#   # DO NOTHING either way; re-staged dates win via latest loaded_at)
 #   python scripts/backfill_sbs.py --file-type rf_local --force
 # ---------------------------------------------------------------
 
 import argparse
-import importlib
 import logging
 import sys
 from datetime import date
@@ -46,30 +46,22 @@ from src.shared.paths import RAW_DIR
 
 logger = logging.getLogger(__name__)
 
-# Maps file type to its raw subdirectory under data/raw/manual/sbs/
+# Maps file type to its raw subdirectory under data/raw/sbs/vector_precios/
 FILE_TYPE_SUBDIR = {
     "vector_completo": "vector_completo",
     "rf_local":        "rfl",
     "rf_exterior":     "rfe",
     "tipo_cambio":     "tc",
-    "dividendos": "dividendos",
-}
-
-# Maps file type to its pipeline module
-FILE_TYPE_MODULE = {
-    "vector_completo": "src.pipelines.prices.sbs.vector_completo.run",
-    "rf_local":        "src.pipelines.prices.sbs.rf_local.run",
-    "rf_exterior":     "src.pipelines.prices.sbs.rf_exterior.run",
-    "tipo_cambio":     "src.pipelines.prices.sbs.tipo_cambio.run",
-    "dividendos": "src.pipelines.prices.sbs.dividendos.run",
+    "dividendos":      "dividendos",
 }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "File-driven backfill for SBS price pipelines. "
-            "Iterates available raw files oldest to newest."
+            "Set-based file-driven backfill for SBS price pipelines. "
+            "Stages all available raw files for a range, then loads facts "
+            "with set-based SQL."
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -108,9 +100,9 @@ def main() -> None:
         action="store_true",
         default=False,
         help=(
-            "Process all dates even if series are already loaded. "
-            "Default: skip dates where fact_prices already has rows "
-            "for all series of that file type."
+            "Re-stage all dates even if already staged. Default: dates "
+            "already present in the staging table are not re-read; the "
+            "fact/metadata/dim phases run over the full span either way."
         ),
     )
 
@@ -147,7 +139,6 @@ def _backfill_file_type(
 ) -> None:
     logger.info(f"--- Backfill: {file_type} ---")
 
-    # Discover available dates from filesystem
     available_dates = _discover_dates(file_type, start, end)
 
     if not available_dates:
@@ -165,55 +156,14 @@ def _backfill_file_type(
             logger.info(f"  {d}")
         return
 
-    # Filter out already-loaded dates unless --force
-    if not force:
-        dates_to_process = _filter_already_loaded(file_type, available_dates)
-        skipped = len(available_dates) - len(dates_to_process)
-        if skipped:
-            logger.info(
-                f"{file_type}: skipping {skipped} dates already loaded. "
-                f"Use --force to reload."
-            )
-    else:
-        dates_to_process = available_dates
+    from src.pipelines.prices.sbs.backfill import run_backfill
 
-    if not dates_to_process:
-        logger.info(f"{file_type}: all available dates already loaded.")
-        return
-
-    logger.info(
-        f"{file_type}: processing {len(dates_to_process)} dates "
-        f"({dates_to_process[0]} to {dates_to_process[-1]})."
-    )
-
-    # Load pipeline module
-    mod = importlib.import_module(FILE_TYPE_MODULE[file_type])
-
-    succeeded = []
-    failed    = []
-
-    for run_date in dates_to_process:
-        try:
-            logger.info(f"{file_type}: processing {run_date}...")
-            mod.run(run_date=run_date)
-            succeeded.append(run_date)
-        except Exception as e:
-            logger.error(
-                f"{file_type}: failed for {run_date}: {e}",
-                exc_info=True,
-            )
-            failed.append(run_date)
-            # Continue to next date rather than aborting entire backfill
-
-    logger.info(
-        f"{file_type}: {len(succeeded)} succeeded, {len(failed)} failed."
-    )
-    if failed:
-        logger.warning(
-            f"{file_type}: failed dates: {[str(d) for d in failed]}. "
-            f"Re-run with --start {min(failed)} --end {max(failed)} "
-            f"--file-type {file_type} to retry."
-        )
+    try:
+        run_backfill(file_type, available_dates, force=force)
+    except Exception as e:
+        logger.error(f"{file_type}: backfill failed: {e}", exc_info=True)
+        # Continue to the next file type; every phase is idempotent, so
+        # re-running this file type resumes where it left off.
 
 
 # ---- Filesystem helpers ----------------------------------------
@@ -224,8 +174,8 @@ def _discover_dates(
     end: Optional[date],
 ) -> list[date]:
     """
-    Scans data/raw/sbs/vector_precios/{subdomain}/ across all year subdirs
-    and extracts dates from YYYYMMDD_ prefixed filenames.
+    Scans data/raw/sbs/vector_precios/{subdomain}/ and extracts dates
+    from YYYYMMDD_ prefixed filenames.
     Returns sorted list of dates within the optional range.
     """
     subdir = RAW_DIR / 'sbs' / 'vector_precios' / FILE_TYPE_SUBDIR[file_type]
@@ -252,38 +202,6 @@ def _discover_dates(
                 continue
 
     return sorted(set(dates))
-
-
-def _filter_already_loaded(
-    file_type: str,
-    available_dates: list[date],
-) -> list[date]:
-    """
-    Returns dates from available_dates that have not yet been
-    fully loaded into fact_prices.
-    A date is considered loaded if fact_prices has at least one row
-    for that date from source='sbs'.
-    """
-    if not available_dates:
-        return []
-
-    from src.db.connection import get_connection
-
-    with get_connection() as conn:
-        # Get all reference_dates already loaded from sbs
-        rows = conn.execute(
-            """
-            SELECT DISTINCT date
-            FROM fact_prices
-            WHERE source = 'sbs'
-            """
-        ).fetchall()
-        loaded_dates = {r["date"] for r in rows}
-
-    return [
-        d for d in available_dates
-        if d.isoformat() not in loaded_dates
-    ]
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@
 -- not an FK to dim_entity. Forwards aren't registered as entities
 -- (too ephemeral, too many, no analytical value per-contract).
 -- Opportunistic linkage to dim_entity is a LEFT JOIN at query
--- time via dim_entity_identifiers where id_type='sbs'.
+-- time via dim_entity_identifiers where id_type='codigo_sbs'.
 --
 -- Two-leg encoding: one row per contract, both legs as columns
 -- (moneda_compra, moneda_venta). Downstream code that needs the

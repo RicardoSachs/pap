@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS series_registry (
     frequency TEXT NOT NULL,
     default_start_date DATE,
     status TEXT NOT NULL DEFAULT 'backfill-pending'
-        CHECK (status IN ('backfill-pending', 'active', 'suspended', 'inactive', 'error_hold')),
+        CHECK (status IN ('backfill-pending', 'active', 'suspended', 'inactive', 'error-hold')),
 
     -- Release metadata
     release_pattern TEXT CHECK (release_pattern IN ('fixed', 'irregular', 'poll') OR release_pattern IS NULL),

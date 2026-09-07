@@ -140,10 +140,15 @@ def _map_equity(wide_df: pd.DataFrame) -> pd.DataFrame:
     :param wide_df: Raw wide DataFrame
     :type wide_df: pd.DataFrame
     """
+    if 'SECURITY_TYP' not in wide_df.columns:
+        logger.warning(
+            '_map_equity: SECURITY_TYP absent from BDP response - cannot '
+            'classify securities; skipping equity extension load.'
+        )
+        return pd.DataFrame()
+
     equity_types = {'Common Stock', 'ADR'}
-    equity_df = wide_df[
-        wide_df.get('SECURITY_TYP', pd.Series(dtype=str)).isin(equity_types)
-    ].copy() if 'SECURITY_TYP' in wide_df.columns else wide_df.copy()
+    equity_df = wide_df[wide_df['SECURITY_TYP'].isin(equity_types)].copy()
 
     rows = []
     for _, row in equity_df.iterrows():
@@ -166,10 +171,15 @@ def _map_fund(wide_df: pd.DataFrame) -> pd.DataFrame:
     :param wide_df: Raw wide DataFrame
     :type wide_df: pd.DataFrame
     """
+    if 'SECURITY_TYP' not in wide_df.columns:
+        logger.warning(
+            '_map_fund: SECURITY_TYP absent from BDP response - cannot '
+            'classify securities; skipping fund extension load.'
+        )
+        return pd.DataFrame()
+
     fund_types = {'ETP', 'Open-End Fund', 'Closed-End Fund'}
-    fund_df = wide_df[
-        wide_df.get('SECURITY_TYP', pd.Series(dtype=str)).isin(fund_types)
-    ].copy() if 'SECURITY_TYP' in wide_df.columns else wide_df.copy()
+    fund_df = wide_df[wide_df['SECURITY_TYP'].isin(fund_types)].copy()
 
     rows = []
     for _, row in fund_df.iterrows():

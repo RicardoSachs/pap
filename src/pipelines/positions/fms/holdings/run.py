@@ -16,7 +16,8 @@
 # run_from_stg(batch_id): rebuild the three facts from a staging batch.
 #
 # Securities are entity-resolved (codigo_sbs -> dim_entity via
-# dim_entity_identifiers); unresolved securities are dropped and fail loud.
+# dim_entity_identifiers, id_type='codigo_sbs' / source='sbs'); unresolved
+# securities are dropped and fail loud.
 # NOTE: on first runs many held securities may be unregistered — if hand-
 # registration is impractical, a follow-up can self-register skeletons (as the
 # SBS registry does) via get_or_create_entity_id.
@@ -122,7 +123,8 @@ def _load_securities(conn) -> pd.DataFrame:
     """Load the sbs -> entity map: (codigo_sbs, security_entity_id)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id_value, entity_id FROM dim_entity_identifiers WHERE id_type = 'sbs'"
+            "SELECT id_value, entity_id FROM dim_entity_identifiers "
+            "WHERE id_type = 'codigo_sbs' AND source = 'sbs'"
         )
         rows = cur.fetchall()
     df = pd.DataFrame(rows, columns=["codigo_sbs", "security_entity_id"])

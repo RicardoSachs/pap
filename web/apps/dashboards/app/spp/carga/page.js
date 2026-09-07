@@ -462,7 +462,56 @@ export default function SppCargaPage() {
         </div>
       </div>
 
-      {/* ===== 2 · Carga histórica por Excel ===== */}
+      {/* ===== 2 · Extracción diaria ===== */}
+      <div className="spp-dos">
+        <div className="panel">
+          <div className="panel-title">Valor cuota · extracción diaria</div>
+          <p className="page-sub">Lee la página de variables SPP (últimos 7 días hábiles) e
+            inserta solo lo que falta, con las tres métricas. Es la única carga que corre
+            sola. Toma unos 20–90 s.</p>
+          <div className="controls">
+            <button className="btn" disabled={ocupado} onClick={() => extraer(false)}>Correr extracción</button>
+            <button className="btn" disabled={ocupado} onClick={() => extraer(true)}>Correr y sobrescribir</button>
+          </div>
+          <p className="page-sub flag-warn" style={{ marginTop: 10 }}>
+            La SBS está detrás del WAF Imperva: <b>se abrirá una ventana de Chrome</b> en la
+            máquina donde corre la API. No la cierres mientras corre.
+          </p>
+          {ecoExtraer && <p className="page-sub"><b className="neg">{ecoExtraer}</b></p>}
+
+          <div className="panel-title" style={{ marginTop: 14 }}>Corrida automática</div>
+          {prog && !prog.tarea?.registrada && prog.tarea?.disponible ? (
+            <p className="page-sub">La extracción <b>no corre sola</b> todavía. Para activarla,
+              en PowerShell dentro del repo:{' '}
+              <span className="mono">.\scripts\&quot;Programar extraccion SPP.ps1&quot;</span> —
+              queda diaria a las 18:00 (<span className="mono">-Hora 19:30</span> la cambia,{' '}
+              <span className="mono">-Quitar</span> la elimina).</p>
+          ) : progFilas() ? <Informe filas={progFilas()} /> : <p className="page-sub dim">—</p>}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Bitácora</div>
+          <div className="spp-bitacora mono">
+            {(tarea?.bitacora || []).length
+              ? tarea.bitacora.map((l, i) => (
+                <div key={i} className={String(l).startsWith('ERROR') ? 'neg' : ''}>{l}</div>))
+              : <div className="dim">Sin operaciones en esta sesión.</div>}
+            {tarea && !tarea.activa && (tarea.error
+              ? <div className="neg">ERROR: {tarea.error}</div>
+              : <div className="pos">Operación terminada.</div>)}
+          </div>
+
+          <div className="panel-title" style={{ marginTop: 14 }}>Tramos sin dato</div>
+          <p className="page-sub">Días hábiles consecutivos sin valor cuota. Los tramos de 1–2
+            días se omiten: son feriados peruanos, no información faltante.</p>
+          {(estado?.huecos || []).length ? (
+            <Informe filas={estado.huecos.map((h) =>
+              [`${fFecha(h.desde)} a ${fFecha(h.hasta)}`, `${h.dias} d.h.`])} />
+          ) : <p className="page-sub dim">Sin tramos abiertos.</p>}
+        </div>
+      </div>
+
+      {/* ===== 3 · Carga histórica por Excel ===== */}
       <div className="spp-dos">
         <div className="panel">
           <div className="panel-title">Valor cuota · carga histórica por Excel</div>
@@ -522,55 +571,6 @@ export default function SppCargaPage() {
               : 'Elige un Excel y aquí verás lo que trae, antes de que nada toque la base.'}
           </p>
           <Muestra muestra={hInforme?.muestra} titulo="Últimas filas del archivo" />
-        </div>
-      </div>
-
-      {/* ===== 3 · Extracción diaria ===== */}
-      <div className="spp-dos">
-        <div className="panel">
-          <div className="panel-title">Valor cuota · extracción diaria</div>
-          <p className="page-sub">Lee la página de variables SPP (últimos 7 días hábiles) e
-            inserta solo lo que falta, con las tres métricas. Es la única carga que corre
-            sola. Toma unos 20–90 s.</p>
-          <div className="controls">
-            <button className="btn" disabled={ocupado} onClick={() => extraer(false)}>Correr extracción</button>
-            <button className="btn" disabled={ocupado} onClick={() => extraer(true)}>Correr y sobrescribir</button>
-          </div>
-          <p className="page-sub flag-warn" style={{ marginTop: 10 }}>
-            La SBS está detrás del WAF Imperva: <b>se abrirá una ventana de Chrome</b> en la
-            máquina donde corre la API. No la cierres mientras corre.
-          </p>
-          {ecoExtraer && <p className="page-sub"><b className="neg">{ecoExtraer}</b></p>}
-
-          <div className="panel-title" style={{ marginTop: 14 }}>Corrida automática</div>
-          {prog && !prog.tarea?.registrada && prog.tarea?.disponible ? (
-            <p className="page-sub">La extracción <b>no corre sola</b> todavía. Para activarla,
-              en PowerShell dentro del repo:{' '}
-              <span className="mono">.\scripts\&quot;Programar extraccion SPP.ps1&quot;</span> —
-              queda diaria a las 18:00 (<span className="mono">-Hora 19:30</span> la cambia,{' '}
-              <span className="mono">-Quitar</span> la elimina).</p>
-          ) : progFilas() ? <Informe filas={progFilas()} /> : <p className="page-sub dim">—</p>}
-        </div>
-
-        <div className="panel">
-          <div className="panel-title">Bitácora</div>
-          <div className="spp-bitacora mono">
-            {(tarea?.bitacora || []).length
-              ? tarea.bitacora.map((l, i) => (
-                <div key={i} className={String(l).startsWith('ERROR') ? 'neg' : ''}>{l}</div>))
-              : <div className="dim">Sin operaciones en esta sesión.</div>}
-            {tarea && !tarea.activa && (tarea.error
-              ? <div className="neg">ERROR: {tarea.error}</div>
-              : <div className="pos">Operación terminada.</div>)}
-          </div>
-
-          <div className="panel-title" style={{ marginTop: 14 }}>Tramos sin dato</div>
-          <p className="page-sub">Días hábiles consecutivos sin valor cuota. Los tramos de 1–2
-            días se omiten: son feriados peruanos, no información faltante.</p>
-          {(estado?.huecos || []).length ? (
-            <Informe filas={estado.huecos.map((h) =>
-              [`${fFecha(h.desde)} a ${fFecha(h.hasta)}`, `${h.dias} d.h.`])} />
-          ) : <p className="page-sub dim">Sin tramos abiertos.</p>}
         </div>
       </div>
 

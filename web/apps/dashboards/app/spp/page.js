@@ -178,6 +178,9 @@ export default function SppPanelPage() {
         x: pts.map((p) => p[0]),
         y: pts.map((p) => (base ? (p[1] / base) * 100 : p[1])),
         type: 'scatter', mode: 'lines', name: s.afp,
+        // legendrank puts the house first in the LEGEND while the trace
+        // order (house last) keeps its line drawn on top of the grays.
+        legendrank: esCasa ? 1 : 2 + enPantalla.indexOf(s.afp),
         line: { color, width: esCasa ? 2.8 : 1.6 },
         hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:,.4f}<extra></extra>`,
         hoverlabel: { bordercolor: esCasa ? color : colorDe(cfg, s.afp) },
@@ -188,27 +191,33 @@ export default function SppPanelPage() {
 
   const ct = chartTheme();
 
-  // ---- Cierre por AFP ----------------------------------------------------
+  // ---- Cierre por AFP (house first, same criterion as the charts) --------
   const cierres = (estado?.series || [])
-    .filter((x) => x.fondo === fondo && afpsSel.includes(x.afp));
+    .filter((x) => x.fondo === fondo && afpsSel.includes(x.afp))
+    .sort((a, b) => (a.afp === casa ? -1 : b.afp === casa ? 1 : 0));
 
   // ---- Ventanas tables ---------------------------------------------------
   const ordenRel = casa ? [casa, ...nombres.filter((a) => a !== casa)] : nombres;
 
   function TablaVentanas({ cols, filas, conUnidad, orden }) {
+    // House first and in its brand color; competitor section headers stay
+    // neutral - same criterion as the charts and the positions heatmap.
     return (
       <div className="table-wrap spp-vent">
         <table>
           <thead><tr><th>Fondo</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
           <tbody>
-            {(orden || nombres).map((afp) => {
+            {(orden || ordenRel).map((afp) => {
               const suyas = filas.filter((r) => r.afp === afp);
               if (!suyas.length) return null;
-              const col = colorDe(cfg, afp);
+              const esCasa = afp === casa;
               const nota = suyas[0].absoluto === true ? ' · rendimiento absoluto' : '';
               return [
                 <tr key={`${afp}-h`} className="spp-seccion">
-                  <td colSpan={cols.length + 1} style={{ color: col }}>{afp}{nota}</td>
+                  <td colSpan={cols.length + 1}
+                    className={esCasa ? '' : 'muted'}
+                    style={esCasa ? { color: colorDe(cfg, afp, true) } : undefined}>
+                    {afp}{nota}</td>
                 </tr>,
                 ...suyas.map((r) => (
                   <tr key={`${afp}-${r.fondo}`}>
@@ -247,6 +256,7 @@ export default function SppPanelPage() {
     const color = esCasa ? colorDe(cfg, afp, true) : grisDe(afp, compitenPos);
     return {
       x: xs, y: ys, type: 'scatter', mode: 'lines+markers', name: afp,
+      legendrank: esCasa ? 1 : 2 + compitenPos.indexOf(afp),
       line: { color, width: esCasa ? 3.2 : 2 },
       marker: { size: esCasa ? 9 : 7 },
       hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,

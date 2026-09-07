@@ -31,21 +31,25 @@ METRICAS = list(SUFIJO)
 MESES_CORTOS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
                 "JUL", "AGO", "SET", "OCT", "NOV", "DIC"]
 
-# Window keys and labels, exactly as the monitor's tablero renders them.
-CLAVES_NIVEL = ["t", "t1", "t2", "t3", "t4", "t5",
-                "mes", "mes1", "mes2", "anio", "anio1"]
+# Window keys and labels. Column order is CHRONOLOGICAL, oldest on the
+# left and the control date on the right, so the tables read in the same
+# direction as the line chart and the positions heatmap (the monitor had
+# them recent-first). Mixed windows are ordered by their START date:
+# last year < YTD < M-2 < M-1 < MTD < 5D < the daily moves < the level.
+CLAVES_NIVEL = ["anio1", "anio", "mes2", "mes1", "mes",
+                "t5", "t4", "t3", "t2", "t1", "t"]
 CLAVES_REND = [
-    ("vc",  "Valor cuota", "nivel"),
-    ("d0",  None,          "bps"),
-    ("d1",  None,          "bps"),
-    ("d2",  None,          "bps"),
-    ("d3",  None,          "bps"),
-    ("d5",  "5D",          "bps"),
-    ("mtd", "MTD",         "bps"),
-    ("m1",  None,          "bps"),
-    ("m2",  None,          "bps"),
-    ("ytd", "YTD",         "pct"),
     ("a1",  None,          "pct"),
+    ("ytd", "YTD",         "pct"),
+    ("m2",  None,          "bps"),
+    ("m1",  None,          "bps"),
+    ("mtd", "MTD",         "bps"),
+    ("d5",  "5D",          "bps"),
+    ("d3",  None,          "bps"),
+    ("d2",  None,          "bps"),
+    ("d1",  None,          "bps"),
+    ("d0",  None,          "bps"),
+    ("vc",  "Valor cuota", "nivel"),
 ]
 
 

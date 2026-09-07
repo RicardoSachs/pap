@@ -420,13 +420,19 @@ export default function SppPanelPage() {
           <table>
             <thead><tr><th>AFP</th>{periodos.map((p) => <th key={p.clave}>{p.etiqueta}</th>)}</tr></thead>
             <tbody>
-              {compitenPos.map((afp) => {
+              {/* House row first (it is the question this table answers),
+                  heat in its brand ramp; competitors share ONE gray ramp so
+                  intensity reads as rank everywhere, not as identity. */}
+              {[...(compitenPos.includes(casa) ? [casa] : []),
+                ...compitenPos.filter((a) => a !== casa)].map((afp) => {
                 const fila = (pos?.filas || []).find((r) => r.fondo === fondoPos && r.afp === afp);
                 if (!fila) return null;
+                const esCasa = afp === casa;
+                const base = esCasa ? colorDe(cfg, afp, true) : 'rgb(128, 138, 152)';
                 return (
                   <tr key={afp}>
                     <td><span className="spp-chip" style={{ background: colorDe(cfg, afp) }} />
-                      <b style={{ color: colorDe(cfg, afp, true) }}>{afp}</b></td>
+                      <b style={{ color: esCasa ? colorDe(cfg, afp, true) : 'inherit' }}>{afp}</b></td>
                     {periodos.map((p) => {
                       const q = fila.puestos[p.clave];
                       if (!q) return <td key={p.clave} className="num dim">—</td>;
@@ -435,7 +441,7 @@ export default function SppPanelPage() {
                       return (
                         <td key={p.clave} className="num spp-puesto"
                           style={{
-                            background: `color-mix(in srgb, ${colorDe(cfg, afp)} ${pct}%, transparent)`,
+                            background: `color-mix(in srgb, ${base} ${pct}%, transparent)`,
                             color: pct >= 60 ? '#fff' : 'inherit',
                             fontWeight: q === 1 ? 700 : 500,
                           }}>{q}</td>
@@ -448,7 +454,8 @@ export default function SppPanelPage() {
           </table>
         </div>
         <p className="page-sub">Puesto 1 al {totalPos} por rendimiento del mes, dentro de cada tipo
-          de fondo. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
+          de fondo — más intenso = mejor puesto; la fila en color es {casa}. Cada mes cerrado rinde
+          contra el cierre del mes anterior; el último periodo es el MTD.</p>
       </div>
     </div>
   );

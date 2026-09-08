@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS stg_positions_fms_net_receivables (
     codigo_iso_moneda             TEXT NOT NULL,                -- currency of the balance (grain)
     monto_cobrar                  NUMERIC(18, 4),               -- receivables (CxC), sum of ABS(Importe)
     monto_pagar                   NUMERIC(18, 4),               -- payables (CxP), sum of ABS(Importe)
+    monto_cobrar_soles            NUMERIC(18, 4),               -- CxC in PEN via FMS MonedaCambio; NULL = missing FX rate (fail-visible)
+    monto_pagar_soles             NUMERIC(18, 4),               -- CxP in PEN via FMS MonedaCambio; NULL = missing FX rate (fail-visible)
+    tipo_cambio                   NUMERIC(18, 8),               -- FMS rate used for the soles legs (provenance only; 1 for PEN)
 
     -- Tier 2: full vendor payload (empty here — source is aggregated)
     raw_payload                   JSONB,

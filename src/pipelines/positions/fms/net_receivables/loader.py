@@ -35,6 +35,7 @@ STG_COLUMNS = [
     "batch_id", "date",
     "codigo_fondo", "codigo_iso_moneda",
     "monto_cobrar", "monto_pagar",
+    "monto_cobrar_soles", "monto_pagar_soles", "tipo_cambio",
     "raw_payload",
 ]
 
@@ -42,32 +43,44 @@ STG_UPSERT = f"""
 INSERT INTO stg_positions_fms_net_receivables ({", ".join(STG_COLUMNS)})
 VALUES ({", ".join(["%s"] * len(STG_COLUMNS))})
 ON CONFLICT (codigo_fondo, codigo_iso_moneda, date) DO UPDATE SET
-    batch_id      = EXCLUDED.batch_id,
-    loaded_at     = CURRENT_TIMESTAMP,
-    monto_cobrar  = EXCLUDED.monto_cobrar,
-    monto_pagar   = EXCLUDED.monto_pagar,
-    raw_payload   = EXCLUDED.raw_payload
+    batch_id           = EXCLUDED.batch_id,
+    loaded_at          = CURRENT_TIMESTAMP,
+    monto_cobrar       = EXCLUDED.monto_cobrar,
+    monto_pagar        = EXCLUDED.monto_pagar,
+    monto_cobrar_soles = EXCLUDED.monto_cobrar_soles,
+    monto_pagar_soles  = EXCLUDED.monto_pagar_soles,
+    tipo_cambio        = EXCLUDED.tipo_cambio,
+    raw_payload        = EXCLUDED.raw_payload
 """
 
 
 FACT_COLUMNS = [
     "portfolio_id", "codigo_iso_moneda", "date", "source",
     "monto_cobrar", "monto_pagar",
+    "monto_cobrar_soles", "monto_pagar_soles", "tipo_cambio",
 ]
 
-# Every fact_positions_net_receivables column is NOT NULL (see 31_...sql).
-# The query's CASE ... ELSE 0 guarantees both legs are present (0 if a fund has
-# only one side), so a null here is a real data problem — caught before the
-# row-by-row INSERT so the error names the column + currency.
-FACT_NOT_NULL_COLUMNS = list(FACT_COLUMNS)
+# The original-currency legs are NOT NULL (see 31_...sql): the query's
+# CASE ... ELSE 0 guarantees both are present (0 if a fund has only one side),
+# so a null there is a real data problem — caught before the row-by-row INSERT
+# so the error names the column + currency. The soles legs and tipo_cambio are
+# NULLABLE by design: NULL = missing FMS FX rate for a non-PEN currency, which
+# must land (fail-visible via log_null_counts) rather than abort the load.
+FACT_NOT_NULL_COLUMNS = [
+    "portfolio_id", "codigo_iso_moneda", "date", "source",
+    "monto_cobrar", "monto_pagar",
+]
 
 FACT_UPSERT = f"""
 INSERT INTO fact_positions_net_receivables ({", ".join(FACT_COLUMNS)})
 VALUES ({", ".join(["%s"] * len(FACT_COLUMNS))})
 ON CONFLICT (portfolio_id, codigo_iso_moneda, date, source) DO UPDATE SET
-    monto_cobrar = EXCLUDED.monto_cobrar,
-    monto_pagar  = EXCLUDED.monto_pagar,
-    loaded_at    = CURRENT_TIMESTAMP
+    monto_cobrar       = EXCLUDED.monto_cobrar,
+    monto_pagar        = EXCLUDED.monto_pagar,
+    monto_cobrar_soles = EXCLUDED.monto_cobrar_soles,
+    monto_pagar_soles  = EXCLUDED.monto_pagar_soles,
+    tipo_cambio        = EXCLUDED.tipo_cambio,
+    loaded_at          = CURRENT_TIMESTAMP
 """
 
 

@@ -66,7 +66,7 @@ def extract(start_date: date, end_date: date, force: bool = False) -> pd.DataFra
         cur = conn.cursor()
         for d in days:
             d_int = _date_to_yyyymmdd(d)
-            cur.execute(sql, (d_int, d_int))          # same as-of date, bound twice
+            cur.execute(sql, (d_int, d_int, d_int))   # same as-of date, bound 3x (MonedaCambio join + two WHERE bounds)
             columns = [c[0] for c in cur.description] if cur.description else []
             rows = cur.fetchall()
             if not rows:

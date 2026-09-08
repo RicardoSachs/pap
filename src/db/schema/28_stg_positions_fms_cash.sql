@@ -4,15 +4,16 @@
 -- account) feed. One of the FMS positions feeds alongside forwards,
 -- investment_portfolio (securities), deposits and net_receivables.
 --
--- Grain: (codigo_fondo, codigo_institucion, codigo_iso_moneda, date)
--- — one row per fund per institution (bank) per currency per business
--- date. FMS identifies a cash account by institution, so institution is
--- part of the grain (a fund holds cash across several banks per currency).
--- FMS exposes both a code (IdEntidad -> codigo_institucion, the stable
--- grain key) and a readable name (Institucion -> nombre_institucion, for
--- display). Cash is a balance, not a security: there is no codigo_sbs and
--- no dim_entity resolution (Model A — cash gets its own fact table, not
--- synthetic per-currency entities).
+-- Grain: (codigo_fondo, codigo_institucion, codigo_iso_moneda,
+-- codigo_instrumento, date) — one row per ACCOUNT per business date.
+-- A fund can hold SEVERAL accounts at the same bank in the same currency
+-- on the same day (found reconciling against the accountant reports), so
+-- the account id (CodigoInstrumento -> codigo_instrumento) is part of the
+-- grain; the table reports accounts and does NOT aggregate. FMS exposes
+-- the institution as a code (IdEntidad -> codigo_institucion) and a
+-- readable name (Institucion -> nombre_institucion, display only). Cash
+-- is a balance, not a security: no codigo_sbs, no dim_entity resolution
+-- (Model A — cash gets its own fact table, not synthetic entities).
 --
 -- date is a proper DATE, NOT the int yyyymmdd FMS uses; conversion
 -- happens in extract/transform. id_secuencial_fecha_reporte is kept
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS stg_positions_fms_cash (
     codigo_fondo                  TEXT NOT NULL,                -- fund code; -> dim_portfolio.procode
     codigo_institucion            TEXT NOT NULL,                -- institution code (IdEntidad), grain key
     codigo_iso_moneda             TEXT NOT NULL,                -- currency of the balance (grain)
+    codigo_instrumento            TEXT NOT NULL,                -- account id (CodigoInstrumento), grain key
     nombre_institucion            TEXT,                         -- institution display name (Institucion)
     saldo_contable                NUMERIC(18, 4),               -- accounting balance in codigo_iso_moneda (SaldoContable)
     monto_total_soles             NUMERIC(18, 4),               -- total amount in soles (MontoTotalSoles), from source
@@ -51,7 +53,7 @@ CREATE TABLE IF NOT EXISTS stg_positions_fms_cash (
     -- Tier 2: full vendor payload for forensic / future analysis
     raw_payload                   JSONB,
 
-    PRIMARY KEY (codigo_fondo, codigo_institucion, codigo_iso_moneda, date)
+    PRIMARY KEY (codigo_fondo, codigo_institucion, codigo_iso_moneda, codigo_instrumento, date)
 );
 
 CREATE INDEX IF NOT EXISTS idx_stg_positions_fms_cash_batch

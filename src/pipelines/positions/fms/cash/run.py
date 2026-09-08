@@ -114,10 +114,11 @@ def run_from_stg(batch_id: str) -> None:
 
     No FMS gate: this touches only Postgres, so it runs on any machine with
     DB access. Note the staging PK is (codigo_fondo, codigo_institucion,
-    codigo_iso_moneda, date) and does NOT include batch_id, and load_staging
-    overwrites batch_id on conflict — so a grain row always carries its most
-    recent batch_id. This resolves the common "rebuild what I just loaded"
-    case; an older batch_id whose grain was later re-staged returns no rows.
+    codigo_iso_moneda, codigo_instrumento, date) and does NOT include
+    batch_id, and load_staging overwrites batch_id on conflict — so a grain
+    row always carries its most recent batch_id. This resolves the common
+    "rebuild what I just loaded" case; an older batch_id whose grain was
+    later re-staged returns no rows.
     """
     logger.info(f"from-stg mode: batch_id={batch_id}")
 
@@ -145,6 +146,7 @@ def _read_staging_by_batch(conn, batch_id: str) -> pd.DataFrame:
             """
             SELECT batch_id, id_secuencial_fecha_reporte, date,
                    codigo_fondo, codigo_institucion, codigo_iso_moneda,
+                   codigo_instrumento,
                    nombre_institucion,
                    saldo_contable, monto_total_soles,
                    tasa_interes, interes_acumulado,

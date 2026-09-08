@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 STG_COLUMNS = [
     "batch_id", "id_secuencial_fecha_reporte", "date",
     "codigo_fondo", "codigo_institucion", "codigo_iso_moneda",
+    "codigo_instrumento",
     "nombre_institucion",
     "saldo_contable", "monto_total_soles",
     "tasa_interes", "interes_acumulado",
@@ -43,7 +44,7 @@ STG_COLUMNS = [
 STG_UPSERT = f"""
 INSERT INTO stg_positions_fms_cash ({", ".join(STG_COLUMNS)})
 VALUES ({", ".join(["%s"] * len(STG_COLUMNS))})
-ON CONFLICT (codigo_fondo, codigo_institucion, codigo_iso_moneda, date) DO UPDATE SET
+ON CONFLICT (codigo_fondo, codigo_institucion, codigo_iso_moneda, codigo_instrumento, date) DO UPDATE SET
     batch_id                    = EXCLUDED.batch_id,
     loaded_at                   = CURRENT_TIMESTAMP,
     id_secuencial_fecha_reporte = EXCLUDED.id_secuencial_fecha_reporte,
@@ -57,7 +58,8 @@ ON CONFLICT (codigo_fondo, codigo_institucion, codigo_iso_moneda, date) DO UPDAT
 
 
 FACT_COLUMNS = [
-    "portfolio_id", "codigo_institucion", "codigo_iso_moneda", "date", "source",
+    "portfolio_id", "codigo_institucion", "codigo_iso_moneda",
+    "codigo_instrumento", "date", "source",
     "nombre_institucion",
     "saldo_contable", "monto_total_soles",
     "tasa_interes", "interes_acumulado",
@@ -65,18 +67,20 @@ FACT_COLUMNS = [
 
 # The NOT NULL columns of fact_positions_cash (see 29_fact_positions_cash.sql).
 # nombre_institucion / tasa_interes / interes_acumulado are nullable. A null in
-# a NOT NULL column is a data problem (e.g. a source row missing SaldoContable
-# or MontoTotalSoles) — caught before the row-by-row INSERT so the error names
-# the column + currency instead of an opaque psycopg NotNullViolation.
+# a NOT NULL column is a data problem (e.g. a source row missing SaldoContable,
+# MontoTotalSoles, or the CodigoInstrumento grain key) — caught before the
+# row-by-row INSERT so the error names the column + currency instead of an
+# opaque psycopg NotNullViolation.
 FACT_NOT_NULL_COLUMNS = [
-    "portfolio_id", "codigo_institucion", "codigo_iso_moneda", "date", "source",
+    "portfolio_id", "codigo_institucion", "codigo_iso_moneda",
+    "codigo_instrumento", "date", "source",
     "saldo_contable", "monto_total_soles",
 ]
 
 FACT_UPSERT = f"""
 INSERT INTO fact_positions_cash ({", ".join(FACT_COLUMNS)})
 VALUES ({", ".join(["%s"] * len(FACT_COLUMNS))})
-ON CONFLICT (portfolio_id, codigo_institucion, codigo_iso_moneda, date, source) DO UPDATE SET
+ON CONFLICT (portfolio_id, codigo_institucion, codigo_iso_moneda, codigo_instrumento, date, source) DO UPDATE SET
     nombre_institucion = EXCLUDED.nombre_institucion,
     saldo_contable     = EXCLUDED.saldo_contable,
     monto_total_soles  = EXCLUDED.monto_total_soles,

@@ -2,12 +2,14 @@
 -- ---------------------------------------------------------------
 -- fact_positions_cash: current-account cash balances.
 --
--- Grain: (portfolio_id, codigo_institucion, codigo_iso_moneda, date,
--- source) - one row per portfolio per institution (bank) per currency
--- per date per source. FMS identifies a cash account by institution, and
--- a fund holds cash across several banks per currency, so both institution
--- and currency are part of the grain. codigo_institucion is the FMS code
--- (IdEntidad); nombre_institucion is the readable name (Institucion).
+-- Grain: (portfolio_id, codigo_institucion, codigo_iso_moneda,
+-- codigo_instrumento, date, source) - one row per ACCOUNT per date per
+-- source. A fund can hold SEVERAL accounts at the same bank in the same
+-- currency on the same day (found reconciling against the accountant
+-- reports), so the account id (codigo_instrumento) is on the grain; the
+-- table reports accounts and does NOT aggregate - per-account rates stay
+-- meaningful. codigo_institucion is the FMS code (IdEntidad);
+-- nombre_institucion is the readable name (Institucion).
 --
 -- Interest: current accounts may be remunerated; tasa_interes and
 -- interes_acumulado are nullable (null for non-remunerated accounts).
@@ -38,6 +40,7 @@ CREATE TABLE IF NOT EXISTS fact_positions_cash (
     portfolio_id                  INTEGER NOT NULL REFERENCES dim_portfolio(portfolio_id),
     codigo_institucion            TEXT    NOT NULL,             -- institution code (IdEntidad)
     codigo_iso_moneda             TEXT    NOT NULL,
+    codigo_instrumento            TEXT    NOT NULL,             -- account id (CodigoInstrumento)
     date                          DATE    NOT NULL,
     source                        TEXT    NOT NULL,             -- 'fms' | ...
 
@@ -55,7 +58,7 @@ CREATE TABLE IF NOT EXISTS fact_positions_cash (
     -- Audit
     loaded_at                     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    PRIMARY KEY (portfolio_id, codigo_institucion, codigo_iso_moneda, date, source)
+    PRIMARY KEY (portfolio_id, codigo_institucion, codigo_iso_moneda, codigo_instrumento, date, source)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fact_positions_cash_date

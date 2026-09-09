@@ -123,7 +123,11 @@ def _load_securities(conn) -> pd.DataFrame:
     """Load the sbs -> entity map: (codigo_sbs, security_entity_id)."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id_value, entity_id FROM dim_entity_identifiers "
+            # Aliases must match the DataFrame columns below: psycopg dict
+            # rows are matched by KEY when building the frame, so mismatched
+            # names silently yield all-NaN columns.
+            "SELECT id_value AS codigo_sbs, entity_id AS security_entity_id "
+            "FROM dim_entity_identifiers "
             "WHERE id_type = 'codigo_sbs' AND source = 'sbs'"
         )
         rows = cur.fetchall()

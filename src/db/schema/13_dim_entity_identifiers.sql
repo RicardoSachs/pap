@@ -9,7 +9,7 @@
 
 CREATE TABLE IF NOT EXISTS dim_entity_identifiers (
     entity_id INTEGER NOT NULL REFERENCES dim_entity (entity_id),
-    id_type TEXT NOT NULL, -- parsekyable / isin / cusip / sedol / codigo_sbs
+    id_type TEXT NOT NULL, -- parsekyable / isin / cusip / sedol / codigo_sbs (dashless canonical form)
     id_value TEXT NOT NULL,
     source TEXT NOT NULL,
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,

@@ -31,6 +31,9 @@ STAGING_COLUMN_MAP = {
     "CodigoIsoMoneda":  "codigo_iso_moneda",
     "MontoCobrar":      "monto_cobrar",
     "MontoPagar":       "monto_pagar",
+    "MontoCobrarSoles": "monto_cobrar_soles",   # PEN via FMS MonedaCambio; NULL = missing rate
+    "MontoPagarSoles":  "monto_pagar_soles",    # PEN via FMS MonedaCambio; NULL = missing rate
+    "TipoCambio":       "tipo_cambio",          # provenance: rate used (1 for PEN)
 }
 
 # The source is aggregated per (fund, currency); no forensic detail to keep.
@@ -101,6 +104,9 @@ def transform_for_fact(stg_df: pd.DataFrame, portfolios: pd.DataFrame) -> pd.Dat
         "date",
         "monto_cobrar",
         "monto_pagar",
+        "monto_cobrar_soles",
+        "monto_pagar_soles",
+        "tipo_cambio",
     ]].copy()
     fact["source"] = "fms"
 

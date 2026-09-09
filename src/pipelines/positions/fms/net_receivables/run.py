@@ -129,6 +129,7 @@ def _read_staging_by_batch(conn, batch_id: str) -> pd.DataFrame:
             SELECT batch_id, date,
                    codigo_fondo, codigo_iso_moneda,
                    monto_cobrar, monto_pagar,
+                   monto_cobrar_soles, monto_pagar_soles, tipo_cambio,
                    raw_payload
               FROM stg_positions_fms_net_receivables
              WHERE batch_id = %s

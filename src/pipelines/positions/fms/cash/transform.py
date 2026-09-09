@@ -32,6 +32,7 @@ STAGING_COLUMN_MAP = {
     "CodigoFondo":              "codigo_fondo",
     "IdEntidad":                "codigo_institucion",
     "CodigoIsoMoneda":          "codigo_iso_moneda",
+    "CodigoInstrumento":        "codigo_instrumento",   # account id, grain key
     "Institucion":              "nombre_institucion",
     "SaldoContable":            "saldo_contable",
     "MontoTotalSoles":          "monto_total_soles",
@@ -42,7 +43,16 @@ STAGING_COLUMN_MAP = {
 # Tier 2: emitted by cash.sql but preserved verbatim in raw_payload JSONB.
 # Enumerated so they don't trip the "unexpected column" warning; any further
 # unlisted column still lands in raw_payload (with a warning).
-TIER_2_COLUMNS: list[str] = ["MontoTotalOriginal", "CodigoInstrumento"]
+TIER_2_COLUMNS: list[str] = ["MontoTotalOriginal"]
+
+# Staging grain (matches the stg/fact PKs). transform_for_staging RAISES if
+# two source rows collapse onto one grain key - the row-by-row upsert would
+# otherwise silently keep only the last row (exactly how the multi-account
+# under-reporting went unnoticed before codigo_instrumento joined the grain).
+STG_GRAIN = [
+    "codigo_fondo", "codigo_institucion", "codigo_iso_moneda",
+    "codigo_instrumento", "date",
+]
 
 
 def transform_for_staging(raw_df: pd.DataFrame, batch_id: str) -> pd.DataFrame:
@@ -70,6 +80,18 @@ def transform_for_staging(raw_df: pd.DataFrame, batch_id: str) -> pd.DataFrame:
     stg["batch_id"] = batch_id
     stg["date"] = stg["id_secuencial_fecha_reporte"].map(_yyyymmdd_to_date)
     stg["raw_payload"] = raw_df.apply(_build_raw_payload, axis=1)
+
+    # Grain guard: fail loud if the source violates the assumed uniqueness -
+    # the upsert would silently collapse duplicates to the last row.
+    dupes = stg[stg.duplicated(subset=STG_GRAIN, keep=False)]
+    if not dupes.empty:
+        sample = dupes[STG_GRAIN].drop_duplicates().head(5).to_dict("records")
+        raise ValueError(
+            f"stg_positions_fms_cash grain violated: {len(dupes)} rows share "
+            f"{len(sample) if len(sample) < 5 else '>=5'} grain key(s) - the upsert "
+            f"would silently drop accounts. Sample keys: {sample}. "
+            f"The grain needs another discriminating column."
+        )
 
     logger.info(f"transform_for_staging: {len(stg)} rows shaped for stg_positions_fms_cash")
     return stg
@@ -108,6 +130,7 @@ def transform_for_fact(stg_df: pd.DataFrame, portfolios: pd.DataFrame) -> pd.Dat
         "portfolio_id",
         "codigo_institucion",
         "codigo_iso_moneda",
+        "codigo_instrumento",
         "date",
         "nombre_institucion",
         "saldo_contable",

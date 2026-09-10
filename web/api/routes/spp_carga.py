@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 
 from src.configs.machine_config import machine_id, scraper_enabled
 from src.pipelines.prices.sbs.valor_cuota import benchmark as bench
+from src.pipelines.prices.sbs.valor_cuota import benchmark_composicion as bcomp
 from src.pipelines.prices.sbs.valor_cuota.registro import registrar_valores
 from src.pipelines.prices.sbs.valor_cuota.run import (
     MODOS_CARGA, cargar_historico, revisar_historico, run_daily, ultima_corrida)
@@ -217,6 +218,69 @@ async def post_benchmark_archivo(archivo: UploadFile = File(...),
     except Exception as exc:
         logger.exception("carga de benchmark")
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+# ---- Benchmark: composicion (canasta versionada) --------------------------
+
+@router.get("/benchmark/composicion")
+def get_composicion(fondo: str | None = None) -> dict:
+    f = int(fondo) if fondo and fondo.strip().isdigit() else None
+    return {"composiciones": bcomp.leer_composiciones(f)}
+
+
+@router.get("/benchmark/series-disponibles")
+def get_series_disponibles(q: str = "") -> dict:
+    return bcomp.series_disponibles(q)
+
+
+@router.post("/benchmark/composicion")
+def post_composicion(datos: dict) -> JSONResponse:
+    """
+    Saves one basket effective from a date. Re-posting the same
+    (fondo, fecha) replaces that basket; other dates are history and
+    stay untouched.
+    """
+    try:
+        resultado = bcomp.guardar_composicion(
+            datos.get("fondo"), datos.get("vigente_desde"),
+            datos.get("componentes") or [])
+        return JSONResponse({"ok": True, "resultado": resultado})
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
+    except Exception as exc:
+        logger.exception("guardar composicion de benchmark")
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+@router.delete("/benchmark/composicion")
+def delete_composicion(fondo: str, vigente_desde: str) -> JSONResponse:
+    try:
+        return JSONResponse({"ok": True,
+                             "resultado": bcomp.borrar_composicion(fondo, vigente_desde)})
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
+    except Exception as exc:
+        logger.exception("borrar composicion de benchmark")
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+@router.post("/benchmark/recalcular")
+def post_recalcular(datos: dict) -> JSONResponse:
+    """
+    Regenerates the benchmark level series from the compositions, in
+    the background task (the UI follows /api/spp/tarea). Replaces the
+    stored series for that fund - the composition is the source of
+    truth.
+    """
+    try:
+        fondo = int(datos.get("fondo"))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "motivo": "Fondo no valido."},
+                            status_code=400)
+    ok, motivo = lanzar(f"recalculo del benchmark F{fondo}",
+                        bcomp.recalcular, fondo=fondo)
+    return JSONResponse({"ok": ok, "motivo": motivo},
+                        status_code=200 if ok else 409)
 
 
 @router.get("/benchmark/plantilla")

@@ -17,6 +17,7 @@ import {
   apiSend, apiUrl, fFecha, fmtMetrica, fondosDe as fondosDeCfg, hoyLocal,
   metricasDe, nEnt, nombreMetrica,
 } from '../../../lib/spp';
+import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 
@@ -374,6 +375,93 @@ export default function SppCargaPage() {
     return f;
   };
 
+  // ---- benchmark: composicion (canasta versionada) ----
+  const [cFondo, setCFondo] = useState(1);
+  const [cFecha, setCFecha] = useState('');
+  const [cComponentes, setCComponentes] = useState([]);
+  const [cBusqueda, setCBusqueda] = useState('');
+  const [cResultados, setCResultados] = useState(null);
+  const [cCatalogoFx, setCCatalogoFx] = useState(null);
+  const [composiciones, setComposiciones] = useState([]);
+  const [cEco, setCEco] = useState('');
+
+  const cargarComposiciones = () =>
+    apiGet('/api/spp/benchmark/composicion').then((j) => setComposiciones(j.composiciones || [])).catch(() => {});
+
+  useEffect(() => {
+    if (!cfg) return;
+    setCFecha(hoyLocal());
+    cargarComposiciones();
+    // Small always-loaded catalog for the optional FX leg selects.
+    apiGet('/api/spp/benchmark/series-disponibles').then(setCCatalogoFx).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg]);
+
+  const buscarSeries = async () => {
+    try {
+      setCResultados(await apiGet(`/api/spp/benchmark/series-disponibles?q=${encodeURIComponent(cBusqueda)}`));
+    } catch { setCResultados(null); }
+  };
+
+  const agregarComponente = (fuente, s) => {
+    if (cComponentes.some((c) => c.fuente === fuente && c.ref_id === s.ref_id)) return;
+    setCComponentes([...cComponentes,
+      { etiqueta: s.etiqueta, fuente, ref_id: s.ref_id, peso: '', fx: '' }]);
+  };
+
+  const sumaPesos = cComponentes.reduce((a, c) => a + (Number(c.peso) || 0), 0);
+  const sumaOk = Math.abs(sumaPesos - 1) < 1e-6 || Math.abs(sumaPesos - 100) < 1e-4;
+
+  const guardarComposicion = async () => {
+    setCEco('');
+    const componentes = cComponentes.map((c) => {
+      const fx = c.fx ? JSON.parse(c.fx) : null;
+      return {
+        etiqueta: c.etiqueta, fuente: c.fuente, ref_id: c.ref_id,
+        peso: Number(c.peso),
+        ...(fx ? { fx_fuente: fx.fuente, fx_ref_id: fx.ref_id } : {}),
+      };
+    });
+    const r = await apiSend('/api/spp/benchmark/composicion', 'POST',
+      { fondo: cFondo, vigente_desde: cFecha, componentes });
+    if (!r.ok) { setCEco(r.data.motivo || `Error ${r.status}`); return; }
+    setCEco(`Composición del Fondo ${cFondo} guardada, vigente desde ${fFecha(cFecha)}. Recalcula para regenerar la serie.`);
+    cargarComposiciones();
+  };
+
+  const borrarComposicion = async (g) => {
+    if (!window.confirm(
+      `Borrar la composición del Fondo ${g.fondo} vigente desde ${fFecha(g.vigente_desde)}. El siguiente recálculo ya no la usará. ¿Continuar?`)) return;
+    const r = await apiSend(
+      `/api/spp/benchmark/composicion?fondo=${g.fondo}&vigente_desde=${g.vigente_desde}`, 'DELETE');
+    setCEco(r.ok ? 'Composición borrada.' : (r.data.motivo || `Error ${r.status}`));
+    cargarComposiciones();
+  };
+
+  const editarComposicion = (g) => {
+    setCFondo(g.fondo);
+    setCFecha(g.vigente_desde);
+    setCComponentes(g.componentes.map((c) => ({
+      etiqueta: c.etiqueta, fuente: c.fuente, ref_id: c.ref_id,
+      peso: String(c.peso),
+      fx: c.fx_ref_id ? JSON.stringify({ fuente: c.fx_fuente, ref_id: c.fx_ref_id }) : '',
+    })));
+    setCEco(`Editando la composición vigente desde ${fFecha(g.vigente_desde)}; guardar la reemplaza en esa fecha.`);
+  };
+
+  const recalcularBench = async () => {
+    if (!window.confirm(
+      `Recalcular el benchmark del Fondo ${cFondo} desde sus composiciones REEMPLAZA la serie completa almacenada (base 100 en el primer rebalanceo). ¿Continuar?`)) return;
+    const r = await apiSend('/api/spp/benchmark/recalcular', 'POST', { fondo: cFondo });
+    if (!r.ok) { setCEco(r.data.motivo || `Error ${r.status}`); return; }
+    iniciar(`recalculo del benchmark F${cFondo}`, alTerminarTarea(() => cargarBench()));
+  };
+
+  const opcionesFx = [
+    ...((cCatalogoFx?.bloomberg || []).map((s) => ({ v: JSON.stringify({ fuente: 'bloomberg', ref_id: s.ref_id }), t: `${s.etiqueta} (bbg)` }))),
+    ...((cCatalogoFx?.fact || []).map((s) => ({ v: JSON.stringify({ fuente: 'fact', ref_id: s.ref_id }), t: `${s.etiqueta} (fact)` }))),
+  ];
+
   // ---- corrida automatica render ----
   const progFilas = () => {
     const t = prog?.tarea || {}; const u = prog?.ultima || {};
@@ -673,6 +761,111 @@ export default function SppCargaPage() {
             <p className="page-sub">Elige un archivo y aquí verás lo que trae, antes de que
               nada toque la base.</p>
           )}
+        </div>
+      </div>
+
+      {/* ===== 6 · Benchmark: composición de la canasta ===== */}
+      <div className="spp-dos">
+        <div className="panel">
+          <div className="panel-title">Benchmark · composición de la canasta</div>
+          <p className="page-sub">El benchmark de cada fondo es una canasta de series con pesos,
+            <b> versionada por fecha</b>: cambiar tickers o pesos crea una composición nueva desde
+            su fecha de vigencia, sin tocar la historia. Entre rebalanceos los pesos <b>derivan </b>
+            con los precios (buy-and-hold). Recalcular regenera la serie completa (base 100 en el
+            primer rebalanceo).</p>
+
+          <div className="controls spp-controls">
+            <div className="field"><label>Fondo</label>
+              <SppSeg items={(cfg?.fondos_benchmark || []).map((f) => [`Fondo ${f}`, f])}
+                value={cFondo} onChange={setCFondo} /></div>
+            <div className="field"><label>Vigente desde</label>
+              <input className="date-input" type="date" value={cFecha}
+                onChange={(e) => setCFecha(e.target.value)} /></div>
+          </div>
+
+          <div className="controls" style={{ marginTop: 10 }}>
+            <input className="date-input" placeholder="Buscar serie (ticker, nombre)…"
+              value={cBusqueda} onChange={(e) => setCBusqueda(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && buscarSeries()} />
+            <button className="btn" onClick={buscarSeries}>Buscar</button>
+          </div>
+          {cResultados && (
+            <div className="table-wrap" style={{ maxHeight: 180, overflowY: 'auto', marginTop: 8 }}>
+              <table><tbody>
+                {['bloomberg', 'fact'].flatMap((fu) => (cResultados[fu] || []).map((s) => (
+                  <tr key={`${fu}-${s.ref_id}`}>
+                    <td className="mono">{s.etiqueta}</td>
+                    <td className="dim">{fu} · {s.detalle}</td>
+                    <td><button className="btn" onClick={() => agregarComponente(fu, s)}>+ Agregar</button></td>
+                  </tr>
+                )))}
+                {!(cResultados.bloomberg?.length || cResultados.fact?.length) && (
+                  <tr><td className="dim">Sin resultados.</td></tr>
+                )}
+              </tbody></table>
+            </div>
+          )}
+
+          <div className="table-wrap" style={{ marginTop: 10 }}>
+            <table>
+              <thead><tr><th>Componente</th><th>Fuente</th><th className="num">Peso</th>
+                <th>FX (opcional)</th><th></th></tr></thead>
+              <tbody>
+                {cComponentes.length ? cComponentes.map((c, i) => (
+                  <tr key={`${c.fuente}-${c.ref_id}`}>
+                    <td className="mono">{c.etiqueta}</td>
+                    <td className="dim">{c.fuente}</td>
+                    <td className="num">
+                      <input className="date-input" type="number" min="0" step="0.01"
+                        style={{ width: 90 }} value={c.peso}
+                        onChange={(e) => setCComponentes(
+                          cComponentes.map((x, j) => (j === i ? { ...x, peso: e.target.value } : x)))} />
+                    </td>
+                    <td>
+                      <select className="select" value={c.fx}
+                        onChange={(e) => setCComponentes(
+                          cComponentes.map((x, j) => (j === i ? { ...x, fx: e.target.value } : x)))}>
+                        <option value="">— sin conversión —</option>
+                        {opcionesFx.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
+                      </select>
+                    </td>
+                    <td><button className="btn"
+                      onClick={() => setCComponentes(cComponentes.filter((_, j) => j !== i))}>Quitar</button></td>
+                  </tr>
+                )) : <tr><td colSpan={5} className="dim">Busca series y agrégalas a la canasta.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <p className="page-sub">Suma de pesos: <b className={sumaOk ? 'pos' : 'neg'}>
+            {sumaPesos.toLocaleString('es-PE', { maximumFractionDigits: 4 })}</b> (debe ser 1 o 100)</p>
+
+          <div className="controls">
+            <button className="btn" disabled={!cComponentes.length || !sumaOk || !cFecha}
+              onClick={guardarComposicion}>Guardar composición</button>
+            <button className="btn" disabled={ocupado} onClick={recalcularBench}>
+              Recalcular benchmark F{cFondo}</button>
+          </div>
+          {cEco && <p className="page-sub"><b>{cEco}</b></p>}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Historial de composiciones</div>
+          <p className="page-sub">Cada fila es un rebalanceo vigente desde su fecha. Editar una
+            composición la carga en el editor; guardarla reemplaza <b>solo esa fecha</b>.</p>
+          {composiciones.length ? composiciones.map((g) => (
+            <div key={`${g.fondo}-${g.vigente_desde}`} style={{ marginBottom: 12 }}>
+              <div className="panel-title" style={{ fontSize: 13 }}>
+                Fondo {g.fondo} · desde {fFecha(g.vigente_desde)}</div>
+              <Informe filas={g.componentes.map((c) => [
+                `${c.etiqueta}${c.fx_ref_id ? ' (con FX)' : ''}`,
+                `${(c.peso * 100).toLocaleString('es-PE', { maximumFractionDigits: 2 })} %`,
+              ])} />
+              <div className="controls" style={{ marginTop: 6 }}>
+                <button className="btn" onClick={() => editarComposicion(g)}>Editar</button>
+                <button className="btn" onClick={() => borrarComposicion(g)}>Borrar</button>
+              </div>
+            </div>
+          )) : <p className="page-sub dim">Ninguna composición declarada todavía.</p>}
         </div>
       </div>
     </div>

@@ -10,9 +10,11 @@
 -- scratch at any time by the calculation in
 -- src/pipelines/prices/sbs/valor_cuota/benchmark_composicion.py.
 --
--- Components can price from EITHER store (fuente):
---   'bloomberg' -> bloomberg_serie/bloomberg_dato (manual registry)
+-- Components price from any of THREE stores (fuente):
+--   'bloomberg' -> bloomberg_serie/bloomberg_dato (BBG registry)
 --   'fact'      -> series_registry/fact_prices (pipeline spine)
+--   'manual'    -> serie_manual/serie_manual_dato (keyed-in data
+--                  for components no vendor provides)
 -- fx_* optionally names a second priced series whose level multiplies
 -- the component's (currency conversion); NULL means no conversion.
 --
@@ -28,14 +30,14 @@ CREATE TABLE IF NOT EXISTS benchmark_composicion (
 
     -- What the component is (display) and where it prices from
     etiqueta         TEXT NOT NULL,
-    fuente           TEXT NOT NULL CHECK (fuente IN ('bloomberg', 'fact')),
+    fuente           TEXT NOT NULL CHECK (fuente IN ('bloomberg', 'fact', 'manual')),
     ref_id           INTEGER NOT NULL,
 
     -- Weight at the rebalance date, normalized to sum 1 per basket
     peso             NUMERIC(9, 6) NOT NULL CHECK (peso > 0),
 
     -- Optional FX leg: component price is multiplied by this series
-    fx_fuente        TEXT CHECK (fx_fuente IN ('bloomberg', 'fact')),
+    fx_fuente        TEXT CHECK (fx_fuente IN ('bloomberg', 'fact', 'manual')),
     fx_ref_id        INTEGER,
 
     creado_en        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -8,8 +8,9 @@
 #   - weights DRIFT between rebalances (buy-and-hold): the stored
 #     peso is the allocation AT the rebalance date; afterwards each
 #     holding floats with its price until the next composition.
-#   - components price from either store ('bloomberg' registry or
-#     'fact' spine), optionally multiplied by an FX series.
+#   - components price from any store ('bloomberg' registry, 'fact'
+#     spine or 'manual' keyed-in series), optionally multiplied by
+#     an FX series.
 #   - recalcular() REGENERATES the whole benchmark series from the
 #     first composition (base 100), replacing whatever was loaded
 #     by hand - the composition is the source of truth.
@@ -30,7 +31,7 @@ from src.pipelines.prices.sbs.valor_cuota.loader import UPSERT_CORRIGE
 logger = logging.getLogger(__name__)
 
 BASE_INDICE = 100.0
-FUENTES = ("bloomberg", "fact")
+FUENTES = ("bloomberg", "fact", "manual")
 
 
 # ---- Composiciones (CRUD versionado) --------------------------------
@@ -88,7 +89,8 @@ def guardar_composicion(fondo: int, vigente_desde, componentes: list[dict]) -> d
     for c in componentes:
         fuente = str(c.get("fuente") or "").strip()
         if fuente not in FUENTES:
-            raise ValueError(f"Fuente no valida: {fuente}. Usa bloomberg o fact.")
+            raise ValueError(f"Fuente no valida: {fuente}. "
+                             "Usa bloomberg, fact o manual.")
         try:
             ref_id = int(c.get("ref_id"))
         except (TypeError, ValueError):
@@ -166,6 +168,10 @@ def _validar_referencias(conn, componentes: list[dict]) -> None:
                 fila = conn.execute(
                     "SELECT 1 FROM bloomberg_serie WHERE serie_id = %s",
                     (ref_id,)).fetchone()
+            elif fuente == "manual":
+                fila = conn.execute(
+                    "SELECT 1 FROM serie_manual WHERE serie_id = %s",
+                    (ref_id,)).fetchone()
             else:
                 fila = conn.execute(
                     "SELECT 1 FROM series_registry WHERE series_id = %s",
@@ -183,6 +189,10 @@ def _precios(conn, fuente: str, ref_id: int) -> dict:
     if fuente == "bloomberg":
         filas = conn.execute(
             "SELECT fecha AS d, valor AS v FROM bloomberg_dato "
+            "WHERE serie_id = %s ORDER BY fecha", (ref_id,)).fetchall()
+    elif fuente == "manual":
+        filas = conn.execute(
+            "SELECT fecha AS d, valor AS v FROM serie_manual_dato "
             "WHERE serie_id = %s ORDER BY fecha", (ref_id,)).fetchall()
     else:
         filas = conn.execute(
@@ -355,9 +365,18 @@ def recalcular(fondo: int, log=logger.info) -> dict:
 # ---- Catalogo para la UI --------------------------------------------
 
 def series_disponibles(q: str = "") -> dict:
-    """Pickable series for the composition editor, both stores."""
+    """Pickable series for the composition editor, all three stores."""
     q = f"%{q.strip()}%" if q.strip() else "%"
     with get_connection() as conn:
+        man = conn.execute(
+            """
+            SELECT s.serie_id, s.nombre, s.moneda, s.descripcion,
+                   COUNT(d.fecha) AS puntos
+            FROM serie_manual s
+            LEFT JOIN serie_manual_dato d USING (serie_id)
+            WHERE s.nombre ILIKE %s OR COALESCE(s.descripcion, '') ILIKE %s
+            GROUP BY s.serie_id ORDER BY s.nombre LIMIT 50
+            """, (q, q)).fetchall()
         bbg = conn.execute(
             """
             SELECT serie_id, ticker, campo, intervalo, descripcion
@@ -384,4 +403,10 @@ def series_disponibles(q: str = "") -> dict:
                   "detalle": f"{r['field']} · {r['source']}"
                              + (f" · {r['name']}" if r["name"] else "")}
                  for r in fact],
+        "manual": [{"ref_id": r["serie_id"],
+                    "etiqueta": r["nombre"],
+                    "detalle": f"{r['puntos']} punto(s)"
+                               + (f" · {r['moneda']}" if r["moneda"] else "")
+                               + (f" · {r['descripcion']}" if r["descripcion"] else "")}
+                   for r in man],
     }

@@ -271,106 +271,128 @@ export default function SppCargaPage() {
     return f;
   };
 
-  // ---- benchmark ----
-  const [bFecha, setBFecha] = useState('');
-  const [bValores, setBValores] = useState({});
-  const [bEco, setBEco] = useState('');
+  // ---- benchmark: serie calculada (solo lectura) ----
+  // The level series is CALCULATED from the composition since the
+  // 2026-09 redesign; nothing loads benchmark levels by hand anymore.
   const [bEstado, setBEstado] = useState(null);
-  const [bPrecarga, setBPrecarga] = useState('cargando');   // same gate as the valor cuota form
-  const bReq = useRef(0);   // stale-response guard, same as the valor cuota preload
-  const bRef = useRef(null);
-  const [bNombre, setBNombre] = useState('Ningún archivo seleccionado');
-  const [bInforme, setBInforme] = useState(null);
-  const [bCargado, setBCargado] = useState(false);
-
-  const fondosBench = cfg?.fondos_benchmark || [];
 
   const cargarBench = () =>
     apiGet('/api/spp/benchmark').then((j) => setBEstado(j.estado)).catch(() => {});
 
-  const verBench = async (f) => {
-    if (!f) return;
-    // Stale-response guard: a slow reply for a previously selected date
-    // must never overwrite the boxes of the current one (the race the
-    // valor cuota preload already guards with `vigente`).
-    const req = ++bReq.current;
-    setBPrecarga('cargando');
-    setBValores(Object.fromEntries(fondosBench.map((fo) => [fo, ''])));
+  // ---- series manuales (componentes fuera de Bloomberg) ----
+  const [smSeries, setSmSeries] = useState([]);
+  const [smSel, setSmSel] = useState(null);
+  const [smNombre, setSmNombre] = useState('');
+  const [smDesc, setSmDesc] = useState('');
+  const [smMoneda, setSmMoneda] = useState('');
+  const [smFecha, setSmFecha] = useState('');
+  const [smValor, setSmValor] = useState('');
+  const [smPuntos, setSmPuntos] = useState([]);
+  const [smEco, setSmEco] = useState('');
+  const smRef = useRef(null);
+  const [smArchivo, setSmArchivo] = useState('Ningún archivo seleccionado');
+  const [smInforme, setSmInforme] = useState(null);
+  const [smCargado, setSmCargado] = useState(false);
+
+  const smSerie = smSeries.find((s) => s.serie_id === smSel) || null;
+
+  const cargarSeriesManuales = () =>
+    apiGet('/api/spp/series-manuales').then((j) => {
+      const lista = j.series || [];
+      setSmSeries(lista);
+      setSmSel((prev) => (lista.some((s) => s.serie_id === prev)
+        ? prev : (lista[0]?.serie_id ?? null)));
+    }).catch(() => {});
+
+  const verPuntos = async (id) => {
+    if (id == null) { setSmPuntos([]); return; }
     try {
-      const j = await apiGet(`/api/spp/benchmark/fecha?fecha=${f}`);
-      if (req !== bReq.current) return;
-      const vals = {};
-      fondosBench.forEach((fo) => { vals[fo] = j.valores?.[fo] == null ? '' : String(j.valores[fo]); });
-      setBValores(vals);
-      const n = Object.values(j.valores || {}).filter((v) => v != null).length;
-      setBEco(j.existe
-        ? `${n} de ${fondosBench.length} fondos ya registrados en ${fFecha(f)}.`
-        : `${fFecha(f)} no está en la tabla de benchmark.`);
-      setBPrecarga('ok');
-    } catch {
-      if (req !== bReq.current) return;
-      setBPrecarga('error');
-      setBEco('No se pudo leer el benchmark actual; el registro queda bloqueado hasta reconectar.');
-    }
+      const j = await apiGet(`/api/spp/series-manuales/${id}/datos`);
+      setSmPuntos(j.puntos || []);
+    } catch { setSmPuntos([]); }
   };
 
-  useEffect(() => { if (cfg) { setBFecha(hoyLocal()); cargarBench(); } }, [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (cfg && bFecha) verBench(bFecha); }, [cfg, bFecha]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (cfg) { setSmFecha(hoyLocal()); cargarSeriesManuales(); } }, [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { verPuntos(smSel); }, [smSel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const registrarBench = async (vaciarTodo) => {
-    if (!bFecha) { setBEco('Falta la fecha.'); return; }
-    if (!vaciarTodo && !Object.values(bValores).some((v) => String(v).trim() !== '')) {
-      setBEco('Todos los cuadros están vacíos. Para borrar la fecha usa «Anular la fecha».');
-      return;
-    }
-    if (vaciarTodo && !window.confirm(
-      `Anular el benchmark del ${fFecha(bFecha)} en todos los fondos. ¿Continuar?`)) return;
-    const valores = construirValores(fondosBench, bValores, vaciarTodo);
-    const r = await apiSend('/api/spp/benchmark/valor', 'POST', { fecha: bFecha, valores });
-    if (!r.ok) { setBEco(r.data.motivo || `Error ${r.status}`); return; }
-    const t = resumenRegistro(r.data.resultado);
-    await verBench(bFecha); cargarBench();
-    setBEco(t);
+  const crearSerie = async () => {
+    setSmEco('');
+    const r = await apiSend('/api/spp/series-manuales', 'POST',
+      { nombre: smNombre, descripcion: smDesc, moneda: smMoneda });
+    if (!r.ok) { setSmEco(r.data.motivo || `Error ${r.status}`); return; }
+    setSmEco(`Serie «${r.data.serie.nombre}» lista. Ya puede recibir valores y entrar a la canasta.`);
+    setSmNombre(''); setSmDesc(''); setSmMoneda('');
+    await cargarSeriesManuales();
+    setSmSel(r.data.serie.serie_id);
+    cargarCatalogoFx();
   };
 
-  const subirBench = async (revisar, refrescar) => {
-    const a = bRef.current?.files?.[0];
-    if (!a) { setBEco('Elige un archivo primero.'); return; }
+  const borrarSerieManual = async () => {
+    if (!smSerie) return;
+    if (!window.confirm(
+      `Borrar la serie «${smSerie.nombre}»${smSerie.puntos ? ` con sus ${smSerie.puntos} valor(es)` : ''}. ¿Continuar?`)) return;
+    const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}?datos=1`, 'DELETE');
+    setSmEco(r.ok ? `Serie «${smSerie.nombre}» borrada.` : (r.data.motivo || `Error ${r.status}`));
+    cargarSeriesManuales();
+    cargarCatalogoFx();
+  };
+
+  const registrarPunto = async (borrar) => {
+    if (!smSerie) { setSmEco('Elige una serie primero.'); return; }
+    if (!smFecha) { setSmEco('Falta la fecha.'); return; }
+    if (!borrar && String(smValor).trim() === '') {
+      setSmEco('Falta el valor. Para quitar un dato usa «Borrar la fecha».'); return;
+    }
+    if (borrar && !window.confirm(
+      `Borrar el valor del ${fFecha(smFecha)} en «${smSerie.nombre}». ¿Continuar?`)) return;
+    const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}/valores`, 'POST',
+      { valores: { [smFecha]: borrar ? null : Number(smValor) } });
+    if (!r.ok) { setSmEco(r.data.motivo || `Error ${r.status}`); return; }
+    const x = r.data.resultado;
+    setSmEco(`«${x.nombre}»: ${x.escritos} valor(es) escritos, ${x.borrados} borrados.`);
+    setSmValor('');
+    cargarSeriesManuales(); verPuntos(smSerie.serie_id);
+  };
+
+  const subirSerie = async (revisar, refrescar) => {
+    const a = smRef.current?.files?.[0];
+    if (!a) { setSmEco('Elige un archivo primero.'); return; }
+    if (!smSerie) { setSmEco('Elige una serie primero.'); return; }
     if (!revisar && refrescar && !window.confirm(
       'Cargar y corregir: además de agregar lo que falta, reemplaza los valores ya cargados con los del archivo. ¿Continuar?')) return;
-    setBNombre(`${a.name} · ${revisar ? 'revisando…' : 'cargando…'}`);
+    setSmArchivo(`${a.name} · ${revisar ? 'revisando…' : 'cargando…'}`);
     const fd = new FormData();
     fd.append('archivo', a);
     if (revisar) fd.append('revisar', '1');
     if (refrescar) fd.append('refrescar', '1');
-    const r = await apiSend('/api/spp/benchmark/archivo', 'POST', fd, true);
+    const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}/archivo`, 'POST', fd, true);
     if (!r.ok) {
-      setBNombre(a.name);
-      setBInforme(null);
-      setBEco(r.data.motivo || `Error ${r.status}`);
+      setSmArchivo(a.name);
+      setSmInforme(null);
+      setSmEco(r.data.motivo || `Error ${r.status}`);
       return;
     }
-    setBNombre(`${a.name} · ${revisar ? 'revisado, nada escrito todavía' : 'cargado'}`);
-    setBInforme({ ...r.data.informe, cargado: !revisar });
-    setBCargado(!revisar);
-    if (!revisar) { cargarBench(); verBench(bFecha); }
+    setSmArchivo(`${a.name} · ${revisar ? 'revisado, nada escrito todavía' : 'cargado'}`);
+    setSmInforme({ ...r.data.informe, cargado: !revisar, serie: smSerie.nombre });
+    setSmCargado(!revisar);
+    if (!revisar) { cargarSeriesManuales(); verPuntos(smSerie.serie_id); }
   };
 
-  const filasInformeB = (i) => {
+  const filasInformeSm = (i) => {
     const lectura = i.origen === 'excel'
-      ? `${i.formato} · hoja «${i.hoja || '—'}»`
-      : `${i.formato} · CSV, separador «${i.separador}» · decimales con ${i.decimal}`;
+      ? `Excel · hoja «${i.hoja || '—'}»`
+      : `CSV, separador «${i.separador}» · decimales con ${i.decimal}`;
     const f = [
       ['Archivo', i.archivo || '—'],
+      ['Serie destino', i.serie || '—'],
       ['Lectura', lectura],
-      ['Contenido', `${nEnt(i.filas)} fechas · ${nEnt(i.celdas)} valores`],
+      ['Contenido', `${nEnt(i.filas)} fechas`],
       ['Rango', `${fFecha(i.desde)} a ${fFecha(i.hasta)}`],
-      ['Columnas leídas', (i.columnas || []).join(', ') || '—'],
     ];
     if (i.cargado) {
       f.push(['Fechas nuevas', nEnt(i.nuevas)]);
       f.push(['Fechas actualizadas', nEnt(i.actualizadas)]);
-      f.push(['Celdas escritas', nEnt(i.celdas_escritas != null ? i.celdas_escritas : i.celdas)]);
+      f.push(['Sin cambio', nEnt(i.sin_cambio)]);
     }
     return f;
   };
@@ -388,12 +410,17 @@ export default function SppCargaPage() {
   const cargarComposiciones = () =>
     apiGet('/api/spp/benchmark/composicion').then((j) => setComposiciones(j.composiciones || [])).catch(() => {});
 
+  // Small always-loaded catalog for the optional FX leg selects; also
+  // refreshed when a manual series is created or deleted.
+  const cargarCatalogoFx = () =>
+    apiGet('/api/spp/benchmark/series-disponibles').then(setCCatalogoFx).catch(() => {});
+
   useEffect(() => {
     if (!cfg) return;
     setCFecha(hoyLocal());
     cargarComposiciones();
-    // Small always-loaded catalog for the optional FX leg selects.
-    apiGet('/api/spp/benchmark/series-disponibles').then(setCCatalogoFx).catch(() => {});
+    cargarCatalogoFx();
+    cargarBench();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg]);
 
@@ -457,9 +484,12 @@ export default function SppCargaPage() {
     iniciar(`recalculo del benchmark F${cFondo}`, alTerminarTarea(() => cargarBench()));
   };
 
+  // The benchmark builds from the TWO component bases: the Bloomberg
+  // registry and the manual series (the backend still accepts 'fact'
+  // for compositions saved before the redesign).
   const opcionesFx = [
-    ...((cCatalogoFx?.bloomberg || []).map((s) => ({ v: JSON.stringify({ fuente: 'bloomberg', ref_id: s.ref_id }), t: `${s.etiqueta} (bbg)` }))),
-    ...((cCatalogoFx?.fact || []).map((s) => ({ v: JSON.stringify({ fuente: 'fact', ref_id: s.ref_id }), t: `${s.etiqueta} (fact)` }))),
+    ...((cCatalogoFx?.bloomberg || []).map((s) => ({ v: JSON.stringify({ fuente: 'bloomberg', ref_id: s.ref_id }), t: `${s.etiqueta} (BBG)` }))),
+    ...((cCatalogoFx?.manual || []).map((s) => ({ v: JSON.stringify({ fuente: 'manual', ref_id: s.ref_id }), t: `${s.etiqueta} (manual)` }))),
   ];
 
   // ---- corrida automatica render ----
@@ -673,106 +703,141 @@ export default function SppCargaPage() {
         </div>
       </div>
 
-      {/* ===== 4 · Benchmark: registro manual ===== */}
+      {/* ===== 4 · Series manuales: componentes fuera de Bloomberg ===== */}
       <div className="spp-dos">
         <div className="panel">
-          <div className="panel-title">Benchmark · registro manual</div>
-          <p className="page-sub">Un solo benchmark por tipo de fondo, común a todas las AFP
-            (solo fondos {fondosBench.join(', ')}). Mismas reglas: los cuadros se precargan y
-            <b> dejar uno vacío borra ese dato</b>.</p>
+          <div className="panel-title">Series manuales · componentes fuera de Bloomberg</div>
+          <p className="page-sub">La segunda base de componentes del benchmark: lo que Bloomberg
+            no trae se registra aquí como serie y se le cargan precios a mano o por Excel
+            (columnas <b>fecha</b> y <b>valor</b>). El archivo nunca borra; borrar es siempre
+            un acto manual por fecha.</p>
+
           <div className="controls spp-controls">
+            <div className="field"><label>Nueva serie</label>
+              <input className="date-input" placeholder="Nombre (p. ej. Índice X)"
+                value={smNombre} onChange={(e) => setSmNombre(e.target.value)} /></div>
+            <div className="field"><label>Descripción</label>
+              <input className="date-input" placeholder="opcional"
+                value={smDesc} onChange={(e) => setSmDesc(e.target.value)} /></div>
+            <div className="field"><label>Moneda</label>
+              <input className="date-input" placeholder="USD / PEN" style={{ width: 90 }}
+                value={smMoneda} onChange={(e) => setSmMoneda(e.target.value)} /></div>
+            <div className="field"><label>&nbsp;</label>
+              <button className="btn" disabled={!smNombre.trim()}
+                onClick={crearSerie}>Crear serie</button></div>
+          </div>
+
+          <div className="controls spp-controls" style={{ marginTop: 12 }}>
+            <div className="field"><label>Serie</label>
+              <select className="select" value={smSel ?? ''}
+                onChange={(e) => setSmSel(e.target.value ? Number(e.target.value) : null)}>
+                {!smSeries.length && <option value="">— crea una serie primero —</option>}
+                {smSeries.map((s) => (
+                  <option key={s.serie_id} value={s.serie_id}>
+                    {s.nombre}{s.moneda ? ` · ${s.moneda}` : ''}</option>
+                ))}
+              </select></div>
             <div className="field"><label>Fecha</label>
-              <input className="date-input" type="date" value={bFecha}
-                onChange={(e) => setBFecha(e.target.value)} /></div>
-            {fondosBench.map((fo) => (
-              <div className="field" key={fo}><label>Fondo {fo}</label>
-                <input className="date-input" type="number" min="0" step="0.0000001"
-                  placeholder="0.0000000" value={bValores[fo] ?? ''}
-                  onChange={(e) => setBValores({ ...bValores, [fo]: e.target.value })} /></div>
-            ))}
+              <input className="date-input" type="date" value={smFecha}
+                onChange={(e) => setSmFecha(e.target.value)} /></div>
+            <div className="field"><label>Valor</label>
+              <input className="date-input" type="number" min="0" step="0.0001"
+                placeholder="0.0000" value={smValor}
+                onChange={(e) => setSmValor(e.target.value)} /></div>
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn" disabled={bPrecarga !== 'ok'}
-              onClick={() => registrarBench(false)}>Registrar benchmark</button>
-            <button className="btn" disabled={bPrecarga !== 'ok'}
-              onClick={() => registrarBench(true)}>Anular la fecha</button>
+            <button className="btn" disabled={!smSerie}
+              onClick={() => registrarPunto(false)}>Registrar valor</button>
+            <button className="btn" disabled={!smSerie}
+              onClick={() => registrarPunto(true)}>Borrar la fecha</button>
+            <button className="btn" disabled={!smSerie}
+              onClick={borrarSerieManual}>Borrar la serie</button>
           </div>
-          {bEco && <p className="page-sub"><b>{bEco}</b></p>}
-        </div>
 
-        <div className="panel">
-          <div className="panel-title">En la tabla</div>
-          <p className="page-sub">
-            {bEstado?.filas
-              ? `${nEnt(bEstado.filas)} fechas cargadas · ${fFecha(bEstado.desde)} a ${fFecha(bEstado.hasta)}`
-              : 'Todavía no hay ningún benchmark cargado.'}
-          </p>
-          {bEstado?.series?.length > 0 && (
-            <Informe filas={bEstado.series.map((x) => [
-              `Fondo ${x.fondo}`,
-              x.puntos ? `${nEnt(x.puntos)} fechas · último ${x.valor} el ${fFecha(x.fecha)}` : 'sin datos',
-            ])} />
-          )}
-        </div>
-      </div>
-
-      {/* ===== 5 · Benchmark: carga por archivo ===== */}
-      <div className="spp-dos">
-        <div className="panel">
-          <div className="panel-title">Benchmark · carga por Excel</div>
-          <p className="page-sub">Una fila por fecha y una columna por fondo (f1 / Fondo 1 /
-            fondo_1 / benchmark 1, en cualquier orden), o el formato largo fecha·fondo·valor.
-            También se acepta CSV. <b>Una celda vacía se deja como está</b>: el archivo nunca
-            borra.</p>
-          <div className="controls">
-            <input ref={bRef} type="file" accept=".xlsx,.xls,.csv" className="date-input"
-              onChange={() => subirBench(true, false)} />
-            <span className="page-sub" style={{ margin: 0 }}>{bNombre}</span>
+          <div className="controls" style={{ marginTop: 12 }}>
+            <input ref={smRef} type="file" accept=".xlsx,.xls,.csv" className="date-input"
+              onChange={() => subirSerie(true, false)} />
+            <span className="page-sub" style={{ margin: 0 }}>{smArchivo}</span>
           </div>
-          {bInforme && !bCargado && (
+          {smInforme && !smCargado && (
             <div className="controls" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={() => subirBench(false, false)}>Cargar lo que falta</button>
-              <button className="btn" onClick={() => subirBench(false, true)}>Cargar y corregir</button>
+              <button className="btn" onClick={() => subirSerie(false, false)}>Cargar lo que falta</button>
+              <button className="btn" onClick={() => subirSerie(false, true)}>Cargar y corregir</button>
             </div>
           )}
           <div className="controls" style={{ marginTop: 12 }}>
-            <a className="btn" href={apiUrl('/api/spp/benchmark/plantilla')}>↓ Plantilla</a>
-            <a className="btn" href={apiUrl('/api/spp/benchmark/exportar')}>↓ Bajar lo cargado</a>
+            <a className="btn" href={apiUrl('/api/spp/series-manuales/plantilla')}>↓ Plantilla</a>
+            {smSerie && (
+              <a className="btn" href={apiUrl(`/api/spp/series-manuales/${smSerie.serie_id}/exportar`)}>
+                ↓ Bajar «{smSerie.nombre}»</a>
+            )}
           </div>
+          {smEco && <p className="page-sub"><b>{smEco}</b></p>}
         </div>
 
         <div className="panel">
-          <div className="panel-title">Vista previa del archivo</div>
-          {bInforme ? (
-            <>
-              <Informe filas={filasInformeB(bInforme)} />
-              {(bInforme.avisos || []).map((a, i) => (
+          <div className="panel-title">En la base</div>
+          {smSeries.length ? (
+            <Informe filas={smSeries.map((s) => [
+              `${s.nombre}${s.moneda ? ` · ${s.moneda}` : ''}${s.usos ? ' · en la canasta' : ''}`,
+              s.puntos
+                ? `${nEnt(s.puntos)} fechas · ${fFecha(s.desde)} a ${fFecha(s.hasta)} · último ${s.ultimo}`
+                : 'sin datos todavía',
+            ])} />
+          ) : (
+            <p className="page-sub">Todavía no hay ninguna serie manual. Crea una a la
+              izquierda y cárgale precios; después podrás sumarla a la canasta del benchmark.</p>
+          )}
+
+          {smInforme && (
+            <div style={{ marginTop: 12 }}>
+              <div className="panel-title">Vista previa del archivo</div>
+              <Informe filas={filasInformeSm(smInforme)} />
+              {(smInforme.avisos || []).map((a, i) => (
                 <p key={i} className="page-sub">Aviso: {a}</p>
               ))}
-              {bInforme.total_omitidas > 0 && (
-                <p className="page-sub flag-warn">Se omitieron <b>{bInforme.total_omitidas}</b> fila(s):{' '}
-                  {bInforme.omitidas.slice(0, 5).map((o) => `línea ${o.linea} (${o.motivo})`).join('; ')}
-                  {bInforme.total_omitidas > 5 ? '; …' : ''}</p>
+              {smInforme.total_omitidas > 0 && (
+                <p className="page-sub flag-warn">Se omitieron <b>{smInforme.total_omitidas}</b> fila(s):{' '}
+                  {smInforme.omitidas.slice(0, 5).map((o) => `línea ${o.linea} (${o.motivo})`).join('; ')}
+                  {smInforme.total_omitidas > 5 ? '; …' : ''}</p>
               )}
-              <Muestra muestra={bInforme.muestra}
-                titulo={bCargado ? 'Últimas filas cargadas' : 'Últimas filas del archivo'} />
-            </>
-          ) : (
-            <p className="page-sub">Elige un archivo y aquí verás lo que trae, antes de que
-              nada toque la base.</p>
+              <Muestra muestra={smInforme.muestra}
+                titulo={smCargado ? 'Últimas filas cargadas' : 'Últimas filas del archivo'} />
+            </div>
+          )}
+
+          {smSerie && smPuntos.length > 0 && !smInforme && (
+            <div style={{ marginTop: 12 }}>
+              <div className="panel-title">Últimos valores de «{smSerie.nombre}»</div>
+              <div className="table-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}>
+                <table>
+                  <thead><tr><th>Fecha</th><th className="num">Valor</th></tr></thead>
+                  <tbody>
+                    {smPuntos.slice(-15).reverse().map((p) => (
+                      <tr key={p.fecha}>
+                        <td>{fFecha(p.fecha)}</td>
+                        <td className="num">{Number(p.valor).toLocaleString('es-PE',
+                          { minimumFractionDigits: 2, maximumFractionDigits: 7 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* ===== 6 · Benchmark: composición de la canasta ===== */}
+      {/* ===== 5 · Benchmark: composición de la canasta ===== */}
       <div className="spp-dos">
         <div className="panel">
           <div className="panel-title">Benchmark · composición de la canasta</div>
-          <p className="page-sub">El benchmark de cada fondo es una canasta de series con pesos,
+          <p className="page-sub">El benchmark de cada fondo se <b>construye</b> desde las dos
+            bases de componentes (Bloomberg y series manuales): una canasta de series con pesos,
             <b> versionada por fecha</b>: cambiar tickers o pesos crea una composición nueva desde
             su fecha de vigencia, sin tocar la historia. Entre rebalanceos los pesos <b>derivan </b>
             con los precios (buy-and-hold). Recalcular regenera la serie completa (base 100 en el
-            primer rebalanceo).</p>
+            primer rebalanceo). Los niveles nunca se cargan a mano.</p>
 
           <div className="controls spp-controls">
             <div className="field"><label>Fondo</label>
@@ -792,15 +857,15 @@ export default function SppCargaPage() {
           {cResultados && (
             <div className="table-wrap" style={{ maxHeight: 180, overflowY: 'auto', marginTop: 8 }}>
               <table><tbody>
-                {['bloomberg', 'fact'].flatMap((fu) => (cResultados[fu] || []).map((s) => (
+                {['bloomberg', 'manual'].flatMap((fu) => (cResultados[fu] || []).map((s) => (
                   <tr key={`${fu}-${s.ref_id}`}>
                     <td className="mono">{s.etiqueta}</td>
-                    <td className="dim">{fu} · {s.detalle}</td>
+                    <td className="dim">{fu === 'bloomberg' ? 'BBG' : 'manual'} · {s.detalle}</td>
                     <td><button className="btn" onClick={() => agregarComponente(fu, s)}>+ Agregar</button></td>
                   </tr>
                 )))}
-                {!(cResultados.bloomberg?.length || cResultados.fact?.length) && (
-                  <tr><td className="dim">Sin resultados.</td></tr>
+                {!(cResultados.bloomberg?.length || cResultados.manual?.length) && (
+                  <tr><td className="dim">Sin resultados en las dos bases (Bloomberg y manual).</td></tr>
                 )}
               </tbody></table>
             </div>
@@ -849,6 +914,24 @@ export default function SppCargaPage() {
         </div>
 
         <div className="panel">
+          <div className="panel-title">Serie calculada</div>
+          <p className="page-sub">
+            {bEstado?.filas
+              ? `${nEnt(bEstado.filas)} fechas · ${fFecha(bEstado.desde)} a ${fFecha(bEstado.hasta)}`
+              : 'Todavía no hay serie calculada: declara una composición y recalcula.'}
+          </p>
+          {bEstado?.series?.length > 0 && (
+            <Informe filas={bEstado.series.map((x) => [
+              `Fondo ${x.fondo}`,
+              x.puntos ? `${nEnt(x.puntos)} fechas · último ${x.valor} el ${fFecha(x.fecha)}` : 'sin datos',
+            ])} />
+          )}
+          {bEstado?.filas > 0 && (
+            <div className="controls" style={{ marginBottom: 12 }}>
+              <a className="btn" href={apiUrl('/api/spp/benchmark/exportar')}>↓ Bajar la serie</a>
+            </div>
+          )}
+
           <div className="panel-title">Historial de composiciones</div>
           <p className="page-sub">Cada fila es un rebalanceo vigente desde su fecha. Editar una
             composición la carga en el editor; guardarla reemplaza <b>solo esa fecha</b>.</p>

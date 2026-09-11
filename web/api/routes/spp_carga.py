@@ -19,6 +19,7 @@ from fastapi import APIRouter, File, Form, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from src.configs.machine_config import machine_id, scraper_enabled
+from src.pipelines.prices.manual import series as man
 from src.pipelines.prices.sbs.valor_cuota import benchmark as bench
 from src.pipelines.prices.sbs.valor_cuota import benchmark_composicion as bcomp
 from src.pipelines.prices.sbs.valor_cuota.registro import registrar_valores
@@ -163,61 +164,118 @@ def post_historico_cargar(datos: dict) -> JSONResponse:
                         status_code=200 if ok else 409)
 
 
-# ---- Benchmark ------------------------------------------------------------
+# ---- Series manuales (componentes fuera de Bloomberg) ---------------------
+# The store for benchmark component prices no vendor provides. Levels of
+# the benchmark itself are never loaded through here (nor anywhere): they
+# are calculated from the composition.
 
-@router.get("/benchmark")
-def get_benchmark() -> dict:
-    return {"estado": bench.estado_benchmark()}
+@router.get("/series-manuales")
+def get_series_manuales() -> dict:
+    return {"series": man.series()}
 
 
-@router.get("/benchmark/fecha")
-def get_benchmark_fecha(fecha: str) -> JSONResponse:
+@router.post("/series-manuales")
+def post_serie_manual(datos: dict) -> JSONResponse:
+    """Registers or updates a series; idempotent by nombre."""
     try:
-        return JSONResponse(bench.valores_de(fecha))
+        serie = man.registrar_serie(datos.get("nombre"),
+                                    datos.get("descripcion"),
+                                    datos.get("moneda"))
+        return JSONResponse({"ok": True, "serie": serie})
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
+    except Exception as exc:
+        logger.exception("alta de serie manual")
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+@router.delete("/series-manuales/{serie_id}")
+def delete_serie_manual(serie_id: int, datos: str = "") -> JSONResponse:
+    """Refuses when the series has data unless ?datos=1 confirms it,
+    and always refuses while a composition references it."""
+    try:
+        return JSONResponse({"ok": True,
+                             "resultado": man.borrar_serie(serie_id, es_si(datos))})
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=409)
+    except Exception as exc:
+        logger.exception("baja de serie manual")
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+@router.get("/series-manuales/{serie_id}/datos")
+def get_serie_manual_datos(serie_id: int) -> JSONResponse:
+    try:
+        return JSONResponse({"ok": True, "puntos": man.leer(serie_id)})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
 
 
-@router.post("/benchmark/valor")
-def post_benchmark_valor(datos: dict) -> JSONResponse:
+@router.post("/series-manuales/{serie_id}/valores")
+def post_serie_manual_valores(serie_id: int, datos: dict) -> JSONResponse:
+    """Point entry: {fecha: valor|null} - null deletes that date."""
     try:
-        resultado = bench.registrar_benchmark(datos.get("fecha"),
-                                              datos.get("valores") or {})
+        resultado = man.registrar_valores(serie_id, datos.get("valores") or {})
         return JSONResponse({"ok": True, "resultado": resultado})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
-        logger.exception("registro de benchmark")
+        logger.exception("registro de serie manual")
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
 
 
-@router.post("/benchmark/archivo")
-async def post_benchmark_archivo(archivo: UploadFile = File(...),
-                                 revisar: str = Form(""),
-                                 refrescar: str = Form("")) -> JSONResponse:
+@router.post("/series-manuales/{serie_id}/archivo")
+async def post_serie_manual_archivo(serie_id: int,
+                                    archivo: UploadFile = File(...),
+                                    revisar: str = Form(""),
+                                    refrescar: str = Form("")) -> JSONResponse:
     """
-    Benchmark load by file. With revisar=1 only reports what was read;
-    nothing reaches the base without having been shown first.
+    Load by file into one series. With revisar=1 only reports what was
+    read; nothing reaches the base without having been shown first.
     """
     crudo, error = await leer_archivo(archivo)
     if error:
         return error
     solo_revisar = es_si(revisar)
-    con_refresco = es_si(refrescar)
     try:
         if solo_revisar:
-            informe = bench.leer_archivo_benchmark(crudo)
-            informe.pop("df", None)
+            informe = man.leer_archivo_valores(crudo)
+            informe.pop("valores", None)
         else:
-            informe = bench.importar_benchmark(crudo, refrescar=con_refresco)
+            informe = man.importar_valores(serie_id, crudo,
+                                           refrescar=es_si(refrescar))
         informe["archivo"] = archivo.filename
         return JSONResponse({"ok": True, "revisado": solo_revisar,
                              "informe": informe})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
-        logger.exception("carga de benchmark")
+        logger.exception("carga de serie manual")
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+@router.get("/series-manuales/plantilla")
+def get_serie_manual_plantilla() -> Response:
+    return Response(man.plantilla(), media_type=XLSX,
+                    headers={"Content-Disposition":
+                             "attachment; filename=plantilla_serie_manual.xlsx"})
+
+
+@router.get("/series-manuales/{serie_id}/exportar")
+def get_serie_manual_exportar(serie_id: int,
+                              desde: str | None = None,
+                              hasta: str | None = None) -> Response:
+    return Response(man.exportar_datos(serie_id, fecha_iso(desde), fecha_iso(hasta)),
+                    media_type=XLSX,
+                    headers={"Content-Disposition":
+                             f"attachment; filename=serie_manual_{serie_id}.xlsx"})
+
+
+# ---- Benchmark (solo lectura: los niveles se calculan) ---------------------
+
+@router.get("/benchmark")
+def get_benchmark() -> dict:
+    return {"estado": bench.estado_benchmark()}
 
 
 # ---- Benchmark: composicion (canasta versionada) --------------------------
@@ -281,13 +339,6 @@ def post_recalcular(datos: dict) -> JSONResponse:
                         bcomp.recalcular, fondo=fondo)
     return JSONResponse({"ok": ok, "motivo": motivo},
                         status_code=200 if ok else 409)
-
-
-@router.get("/benchmark/plantilla")
-def get_benchmark_plantilla() -> Response:
-    return Response(bench.plantilla_benchmark(), media_type=XLSX,
-                    headers={"Content-Disposition":
-                             "attachment; filename=plantilla_benchmark.xlsx"})
 
 
 @router.get("/benchmark/exportar")

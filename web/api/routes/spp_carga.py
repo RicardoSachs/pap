@@ -14,6 +14,8 @@ import json
 import logging
 import os
 import subprocess
+import sys
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Response, UploadFile
 from fastapi.responses import JSONResponse
@@ -82,6 +84,8 @@ def _tarea_windows() -> dict:
         "  proxima=if ($i.NextRunTime) { $i.NextRunTime.ToString('s') } else { '' }; "
         "  ultima=if ($i.LastRunTime) { $i.LastRunTime.ToString('s') } else { '' }; "
         "  resultado=$i.LastTaskResult; omitidas=$i.NumberOfMissedRuns; "
+        "  ejecutable=[string]$t.Actions[0].Execute; "
+        "  argumentos=[string]$t.Actions[0].Arguments; "
         "  disparo=[string]($t.Triggers | ForEach-Object { $_.StartBoundary }) "
         "} | ConvertTo-Json -Compress }")
     try:
@@ -90,9 +94,29 @@ def _tarea_windows() -> dict:
                            capture_output=True, text=True, timeout=25)
         datos = json.loads((r.stdout or "").strip() or '{"registrada":false}')
         datos["disponible"] = True
+        if datos.get("registrada"):
+            datos["apunta_aqui"] = _apunta_aqui(datos.get("ejecutable"))
         return datos
     except Exception as exc:
         return {"disponible": False, "motivo": str(exc)[:200]}
+
+
+def _apunta_aqui(ejecutable: str | None) -> bool:
+    """
+    Whether the registered task runs THIS copy of the project.
+
+    On the machine without git every update is a fresh zip in a new
+    folder, so it is easy to end up with the task still driving the old
+    copy (or a deleted one) while the tablero reports the automation as
+    healthy. The task's python is the repo's own .venv, which is also
+    the interpreter serving this API.
+    """
+    if not ejecutable:
+        return True
+    try:
+        return Path(ejecutable).resolve() == Path(sys.executable).resolve()
+    except Exception:
+        return True
 
 
 # ---- Registro manual ------------------------------------------------------

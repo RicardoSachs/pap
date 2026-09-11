@@ -56,20 +56,27 @@ export default function SppPanelPage() {
   const casa = cfg?.casa;
   const opera = (afp, f) => operaCfg(cfg, afp, f);
 
-  // Historic series follows the metric/fund/window/AFP selection.
+  // Historic series follows the metric/fund/window/AFP selection - and the
+  // reference dates, which is what MTD/YTD actually start from. Leaving
+  // vent?.fechas out of the deps meant the chart kept the previous month's
+  // base after a change of control date, disagreeing with the windows
+  // tables right beside it, and never adopted the true prior close the
+  // first time it loaded (it used the calendar fallback instead).
   useEffect(() => {
     if (!cfg || !afpsSel.length) return;
+    setError(null);
     const desde = desdeVentana(ventana, estado, vent?.fechas);
     const q = new URLSearchParams({
       fondo: String(fondo), afps: afpsSel.join(','), metrica, desde,
     });
     apiGet(`/api/spp/serie?${q}`).then(setSerieData).catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, estado, metrica, fondo, ventana, afpsSel]);
+  }, [cfg, estado, metrica, fondo, ventana, afpsSel, vent?.fechas?.mes, vent?.fechas?.anio]);
 
   // Windows + positions follow metric and control date.
   useEffect(() => {
     if (!cfg) return;
+    setError(null);
     const q = new URLSearchParams({ metrica });
     if (fechaControl) q.set('fecha', fechaControl);
     apiGet(`/api/spp/ventanas?${q}`).then(setVent).catch((e) => setError(e.message));
@@ -86,6 +93,7 @@ export default function SppPanelPage() {
   useEffect(() => {
     if (!cfg || !afpRef12) return;
     const desde = desdeVentana(1, estado, vent?.fechas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     const q = new URLSearchParams({ fondo: String(fondo), afps: afpRef12, metrica: 'valor_cuota', desde });
     apiGet(`/api/spp/serie?${q}`).then((d) => {
       const p = d.series?.[0]?.puntos;
@@ -268,16 +276,6 @@ export default function SppPanelPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }).filter(Boolean), [pos, fondoPos, cfg, casa, nombres, periodos]);
 
-  if (error) {
-    return (
-      <div>
-        <h1 className="page-title">Valor Cuota SPP</h1>
-        <SppTabs />
-        <div className="panel error">Error: {error}</div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <h1 className="page-title">Valor Cuota SPP</h1>
@@ -286,6 +284,11 @@ export default function SppPanelPage() {
         {estado?.filas ? ` · ${nEnt(estado.filas)} fechas (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})` : ''}
       </p>
       <SppTabs />
+
+      {/* Un error se muestra COMO BANDA, no reemplazando la página: antes se
+          llevaba por delante los controles con los que el operador podría
+          corregir la selección que lo causó, y nada lo limpiaba salvo F5. */}
+      {error && <div className="panel error">Error: {error}</div>}
 
       <KpiBar tiles={kpis} />
 
@@ -334,7 +337,9 @@ export default function SppPanelPage() {
               },
             }}
           />
-        ) : <div className="loading">Cargando…</div>}
+        ) : serieData == null
+          ? <div className="loading">Cargando…</div>
+          : <p className="page-sub dim">Sin datos para esta selección.</p>}
         {escala === 'base' && (
           <p className="page-sub" style={{ marginTop: 8 }}>
             En Base 100 las series parten de 100 en la primera fecha con dato en todas
@@ -406,7 +411,9 @@ export default function SppPanelPage() {
                 {' '}{casa} rinde más. La sección de {casa} va en rendimiento absoluto.</p>
             </details>
           </>
-        ) : <div className="dim">Sin datos en el libro.</div>}
+        ) : vent == null
+          ? <div className="loading">Cargando…</div>
+          : <div className="page-sub dim">Sin datos en el libro.</div>}
       </div>
 
       <div className="panel">

@@ -14,6 +14,11 @@ export const apiUrl = (path) => `${BASE}${path}`;
 
 // Mutating fetch (JSON or FormData). Returns {ok, status, data} instead of
 // throwing so callers can show the backend's `motivo` verbatim.
+//
+// That contract has to hold for a DEAD API too, not just for an error
+// response: every caller is an async onClick, so a rejected fetch used to
+// surface as an unhandled rejection - the form simply went quiet and the
+// operator could not tell whether the write had landed.
 export async function apiSend(path, method, body, isForm = false) {
   const opts = { method };
   if (body !== undefined) {
@@ -22,10 +27,26 @@ export async function apiSend(path, method, body, isForm = false) {
       opts.body = JSON.stringify(body);
     }
   }
-  const res = await fetch(`${BASE}${path}`, opts);
-  const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
+  try {
+    const res = await fetch(`${BASE}${path}`, opts);
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data };
+  } catch {
+    return {
+      ok: false,
+      status: 0,
+      data: { motivo: 'No se pudo hablar con la API (¿se cerró la ventana «Tablero SPP (API)»?). No se guardó nada.' },
+    };
+  }
 }
+
+// The ONE name for each price store. The same source read 'BBG', 'bloomberg'
+// and 'Bloomberg' within one screen; the benchmark editor shows them side by
+// side, so they have to be said the same way.
+export const NOMBRE_FUENTE = {
+  bloomberg: 'Bloomberg', manual: 'Manual', fact: 'Histórico',
+};
+export const nombreFuente = (f) => NOMBRE_FUENTE[f] || f;
 
 // FALLBACKS only, for the instant before /api/spp/config arrives: the
 // metric universe and its labels are owned by the backend (cfg.metricas)
@@ -106,6 +127,19 @@ export const fFecha = (s) => {
   if (!s) return '—';
   const [a, m, d] = String(s).split('-');
   return `${d}/${m}/${a}`;
+};
+
+// Timestamp with the hour in 24h, like every other hour in the tablero (the
+// scheduled task reads "18:00"; es-PE's default would print "06:00 p. m."
+// right next to it). The API serializes task timestamps as ISO at the source,
+// so plain Date parsing here is unambiguous.
+export const fHora = (t) => {
+  if (!t) return '—';
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? String(t) : d.toLocaleString('es-PE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
 };
 
 // Today in the user's zone. valueAsDate interprets Dates in UTC, so from

@@ -171,6 +171,10 @@ a { color: inherit; text-decoration: none; }
 
 .page-title { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
 .page-sub { color: var(--text-secondary); margin: 0 0 18px; font-size: 13px; }
+/* .dim means "fainter than the surrounding text" everywhere, so it has to
+   win over .page-sub's own color: same specificity, and .page-sub is
+   declared later in this file, so the combination silently did nothing. */
+.page-sub.dim { color: var(--text-muted); }
 
 /* ----- Panels / cards ------------------------------------------------------- */
 .panel {
@@ -206,6 +210,15 @@ a { color: inherit; text-decoration: none; }
 }
 .btn:hover { border-color: var(--blue); color: var(--text-primary); }
 .btn:disabled { opacity: 0.4; cursor: default; }
+/* Weight follows consequence: one default action per panel, and the ones
+   that delete or overwrite say so before they are clicked. Every button
+   used to look identical, so "Registrar valores" and "Anular la fecha"
+   sat side by side with the same visual pull. */
+.btn.principal { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn.principal:hover { filter: brightness(1.08); color: #fff; }
+.btn.principal:disabled { filter: none; }
+.btn.peligro { color: var(--rose); }
+.btn.peligro:hover { border-color: var(--rose); color: var(--rose); }
 
 /* ----- Tables --------------------------------------------------------------- */
 .table-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -263,7 +276,7 @@ tfoot th, tfoot td {
 
 
 /* ----- SPP tablero (valor cuota) -------------------------------------------- */
-/* Sub-tab bar under the page title: one sidebar entry, three views. */
+/* Sub-tab bar under the page title: one sidebar entry, four views. */
 .spp-tabs { display: flex; gap: 6px; margin: 0 0 16px; }
 .spp-tab {
   padding: 6px 14px; border: 1px solid var(--s4); border-radius: 6px;

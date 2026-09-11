@@ -46,9 +46,15 @@ def required(key: str) -> str:
     """
     val = os.getenv(key)
     if not val:
+        # The pointer must name a file that actually travels with the
+        # project: ROTATION.md is git-ignored, so on a machine set up
+        # from the repo zip this message used to send the operator to a
+        # file that does not exist - as the very first error they see.
+        guia = ('See ROTATION.md.' if (PROJECT_ROOT / 'ROTATION.md').exists()
+                else 'See the comments in .env.example and INSTALACION.md.')
         raise MissingSecret(
             f'{key} is not set. Copy .env.example to .env at the project root '
-            f'({PROJECT_ROOT}) and fill in {key}. See ROTATION.md.'
+            f'({PROJECT_ROOT}) and fill in {key}. {guia}'
         )
     return val
 

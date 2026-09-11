@@ -25,14 +25,15 @@ export default function Header() {
 
   const isCustom = d.period === 'Custom';
 
+  // The freshness chip goes too, not just the selectors: it is a fixed green
+  // "Data current" that reads nothing, and the SPP panel has a real rezago
+  // KPI a few pixels below that can say "5 d.h." in red. Two contradictory
+  // freshness signals on one screen, one of them decorative.
   if (rutaActiva(path, '/spp/')) {
     return (
       <header className="header">
         <span className="brand">Profuturo Analytics</span>
         <div className="spacer" />
-        <span className="freshness" title="Reference data — current as of the latest load">
-          <span className="dot" /> Data current
-        </span>
         <ThemeToggle />
       </header>
     );

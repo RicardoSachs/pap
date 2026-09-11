@@ -21,7 +21,18 @@ export default function useSppTarea() {
   const [tarea, setTarea] = useState(null);
   const pollRef = useRef(null);
 
-  useEffect(() => () => clearInterval(pollRef.current), []);
+  // Adopt a task that is ALREADY running when this view mounts. The task
+  // slot is one per API process, shared by every tab: without this, moving
+  // to another tab (or reloading) while an extraction runs left the new
+  // view believing nothing was happening - its write buttons enabled, its
+  // bitácora empty - until the operator hit a 409 they could not explain.
+  useEffect(() => {
+    apiGet('/api/spp/tarea')
+      .then((t) => { if (t?.activa) { setTarea(t); seguir(); } })
+      .catch(() => {});
+    return () => clearInterval(pollRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const seguir = (alTerminar) => {
     clearInterval(pollRef.current);

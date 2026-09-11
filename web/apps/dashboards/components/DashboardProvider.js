@@ -15,6 +15,7 @@ import { createContext, useContext, useEffect, useState, useMemo, useCallback } 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { apiGet } from '../lib/api';
 import { periodToRange, PERIODS, DEFAULT_PERIOD } from '../lib/period';
+import { rutaActiva } from '../lib/rutas';
 
 const Ctx = createContext(null);
 export const useDashboard = () => useContext(Ctx);
@@ -61,6 +62,11 @@ export default function DashboardProvider({ children }) {
   useEffect(() => {
     if (!hydrated) return;
     try { localStorage.setItem(LS_KEY, JSON.stringify(ctx)); } catch { /* ignore */ }
+    // The SPP tablero has no portfolio/period/source dimension - the Header
+    // already hides those controls there - so stamping them on its URLs only
+    // produced links and bookmarks carrying parameters no SPP view reads.
+    // localStorage above still keeps the context for the other dashboards.
+    if (rutaActiva(pathname, '/spp/')) return;
     const sp = new URLSearchParams();
     if (ctx.portfolioId) sp.set('portfolio', ctx.portfolioId);
     sp.set('period', ctx.period);

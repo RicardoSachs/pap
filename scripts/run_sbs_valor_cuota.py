@@ -75,7 +75,17 @@ def main() -> int:
         run_historico(archivo=args.historico, refresh=args.refresh)
         return 0
 
-    # Scraping paths need the machine gate; loading a local file does not.
+    if args.programado:
+        # BEFORE the machine gate on purpose: correr_programado carries
+        # the gate itself, so a machine whose market_data_config.yaml is
+        # missing leaves the reason in data/spp/extraccion.log instead of
+        # dying with a traceback the scheduled task reports as a bare
+        # exit code and the tablero cannot explain.
+        # The exit code is what the Windows task records as result.
+        return 0 if correr_programado(refrescar=args.refresh)["ok"] else 1
+
+    # The remaining scraping paths need the machine gate; loading a
+    # local file does not.
     if not scraper_enabled():
         raise RuntimeError(
             f"Scraper is not enabled on this machine ({machine_id()}). "
@@ -85,10 +95,6 @@ def main() -> int:
     if args.historico_descargar:
         run_historico(download=True, refresh=args.refresh)
         return 0
-
-    if args.programado:
-        # Exit code is what the Windows task records as result.
-        return 0 if correr_programado(refrescar=args.refresh)["ok"] else 1
 
     res = run_daily(run_date=args.date, refresh=args.refresh)
     return 0 if res.get("fechas") else 1

@@ -165,10 +165,33 @@ def registrar_serie(ticker, campo=CAMPO_POR_DEFECTO, intervalo="diario",
 
 def borrar_serie(serie_id: int, con_datos: bool = False) -> dict:
     """
-    Removes a series. Refuses when it has data unless con_datos=True:
+    Removes a series. Refuses while a benchmark composition still
+    references it, and refuses when it has data unless con_datos=True:
     deleting a loaded series should be deliberate, not a stray click.
     """
     with get_connection() as conn:
+        # benchmark_composicion.ref_id is polymorphic (it points at either
+        # store), so there is no foreign key to stop this. Without the
+        # check the composition row survives and the next recalculation
+        # fails with "X no tiene precio en o antes del rebalanceo" - a
+        # diagnosis that sends the operator looking for missing prices
+        # instead of the series they deleted. The manual store already
+        # guards this; both stores have to behave the same way.
+        usos = conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM benchmark_composicion
+            WHERE (fuente = 'bloomberg' AND ref_id = %s)
+               OR (fx_fuente = 'bloomberg' AND fx_ref_id = %s)
+            """, (serie_id, serie_id)).fetchone()["n"]
+        if usos:
+            fila = conn.execute(
+                "SELECT ticker, campo FROM bloomberg_serie WHERE serie_id = %s",
+                (serie_id,)).fetchone()
+            nombre = f"{fila['ticker']} {fila['campo']}" if fila else serie_id
+            raise ValueError(
+                f"'{nombre}' aparece en {usos} composicion(es) del benchmark. "
+                "Quitala de la canasta antes de borrarla.")
+
         n = conn.execute(
             "SELECT COUNT(*) AS n FROM bloomberg_dato WHERE serie_id = %s",
             (serie_id,),

@@ -65,8 +65,25 @@ def _norm(t) -> str:
     return " ".join(_sin_tildes(str(t or "")).upper().split())
 
 
-@lru_cache(maxsize=1)
 def registro() -> dict:
+    """
+    config/afps.yaml, cached BY MODIFICATION TIME.
+
+    The file's own header promises that editing it is enough to onboard
+    an AFP, but the API is a long-lived process: with a plain cache, a
+    new AFP was visible to the scheduled run (a fresh process) and
+    invisible to the tablero until someone restarted it - the two paths
+    disagreeing about who exists.
+    """
+    try:
+        marca = AFPS_CONFIG.stat().st_mtime_ns
+    except OSError:
+        marca = 0
+    return _registro(marca)
+
+
+@lru_cache(maxsize=2)
+def _registro(_marca: int) -> dict:
     """Loads and caches config/afps.yaml. Fails loud if absent or empty."""
     with open(AFPS_CONFIG, encoding="utf-8") as f:
         datos = yaml.safe_load(f)
@@ -96,8 +113,16 @@ def nombres() -> list[str]:
     return [a["nombre"] for a in afps()]
 
 
-@lru_cache(maxsize=1)
 def _alias_map() -> dict:
+    try:
+        marca = AFPS_CONFIG.stat().st_mtime_ns
+    except OSError:
+        marca = 0
+    return _alias_map_cache(marca)
+
+
+@lru_cache(maxsize=2)
+def _alias_map_cache(_marca: int) -> dict:
     # Any way of naming an AFP -> its clave. Includes clave, current name
     # and all historical aliases, so a rename never breaks recognition of
     # older publications.

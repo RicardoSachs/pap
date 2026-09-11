@@ -41,6 +41,32 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
 
+class FaltaChrome(RuntimeError):
+    """Google Chrome is not installed - retrying cannot help."""
+
+
+# Playwright phrasings for "the browser binary is not there". Retrying
+# these wastes three window launches and 12 seconds of the scheduled
+# task's budget before reporting a cause that will not change.
+_SIN_CHROME = ("is not found", "executable doesn't exist", "playwright install")
+
+
+def _sin_reintento(exc: Exception) -> bool:
+    texto = str(exc).lower()
+    return any(marca in texto for marca in _SIN_CHROME)
+
+
+def _guardar_fallo(html: str, intento: int) -> Path:
+    """Keeps the page that did not parse, for the post mortem."""
+    SPP_RAW_DIR.mkdir(parents=True, exist_ok=True)
+    destino = SPP_RAW_DIR / f"fallo_{date.today():%Y%m%d}_{intento}.html"
+    try:
+        destino.write_text(html, encoding="utf-8")
+    except Exception:
+        pass
+    return destino
+
+
 def fetch_html(url: str, wait_selector: str | None = None,
                retries: int = 3) -> str:
     """
@@ -49,7 +75,14 @@ def fetch_html(url: str, wait_selector: str | None = None,
     Playwright is imported inside the function so machines without it
     (office installs, CI) can still import the module; only actually
     scraping requires the dependency.
+
+    Failures are told apart instead of collapsed into one timeout: a
+    missing Chrome fails immediately (no retry can install it), a WAF
+    challenge says so and names the fix (open Chrome by hand and solve
+    it once), and a page whose expected table never appeared is saved
+    to data/raw/spp/ so a change on the SBS side can be seen.
     """
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
     from playwright.sync_api import sync_playwright
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -58,21 +91,51 @@ def fetch_html(url: str, wait_selector: str | None = None,
         p = ctx = None
         try:
             p = sync_playwright().start()
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(PROFILE_DIR), channel="chrome", headless=False,
-                locale="es-PE", timezone_id="America/Lima",
-                viewport={"width": 1440, "height": 1000},
-                args=["--disable-blink-features=AutomationControlled"])
+            try:
+                ctx = p.chromium.launch_persistent_context(
+                    user_data_dir=str(PROFILE_DIR), channel="chrome",
+                    headless=False, locale="es-PE", timezone_id="America/Lima",
+                    viewport={"width": 1440, "height": 1000},
+                    args=["--disable-blink-features=AutomationControlled"])
+            except Exception as exc:
+                if _sin_reintento(exc):
+                    raise FaltaChrome(
+                        "Google Chrome no esta instalado en esta maquina. El "
+                        "WAF de la SBS exige Chrome real (el Chromium de "
+                        "Playwright no sirve): instala Google Chrome y vuelve "
+                        f"a correr. Detalle: {str(exc).splitlines()[0][:160]}")
+                raise
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(url, wait_until="domcontentloaded", timeout=90_000)
             if wait_selector:
-                page.wait_for_selector(wait_selector, timeout=45_000)
+                try:
+                    page.wait_for_selector(wait_selector, timeout=45_000)
+                except PlaywrightTimeout:
+                    # The WAF check below never ran on the daily path
+                    # before this: a challenge page has no table either,
+                    # so every block was reported as a bare timeout.
+                    html = page.content()
+                    copia = _guardar_fallo(html, attempt)
+                    if "_Incapsula_Resource" in html or "Incapsula" in html:
+                        raise RuntimeError(
+                            "El WAF de la SBS bloqueo la peticion (pagina de "
+                            "verificacion). Abre Chrome a mano, entra a "
+                            f"{url}, resuelve el reto una vez y vuelve a "
+                            "correr: la cookie queda en el perfil.")
+                    raise RuntimeError(
+                        f"La tabla '{wait_selector}' no aparecio en la pagina "
+                        "de la SBS; puede haber cambiado el formato. Copia de "
+                        f"lo recibido en {copia}")
             else:
                 page.wait_for_timeout(4_000)
             html = page.content()
             if "_Incapsula_Resource" in html:
-                raise RuntimeError("El WAF bloqueo la peticion.")
+                raise RuntimeError(
+                    "El WAF de la SBS bloqueo la peticion. Abre Chrome a mano, "
+                    f"entra a {url} y resuelve el reto una vez.")
             return html
+        except FaltaChrome:
+            raise
         except Exception as exc:
             last_error = exc
             logger.warning(f"spp fetch attempt {attempt}/{retries} failed: "

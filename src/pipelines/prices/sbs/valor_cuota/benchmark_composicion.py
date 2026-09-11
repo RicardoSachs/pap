@@ -126,7 +126,7 @@ def guardar_composicion(fondo: int, vigente_desde, componentes: list[dict]) -> d
         c["peso"] = c["peso"] / total
 
     with get_connection() as conn:
-        _validar_referencias(conn, limpios)
+        _validar_referencias(conn, limpios, fondo)
         conn.execute(
             "DELETE FROM benchmark_composicion WHERE fondo = %s AND vigente_desde = %s",
             (fondo, fecha))
@@ -157,9 +157,21 @@ def borrar_composicion(fondo: int, vigente_desde) -> dict:
             "borrados": cur.rowcount}
 
 
-def _validar_referencias(conn, componentes: list[dict]) -> None:
-    """Every referenced series (price and FX legs) must exist."""
+def _validar_referencias(conn, componentes: list[dict], fondo: int) -> None:
+    """Every referenced series (price and FX legs) must exist, and none of
+    them may be the benchmark this composition defines."""
+    propia = reg.series_map(conn).get((reg.procode_bench(fondo), "PX_LAST"))
+    sid_propia = propia["series_id"] if propia else None
     for c in componentes:
+        # A benchmark that holds itself recomposes on every recalculation:
+        # _armar_periodos reads the levels written by the previous run
+        # (before the DELETE), so the index drifts a little further each
+        # time, with no error and nothing to notice.
+        if (sid_propia is not None and c["fuente"] == "fact"
+                and c["ref_id"] == sid_propia):
+            raise ValueError(
+                f"El benchmark del Fondo {fondo} no puede ser componente de "
+                "si mismo.")
         pares = [(c["fuente"], c["ref_id"], c["etiqueta"])]
         if c["fx_ref_id"] is not None:
             pares.append((c["fx_fuente"], c["fx_ref_id"], f"FX de {c['etiqueta']}"))
@@ -389,9 +401,10 @@ def series_disponibles(q: str = "") -> dict:
             SELECT sr.series_id, e.procode, e.name, sr.field, sr.source
             FROM series_registry sr
             JOIN dim_entity e ON e.entity_id = sr.entity_id
-            WHERE e.procode ILIKE %s OR COALESCE(e.name, '') ILIKE %s
+            WHERE sr.source <> %s
+              AND (e.procode ILIKE %s OR COALESCE(e.name, '') ILIKE %s)
             ORDER BY e.procode LIMIT 50
-            """, (q, q)).fetchall()
+            """, (reg.SOURCE_BENCH, q, q)).fetchall()
     return {
         "bloomberg": [{"ref_id": r["serie_id"],
                        "etiqueta": r["ticker"],

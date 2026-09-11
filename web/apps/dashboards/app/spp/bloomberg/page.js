@@ -14,6 +14,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
+import Bitacora from '../../../components/Bitacora';
+import Eco from '../../../components/Eco';
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 
@@ -27,8 +29,11 @@ export default function SppBloombergPage() {
   const fileRef = useRef(null);
   const [informe, setInforme] = useState(null);
 
-  // Shared background-task poller (same hook as the carga tab).
-  const { tarea, iniciar } = useSppTarea();
+  // Shared background-task poller (same hook as the carga tab). `ocupado`
+  // gates every write: the download thread is inserting into these same
+  // tables, so registering or deleting a series mid-download is a race the
+  // backend does not stop.
+  const { tarea, ocupado, iniciar } = useSppTarea();
 
   const cargar = () => apiGet('/api/spp/bloomberg').then(setEstado).catch((e) => setError(e.message));
   useEffect(() => { cargar(); }, []);
@@ -40,10 +45,10 @@ export default function SppBloombergPage() {
       fecha_inicio: form.fecha_inicio || null, descripcion: form.descripcion || null,
     });
     if (r.ok) {
-      setEco(`Registrada: ${r.data.serie.ticker} ${r.data.serie.campo} (${r.data.serie.intervalo})`);
+      setEco({ ok: true, texto: `Serie «${r.data.serie.ticker} ${r.data.serie.campo}» registrada (${r.data.serie.intervalo}).` });
       setForm({ ticker: '', campo: '', intervalo: 'diario', fecha_inicio: '', descripcion: '' });
       cargar();
-    } else setEco(`Error: ${r.data.motivo || r.status}`);
+    } else setEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
   };
 
   const borrar = async (s) => {
@@ -53,20 +58,32 @@ export default function SppBloombergPage() {
       : `¿Borrar la serie ${s.ticker} ${s.campo}?`;
     if (!window.confirm(msg)) return;
     const r = await apiSend(`/api/spp/bloomberg/serie/${s.serie_id}${tiene ? '?datos=1' : ''}`, 'DELETE');
-    setEco(r.ok ? `Serie ${s.serie_id} borrada.` : `Error: ${r.data.motivo || r.status}`);
+    // Name the series the way the operator sees it in the table; serie_id is
+    // an internal number that appears in no column.
+    setEco(r.ok
+      ? { ok: true, texto: `Serie «${s.ticker} ${s.campo}» borrada${tiene ? ' con sus datos' : ''}.` }
+      : { ok: false, texto: r.data.motivo || `Error ${r.status}` });
     cargar();
   };
 
   const extraer = async (corregir) => {
+    // Correcting re-requests the whole window and replaces stored points:
+    // the same confirmation the other overwriting actions ask for.
+    if (corregir && !window.confirm(
+      'Bajar y corregir: vuelve a pedir la ventana completa de cada serie y '
+      + 'REEMPLAZA los datos ya cargados. ¿Continuar?')) return;
     setEco('');
     const r = await apiSend('/api/spp/bloomberg/extraer', 'POST', { corregir });
     if (r.ok) iniciar('descarga de Bloomberg', () => cargar());
-    else setEco(`No se pudo lanzar: ${r.data.motivo || r.status}`);
+    else setEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
   };
 
   const subirArchivo = async (soloRevisar) => {
     const f = fileRef.current?.files?.[0];
-    if (!f) { setEco('Elige un archivo primero.'); return; }
+    if (!f) { setEco({ ok: false, texto: 'Elige un archivo primero.' }); return; }
+    // Clear the previous attempt first: an error used to leave the old report
+    // on screen, reading as if it described the file just chosen.
+    setEco(''); setInforme(null);
     const fd = new FormData();
     fd.append('archivo', f);
     fd.append('revisar', soloRevisar ? '1' : '');
@@ -74,7 +91,7 @@ export default function SppBloombergPage() {
     if (r.ok) {
       setInforme({ ...r.data.informe, revisado: r.data.revisado });
       if (!r.data.revisado) cargar();
-    } else setEco(`Error: ${r.data.motivo || r.status}`);
+    } else setEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
   };
 
   const detalle = estado?.detalle || [];
@@ -100,33 +117,37 @@ export default function SppBloombergPage() {
         <p className="page-sub">Idempotente por ticker + campo + intervalo: volver a enviarla actualiza
           en lugar de duplicar, y lo que no se manda no se borra.</p>
         <div className="controls spp-controls">
-          <div className="field"><label>Ticker</label>
-            <input className="date-input" placeholder="SPX Index" value={form.ticker}
+          <div className="field"><label htmlFor="bb-ticker">Ticker</label>
+            <input id="bb-ticker" className="date-input" placeholder="SPX Index" value={form.ticker}
               onChange={(e) => setForm({ ...form, ticker: e.target.value })} /></div>
-          <div className="field"><label>Campo</label>
-            <input className="date-input" placeholder="PX_LAST" value={form.campo}
+          <div className="field"><label htmlFor="bb-campo">Campo</label>
+            <input id="bb-campo" className="date-input" placeholder="PX_LAST" value={form.campo}
               onChange={(e) => setForm({ ...form, campo: e.target.value })} /></div>
-          <div className="field"><label>Intervalo</label>
-            <select className="select" value={form.intervalo}
+          <div className="field"><label htmlFor="bb-intervalo">Intervalo</label>
+            <select id="bb-intervalo" className="select" value={form.intervalo}
               onChange={(e) => setForm({ ...form, intervalo: e.target.value })}>
               {INTERVALOS.map((i) => <option key={i} value={i}>{i}</option>)}
             </select></div>
-          <div className="field"><label>Desde</label>
-            <input className="date-input" type="date" value={form.fecha_inicio}
+          <div className="field"><label htmlFor="bb-desde">Desde</label>
+            <input id="bb-desde" className="date-input" type="date" value={form.fecha_inicio}
               onChange={(e) => setForm({ ...form, fecha_inicio: e.target.value })} /></div>
-          <div className="field" style={{ flex: '1 1 220px' }}><label>Descripción</label>
-            <input className="date-input" placeholder="S&P 500" value={form.descripcion}
+          <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="bb-desc">Descripción</label>
+            <input id="bb-desc" className="date-input" placeholder="S&P 500" value={form.descripcion}
               onChange={(e) => setForm({ ...form, descripcion: e.target.value })} /></div>
-          <div className="field"><label>&nbsp;</label>
-            <button className="btn" onClick={agregar}>Agregar serie</button></div>
+          <div className="field"><label aria-hidden="true">&nbsp;</label>
+            <button className="btn principal" disabled={ocupado}
+              title={ocupado ? 'Espera a que termine la descarga' : undefined}
+              onClick={agregar}>Registrar serie</button></div>
         </div>
 
         <div className="controls" style={{ marginTop: 10 }}>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="date-input" />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="date-input"
+            aria-label="Archivo con series para registrar" />
           <button className="btn" onClick={() => subirArchivo(true)}>Revisar archivo</button>
-          <button className="btn" onClick={() => subirArchivo(false)}>Registrar las series</button>
-          <a className="btn" href={apiUrl('/api/spp/bloomberg/plantilla')}>↓ Plantilla</a>
-          <a className="btn" href={apiUrl('/api/spp/bloomberg/exportar')}>↓ Bajar lo cargado</a>
+          <button className="btn principal" disabled={ocupado}
+            onClick={() => subirArchivo(false)}>Registrar las series</button>
+          <a className="btn" href={apiUrl('/api/spp/bloomberg/plantilla')}>↓ Plantilla · XLSX</a>
+          <a className="btn" href={apiUrl('/api/spp/bloomberg/exportar')}>↓ Bajar lo cargado · XLSX</a>
         </div>
         {informe && (
           <p className="page-sub">
@@ -136,29 +157,22 @@ export default function SppBloombergPage() {
             {informe.total_omitidas ? ` · ${informe.total_omitidas} omitida(s)` : ''}
           </p>
         )}
-        {eco && <p className="page-sub"><b>{eco}</b></p>}
+        <Eco eco={eco} />
       </div>
 
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between' }}>
           <div className="panel-title">Descarga</div>
           <div className="controls">
-            <button className="btn" onClick={() => extraer(false)}
-              disabled={tarea?.activa || (estado && !estado.disponible)}>Bajar lo que falta</button>
-            <button className="btn" onClick={() => extraer(true)}
-              disabled={tarea?.activa || (estado && !estado.disponible)}>Bajar y corregir</button>
+            <button className="btn principal" onClick={() => extraer(false)}
+              disabled={ocupado || (estado && !estado.disponible)}>Bajar lo que falta</button>
+            <button className="btn peligro" onClick={() => extraer(true)}
+              disabled={ocupado || (estado && !estado.disponible)}>Bajar y corregir</button>
           </div>
         </div>
         <p className="page-sub">Cada serie se pide desde el día siguiente a su último dato; las que ya
           están al día no consumen cuota. Las peticiones se agrupan por ventana, campo e intervalo.</p>
-        {tarea && (
-          <div className="spp-bitacora mono">
-            {(tarea.bitacora || []).map((l, i) => <div key={i}>{l}</div>)}
-            {tarea.activa ? <div className="dim">…</div>
-              : tarea.error ? <div className="neg">ERROR: {tarea.error}</div>
-                : <div className="pos">Descarga terminada.</div>}
-          </div>
-        )}
+        {tarea && <Bitacora tarea={tarea} />}
       </div>
 
       <div className="panel">
@@ -183,7 +197,9 @@ export default function SppBloombergPage() {
                         {s.ultimo_resultado}</span>
                     : <span className="dim">—</span>}</td>
                   <td>{s.activa ? 'sí' : <span className="dim">no</span>}</td>
-                  <td><button className="btn" onClick={() => borrar(s)}>Borrar</button></td>
+                  <td><button className="btn peligro" disabled={ocupado}
+                    title={ocupado ? 'Espera a que termine la descarga' : undefined}
+                    onClick={() => borrar(s)}>Borrar</button></td>
                 </tr>
               )) : <tr><td colSpan={9} className="dim">Ninguna serie registrada todavía.</td></tr>}
             </tbody>

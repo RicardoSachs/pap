@@ -55,10 +55,24 @@ BATCH_LOG_EVERY = 200
 
 def src_connection(args) -> psycopg.Connection:
     password = args.src_password or os.getenv("SPP_SRC_PASSWORD", "")
-    return psycopg.connect(
-        host=args.src_host, port=args.src_port, dbname=args.src_dbname,
-        user=args.src_user, password=password, row_factory=dict_row,
-    )
+    try:
+        return psycopg.connect(
+            host=args.src_host, port=args.src_port, dbname=args.src_dbname,
+            user=args.src_user, password=password, row_factory=dict_row,
+        )
+    except psycopg.OperationalError as exc:
+        # This script imports from the OLD standalone monitor's database.
+        # On any machine that never ran the monitor - the second computer,
+        # in particular - that database does not exist, and the traceback
+        # says nothing about what the operator should do instead.
+        raise SystemExit(
+            f"No se pudo abrir la base del monitor "
+            f"'{args.src_dbname}'@{args.src_host}:{args.src_port}: "
+            f"{str(exc).strip()[:200]}\n"
+            "Este script solo sirve para importar desde el monitor viejo. "
+            "Si estas instalando en otra maquina, restaura un respaldo:\n"
+            "  python scripts/respaldo_spp.py --importar <archivo>.dump --crear"
+        ) from exc
 
 
 def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int, int]:
@@ -234,8 +248,13 @@ def main() -> int:
     from src.pipelines.prices.sbs.valor_cuota import afps
 
     with src_connection(args) as src, get_connection() as dest:
-        afps.register_series(dest)
+        # Registering the series universe is a write, and --dry-run promises
+        # "write nothing": the rollback below undoes it, so a dry run reports
+        # what WOULD be registered instead of quietly registering it.
+        registradas = afps.register_series(dest)
         series_map = afps.series_map(dest)
+        if args.dry_run and registradas:
+            logger.info(f"registro: {registradas} serie(s) se registrarian.")
 
         leidas, cargadas = migrate_book(src, dest, args.src_schema,
                                         series_map, args.dry_run)
@@ -266,6 +285,12 @@ def main() -> int:
             ).fetchall()
             for t in tot:
                 logger.info(f"fact_prices [{t['source']}]: {t['filas']:,} filas totales.")
+
+        if args.dry_run:
+            # get_connection commits on a clean exit, so "write nothing"
+            # has to be said explicitly before leaving the block.
+            dest.rollback()
+            logger.info("dry-run: no se escribio nada en el destino.")
     return 0
 
 

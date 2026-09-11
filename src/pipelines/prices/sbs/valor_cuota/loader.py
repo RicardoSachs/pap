@@ -24,12 +24,19 @@ UPSERT_NADA = """
     VALUES (%s, %s, %s, %s)
     ON CONFLICT (series_id, date) DO NOTHING
 """
+# The WHERE is not an optimization: without it PostgreSQL reports rowcount
+# 1 for every conflicting row, identical value included, so a re-scrape
+# with refresh reported "336 observaciones nuevas" when it had changed
+# nothing - and quietly rewrote each row's `source`, stamping 'sbs' over
+# hand corrections marked 'manual'. Unchanged rows now count as skipped
+# and keep their provenance.
 UPSERT_CORRIGE = """
     INSERT INTO fact_prices (series_id, date, price, source)
     VALUES (%s, %s, %s, %s)
     ON CONFLICT (series_id, date) DO UPDATE SET
         price = EXCLUDED.price,
         source = EXCLUDED.source
+    WHERE fact_prices.price IS DISTINCT FROM EXCLUDED.price
 """
 
 # Above this many rows the per-row convention (which exists so an error
@@ -70,5 +77,6 @@ def load_facts(conn, df: pd.DataFrame, refresh: bool = False) -> tuple[int, int]
                 other += 1
     logger.info(
         f"fact_prices (valor_cuota): {loaded} "
-        f"{'written' if refresh else 'loaded'}, {other} skipped.")
+        f"{'written or corrected' if refresh else 'loaded'}, "
+        f"{other} skipped (already identical).")
     return loaded, other

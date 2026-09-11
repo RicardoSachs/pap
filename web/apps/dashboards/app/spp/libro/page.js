@@ -30,9 +30,17 @@ export default function SppLibroPage() {
 
   useEffect(() => {
     setLoading(true); setError(null);
+    // Stale-response guard: "Todas" over the whole book takes seconds while
+    // "60" comes back instantly, so a late reply for a previous selection
+    // could land on top of the current one - thousands of rows under a
+    // segment that says 60, with nothing to signal the mismatch.
+    let vigente = true;
     const q = new URLSearchParams({ limite, metrica, fondo });
     apiGet(`/api/spp/tabla?${q}`)
-      .then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
+      .then((d) => { if (vigente) setData(d); })
+      .catch((e) => { if (vigente) setError(e.message); })
+      .finally(() => { if (vigente) setLoading(false); });
+    return () => { vigente = false; };
   }, [metrica, fondo, limite]);
 
   const columnas = data?.columnas || [];

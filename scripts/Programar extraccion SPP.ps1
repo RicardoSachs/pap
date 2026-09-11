@@ -1,11 +1,18 @@
 # Registra, consulta o quita la extraccion automatica diaria del SPP,
 # apuntando al pipeline de ESTE repo (scripts/run_sbs_valor_cuota.py).
 #
-#   .\scripts\"Programar extraccion SPP.ps1"              -> registra a las 18:00
-#   .\scripts\"Programar extraccion SPP.ps1" -Hora 19:30  -> a otra hora
-#   .\scripts\"Programar extraccion SPP.ps1" -Estado      -> que hay registrado hoy
-#   .\scripts\"Programar extraccion SPP.ps1" -Probar      -> la corre ahora
-#   .\scripts\"Programar extraccion SPP.ps1" -Quitar      -> la elimina
+# LA FORMA COMODA es el .bat hermano (doble clic, sin pelear con la
+# politica de ejecucion de PowerShell, que por defecto rechaza este
+# guion en una maquina recien instalada):
+#
+#   scripts\"Programar extraccion SPP.bat"              -> registra a las 18:00
+#   scripts\"Programar extraccion SPP.bat" -Hora 19:30  -> a otra hora
+#   scripts\"Programar extraccion SPP.bat" -Estado      -> que hay registrado hoy
+#   scripts\"Programar extraccion SPP.bat" -Probar      -> la corre ahora
+#   scripts\"Programar extraccion SPP.bat" -Quitar      -> la elimina
+#
+# Desde una consola de PowerShell, el equivalente directo es:
+#   powershell -ExecutionPolicy Bypass -File ".\scripts\Programar extraccion SPP.ps1"
 #
 # USA EL MISMO NOMBRE DE TAREA que el monitor standalone a proposito:
 # registrarla aqui ES el corte - reemplaza la tarea vieja (-Force), y asi
@@ -70,6 +77,20 @@ if (-not (Test-Path $Python)) { throw "No se encontro el entorno en $Python" }
 if (-not (Test-Path $Script)) { throw "No se encontro $Script" }
 if ($Hora -notmatch '^([01]?\d|2[0-3]):[0-5]\d$') { throw "Hora invalida: $Hora. Usa HH:mm." }
 
+# El WAF de la SBS exige Chrome REAL (el Chromium de Playwright no pasa).
+# Avisar aqui evita descubrirlo recien a las 18:00, en una corrida sin nadie
+# delante.
+$chrome = @(
+  "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+  "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+  "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $chrome) {
+  Write-Warning ("Google Chrome no aparece instalado. La extraccion lo necesita " +
+                 "(el WAF de la SBS rechaza headless y Chromium). Instalalo antes " +
+                 "de confiar en la corrida diaria.")
+}
+
 $accion = New-ScheduledTaskAction -Execute $Python `
             -Argument "`"$Script`" --programado" -WorkingDirectory $Raiz
 
@@ -85,7 +106,13 @@ $opciones = New-ScheduledTaskSettingsSet `
               -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
               -MultipleInstances IgnoreNew
 
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+# El principal se identifica por SID, no por "DOMINIO\usuario": en una
+# laptop unida a Entra/Azure AD $env:USERDOMAIN es "AzureAD" y
+# Register-ScheduledTask aborta con "No mapping between account names and
+# security IDs was done", dejando la tarea sin registrar. El SID siempre
+# resuelve, y el Programador muestra el nombre igual.
+$quien = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$principal = New-ScheduledTaskPrincipal -UserId $quien `
                -LogonType Interactive -RunLevel Limited
 
 Register-ScheduledTask -TaskName $Tarea -Action $accion -Trigger $disparador `
@@ -101,3 +128,9 @@ Write-Output ""
 Write-Output "Importante: la SBS exige un Chrome visible, asi que la sesion de Windows"
 Write-Output "debe estar iniciada a esa hora. Con el equipo apagado la corrida se"
 Write-Output "pospone y se recupera al volver (StartWhenAvailable)."
+Write-Output ""
+Write-Output "Si es la PRIMERA vez en esta maquina: corre ahora"
+Write-Output "  scripts\`"Programar extraccion SPP.bat`" -Probar"
+Write-Output "con el operador delante. El perfil de Chrome nace vacio y el reto del"
+Write-Output "WAF hay que resolverlo una vez a mano; recien despues la corrida de las"
+Write-Output "$Hora puede trabajar sola."

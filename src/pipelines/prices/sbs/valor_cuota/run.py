@@ -28,6 +28,7 @@
 # ---------------------------------------------------------------
 
 import logging
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -60,11 +61,69 @@ def ensure_registered() -> None:
         afps.register_series(conn)
 
 
+@contextmanager
+def candado_extraccion():
+    """
+    One SPP scrape at a time, ACROSS processes.
+
+    Three paths reach the same visible Chrome and the same browser
+    profile: the Windows task at 18:00, the tablero's button, and the
+    .ps1's -Probar. The existing guards each cover only their own lane
+    (the API's task slot is a lock inside one uvicorn process,
+    -MultipleInstances only compares the task with itself), so a scrape
+    launched from the tablero at 17:59 and the scheduled one a minute
+    later both start: the second Chrome finds the profile's singleton,
+    hands its URL to the first window and exits, and the pipeline reads
+    a page that never loaded.
+    """
+    import os
+
+    DIR_SPP.mkdir(parents=True, exist_ok=True)
+    ruta = DIR_SPP / "extraccion.lock"
+    fd = os.open(ruta, os.O_CREAT | os.O_RDWR)
+    tomado = False
+    try:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            tomado = True
+        except OSError:
+            raise RuntimeError(
+                "Ya hay una extraccion SPP en curso (la tarea programada, el "
+                "tablero o -Probar). Espera a que termine: las dos usan el "
+                "mismo Chrome y el mismo perfil.")
+        os.lseek(fd, 1, os.SEEK_SET)
+        os.write(fd, f"pid {os.getpid()}\n".encode())
+        yield
+    finally:
+        try:
+            if tomado:
+                os.lseek(fd, 0, os.SEEK_SET)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(fd)
+
+
 def run_daily(run_date: Optional[date] = None, refresh: bool = False) -> dict:
     """
     Scrape -> stage -> transform -> load. Returns a small result dict
     (dates seen, fact rows loaded) for logs and the scheduler.
     """
+    with candado_extraccion():
+        return _run_daily(run_date, refresh)
+
+
+def _run_daily(run_date: Optional[date], refresh: bool) -> dict:
     from src.scrapers import spp as scraper
 
     run_date = run_date or date.today()
@@ -293,13 +352,19 @@ def correr_programado(refrescar: bool = False) -> dict:
     import datetime as dt
     import json
 
+    from src.configs.machine_config import machine_id, scraper_enabled
+
     DIR_SPP.mkdir(parents=True, exist_ok=True)
     inicio = dt.datetime.now()
-    lineas: list[str] = []
+    # Each line keeps ITS OWN timestamp: a run can span hours when the
+    # machine suspends mid-scrape, and stamping everything with the
+    # start time turned the trail into a flat wall that hid where the
+    # time actually went.
+    lineas: list[tuple[float, str]] = []
 
     class _Anotador(logging.Handler):
         def emit(self, record):
-            lineas.append(record.getMessage())
+            lineas.append((record.created, record.getMessage()))
 
     handler = _Anotador()
     logging.getLogger("src").addHandler(handler)
@@ -307,12 +372,24 @@ def correr_programado(refrescar: bool = False) -> dict:
     estado = {"inicio": inicio.isoformat(timespec="seconds"),
               "accion": "extraccion programada", "refrescar": bool(refrescar)}
     try:
+        # The machine gate lives INSIDE the trail on purpose: an
+        # unattended run that dies before writing anything is
+        # indistinguishable from one that never fired, and this is the
+        # first thing to fail on a machine whose market_data_config.yaml
+        # was never created.
+        if not scraper_enabled():
+            raise RuntimeError(
+                f"El scraper no esta habilitado en esta maquina ({machine_id()}). "
+                "Copia config\\machine_config.yaml a "
+                "%USERPROFILE%\\Documents\\Tools\\config\\market_data_config.yaml "
+                "y pon scraper_enabled: true.")
         res = run_daily(refresh=refrescar)
         estado.update(ok=True, error=None, **res)
     except Exception as exc:
         estado.update(ok=False, error=str(exc)[:400],
                       fechas=0, cargadas=0, omitidas=0)
-        lineas.append(f"ERROR: {exc}")
+        import time as _time
+        lineas.append((_time.time(), f"ERROR: {exc}"))
     finally:
         logging.getLogger("src").removeHandler(handler)
 
@@ -320,11 +397,12 @@ def correr_programado(refrescar: bool = False) -> dict:
     estado["fin"] = fin.isoformat(timespec="seconds")
     estado["segundos"] = round((fin - inicio).total_seconds(), 1)
 
-    marca = inicio.strftime("%Y-%m-%d %H:%M:%S")
     with open(ARCHIVO_REGISTRO, "a", encoding="utf-8") as f:
-        for linea in lineas:
-            f.write(f"{marca}  {linea}\n")
-        f.write(f"{marca}  --- fin ({'ok' if estado['ok'] else 'ERROR'} "
+        for cuando, linea in lineas:
+            f.write(f"{dt.datetime.fromtimestamp(cuando):%Y-%m-%d %H:%M:%S}  "
+                    f"{linea}\n")
+        f.write(f"{fin:%Y-%m-%d %H:%M:%S}  "
+                f"--- fin ({'ok' if estado['ok'] else 'ERROR'} "
                 f"en {estado['segundos']} s) ---\n")
     _recortar_registro()
 

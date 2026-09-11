@@ -14,23 +14,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import {
-  apiSend, apiUrl, fFecha, fmtMetrica, fondosDe as fondosDeCfg, hoyLocal,
-  metricasDe, nEnt, nombreMetrica,
+  apiSend, apiUrl, fFecha, fHora, fmtMetrica, fondosDe as fondosDeCfg, hoyLocal,
+  metricasDe, nEnt, nombreFuente, nombreMetrica,
 } from '../../../lib/spp';
+import Bitacora from '../../../components/Bitacora';
+import Eco from '../../../components/Eco';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 
-// The API serializes task timestamps as ISO at the source (see
-// _tarea_windows: locale-formatted [string]$date casts swapped day and
-// month depending on the machine's culture), so plain Date parsing here
-// is unambiguous.
-const fHora = (t) => {
-  if (!t) return '—';
-  const d = new Date(t);
-  return Number.isNaN(d.getTime()) ? String(t) : d.toLocaleString('es-PE',
-    { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+// The three work areas, and the hash that makes each one linkable. Panel,
+// Libro and Bloomberg are routes; these were pure state, so a reload (which
+// the task hook itself sometimes advises) always dropped the operator back
+// into Valor cuota.
+const AREAS = [['Valor cuota', 'vc'], ['Series manuales', 'series'], ['Benchmark', 'benchmark']];
+const CLAVES_AREA = AREAS.map(([, v]) => v);
 
 // Small key/value report table used by every section.
 function Informe({ filas }) {
@@ -75,8 +73,22 @@ export default function SppCargaPage() {
   const [cfg, setCfg] = useState(null);
   const [estado, setEstado] = useState(null);
   // Which of the three work areas is on screen: valor cuota, series
-  // (component bases) or benchmark (weights/composition).
-  const [seccion, setSeccion] = useState('vc');
+  // (component bases) or benchmark (weights/composition). Kept in the URL
+  // hash - not the query string, which Sidebar propagates to every menu
+  // link - so the area survives a reload and can be sent to someone.
+  const [seccion, setSeccionEstado] = useState('vc');
+
+  useEffect(() => {
+    const inicial = window.location.hash.slice(1);
+    if (CLAVES_AREA.includes(inicial)) setSeccionEstado(inicial);
+  }, []);
+
+  const setSeccion = (v) => {
+    setSeccionEstado(v);
+    try {
+      window.history.replaceState(null, '', `${window.location.pathname}#${v}`);
+    } catch { /* el área sigue cambiando aunque la URL no acompañe */ }
+  };
 
   // ---- shared background task (hook shared with the Bloomberg tab) ----
   const { tarea, ocupado, iniciar } = useSppTarea();
@@ -97,9 +109,18 @@ export default function SppCargaPage() {
     apiGet('/api/spp/programado').then(setProg).catch(() => setProg(null));
 
   const extraer = async (refrescar) => {
+    // Overwriting confirms, like every other action that replaces stored
+    // values (the historical load, the file load and the recalculation all
+    // ask first). This one reaches further than it looks: it re-reads the
+    // last 7 business days and replaces what is already in the book,
+    // including hand corrections.
+    if (refrescar && !window.confirm(
+      'Correr y sobrescribir: vuelve a leer los últimos 7 días hábiles y '
+      + 'REEMPLAZA lo que ya esté en el libro para esas fechas, incluidas '
+      + 'las correcciones hechas a mano. ¿Continuar?')) return;
     setEcoExtraer('');
     const r = await apiSend('/api/spp/extraer', 'POST', { refrescar });
-    if (!r.ok) { setEcoExtraer(r.data.motivo || `Error ${r.status}`); return; }
+    if (!r.ok) { setEcoExtraer({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
     iniciar('extraccion SBS', alTerminarTarea());
   };
 
@@ -141,6 +162,10 @@ export default function SppCargaPage() {
     setRValores(Object.fromEntries(fondos.map((fo) => [fo, ''])));
     setRActual(`${rAfp} · ${nombreMetrica(cfg, rMetrica)} · ${fFecha(rFecha)} — cargando…`);
     setRVecinos({ fondos, fechas: [], series: {} });
+    // The previous write's result does not describe the new selection: a
+    // "✓ 3 valores guardados · Habitat · 01/09" left sitting under the
+    // buttons reads as if it applied to whatever is on screen now.
+    setRMensaje(null);
     setRPrecarga('cargando');
     let vigente = true;
 
@@ -179,19 +204,14 @@ export default function SppCargaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, rFecha, rAfp, rMetrica, rTick]);
 
-  // Shared grammar of both manual forms (valor cuota / benchmark): the
-  // {fondo: null|Number} payload and the result-summary wording live once.
+  // {fondo: null|Number}: an empty box is a DELETE, an absent fund is left
+  // alone. (This used to be shared with the manual benchmark form, which no
+  // longer exists - benchmark levels are calculated, never keyed in.)
   const construirValores = (fondos, valores, vaciarTodo) => Object.fromEntries(
     fondos.map((fo) => {
       const v = String(valores[fo] ?? '').trim();
       return [fo, vaciarTodo ? null : (v === '' ? null : Number(v))];
     }));
-  const resumenRegistro = (x, { extra = '', nueva = ' · fila nueva',
-    borrada = ' · la fecha salió de la tabla' } = {}) => {
-    const g = Object.keys(x.guardados).length; const b = x.borrados.length;
-    return `${g} valor(es) guardados${b ? ` · ${b} borrados` : ''}${extra}`
-      + (x.fila_nueva ? nueva : '') + (x.fila_borrada ? borrada : '');
-  };
 
   const registrar = async (vaciarTodo) => {
     if (!vaciarTodo && !Object.values(rValores).some((v) => String(v).trim() !== '')) {
@@ -206,13 +226,14 @@ export default function SppCargaPage() {
     });
     if (!r.ok) { setRMensaje({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
     const x = r.data.resultado;
+    const guardados = Object.keys(x.guardados).length;
     setRMensaje({
       ok: true,
-      texto: resumenRegistro(x, {
-        extra: ` · ${x.afp} · ${nombreMetrica(cfg, x.metrica)} · ${fFecha(x.fecha)}`,
-        nueva: ' · fila nueva en el libro',
-        borrada: ' · la fecha quedó sin datos y salió del libro',
-      }),
+      texto: `${guardados} valor(es) guardados`
+        + (x.borrados.length ? ` · ${x.borrados.length} borrados` : '')
+        + ` · ${x.afp} · ${nombreMetrica(cfg, x.metrica)} · ${fFecha(x.fecha)}`
+        + (x.fila_nueva ? ' · fila nueva en el libro' : '')
+        + (x.fila_borrada ? ' · la fecha quedó sin datos y salió del libro' : ''),
     });
     setRTick((t) => t + 1);   // reload the boxes and neighbors with what was written
     cargarEstado();
@@ -233,7 +254,7 @@ export default function SppCargaPage() {
     const r = await apiSend('/api/spp/historico/revisar', 'POST', fd, true);
     if (!r.ok) {
       setHNombre(a.name);
-      setHEco(r.data.motivo || `Error ${r.status}`);
+      setHEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
       return;
     }
     setHNombre(`${a.name} · revisado, nada escrito todavía`);
@@ -248,13 +269,13 @@ export default function SppCargaPage() {
       : `Cargar y corregir: además de agregar lo que falta, REEMPLAZA ${nEnt(hInforme.celdas_distintas)} celda(s) que difieren del archivo. ¿Continuar?`;
     if (!window.confirm(msg)) return;
     const r = await apiSend('/api/spp/historico/cargar', 'POST', { vale: hVale, modo });
-    if (!r.ok) { setHEco(r.data.motivo || `Error ${r.status}`); return; }
-    setHEco('Guardando en la base…');
+    if (!r.ok) { setHEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
+    setHEco({ ok: true, texto: 'Guardando en la base…' });
     iniciar(`carga historica (${modo})`, alTerminarTarea((t) => {
       if (t.error) {
-        setHEco('La carga falló y no se guardó nada nuevo. Puedes reintentar sin volver a subir el archivo.');
+        setHEco({ ok: false, texto: 'La carga falló y no se guardó nada nuevo. Puedes reintentar sin volver a subir el archivo.' });
       } else {
-        setHEco(`Cargado en modo ${modo === 'faltantes' ? 'solo lo que falta' : 'corregir'}.`);
+        setHEco({ ok: true, texto: `Cargado en modo ${modo === 'faltantes' ? 'solo lo que falta' : 'corregir'}.` });
         setHVale(null);
       }
     }));
@@ -316,14 +337,29 @@ export default function SppCargaPage() {
   };
 
   useEffect(() => { if (cfg) { setSmFecha(hoyLocal()); cargarSeriesManuales(); } }, [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { verPuntos(smSel); }, [smSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Changing the selected series invalidates a review made against another
+  // one: the file stays in the input, but its report and its load buttons
+  // belong to the series it was reviewed for. Without this, reviewing
+  // against A and then switching to B wrote A's file into B unreviewed.
+  //
+  // The echo is deliberately NOT cleared here: registering or deleting a
+  // series changes the selection itself, so clearing it would erase the
+  // confirmation of the very action that moved it. Each action clears the
+  // echo when it starts.
+  useEffect(() => {
+    verPuntos(smSel);
+    setSmInforme(null);
+    setSmCargado(false);
+    if (smRef.current) smRef.current.value = '';
+    setSmArchivo('Ningún archivo seleccionado');
+  }, [smSel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const crearSerie = async () => {
     setSmEco('');
     const r = await apiSend('/api/spp/series-manuales', 'POST',
       { nombre: smNombre, descripcion: smDesc, moneda: smMoneda });
-    if (!r.ok) { setSmEco(r.data.motivo || `Error ${r.status}`); return; }
-    setSmEco(`Serie «${r.data.serie.nombre}» lista. Ya puede recibir valores y entrar a la canasta.`);
+    if (!r.ok) { setSmEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
+    setSmEco({ ok: true, texto: `Serie «${r.data.serie.nombre}» registrada. Ya puede recibir valores y entrar a la canasta.` });
     setSmNombre(''); setSmDesc(''); setSmMoneda('');
     await cargarSeriesManuales();
     setSmSel(r.data.serie.serie_id);
@@ -332,35 +368,39 @@ export default function SppCargaPage() {
 
   const borrarSerieManual = async () => {
     if (!smSerie) return;
+    setSmEco('');
     if (!window.confirm(
       `Borrar la serie «${smSerie.nombre}»${smSerie.puntos ? ` con sus ${smSerie.puntos} valor(es)` : ''}. ¿Continuar?`)) return;
     const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}?datos=1`, 'DELETE');
-    setSmEco(r.ok ? `Serie «${smSerie.nombre}» borrada.` : (r.data.motivo || `Error ${r.status}`));
+    setSmEco(r.ok
+      ? { ok: true, texto: `Serie «${smSerie.nombre}» borrada.` }
+      : { ok: false, texto: r.data.motivo || `Error ${r.status}` });
     cargarSeriesManuales();
     cargarCatalogoFx();
   };
 
   const registrarPunto = async (borrar) => {
-    if (!smSerie) { setSmEco('Elige una serie primero.'); return; }
-    if (!smFecha) { setSmEco('Falta la fecha.'); return; }
+    setSmEco('');
+    if (!smSerie) { setSmEco({ ok: false, texto: 'Elige una serie primero.' }); return; }
+    if (!smFecha) { setSmEco({ ok: false, texto: 'Falta la fecha.' }); return; }
     if (!borrar && String(smValor).trim() === '') {
-      setSmEco('Falta el valor. Para quitar un dato usa «Borrar la fecha».'); return;
+      setSmEco({ ok: false, texto: 'Falta el valor. Para quitar un dato usa «Borrar la fecha».' }); return;
     }
     if (borrar && !window.confirm(
       `Borrar el valor del ${fFecha(smFecha)} en «${smSerie.nombre}». ¿Continuar?`)) return;
     const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}/valores`, 'POST',
       { valores: { [smFecha]: borrar ? null : Number(smValor) } });
-    if (!r.ok) { setSmEco(r.data.motivo || `Error ${r.status}`); return; }
+    if (!r.ok) { setSmEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
     const x = r.data.resultado;
-    setSmEco(`«${x.nombre}»: ${x.escritos} valor(es) escritos, ${x.borrados} borrados.`);
+    setSmEco({ ok: true, texto: `«${x.nombre}»: ${x.escritos} valor(es) escritos, ${x.borrados} borrados.` });
     setSmValor('');
     cargarSeriesManuales(); verPuntos(smSerie.serie_id);
   };
 
   const subirSerie = async (revisar, refrescar) => {
     const a = smRef.current?.files?.[0];
-    if (!a) { setSmEco('Elige un archivo primero.'); return; }
-    if (!smSerie) { setSmEco('Elige una serie primero.'); return; }
+    if (!a) { setSmEco({ ok: false, texto: 'Elige un archivo primero.' }); return; }
+    if (!smSerie) { setSmEco({ ok: false, texto: 'Elige una serie primero.' }); return; }
     if (!revisar && refrescar && !window.confirm(
       'Cargar y corregir: además de agregar lo que falta, reemplaza los valores ya cargados con los del archivo. ¿Continuar?')) return;
     setSmArchivo(`${a.name} · ${revisar ? 'revisando…' : 'cargando…'}`);
@@ -372,7 +412,7 @@ export default function SppCargaPage() {
     if (!r.ok) {
       setSmArchivo(a.name);
       setSmInforme(null);
-      setSmEco(r.data.motivo || `Error ${r.status}`);
+      setSmEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
       return;
     }
     setSmArchivo(`${a.name} · ${revisar ? 'revisado, nada escrito todavía' : 'cargado'}`);
@@ -454,8 +494,8 @@ export default function SppCargaPage() {
     });
     const r = await apiSend('/api/spp/benchmark/composicion', 'POST',
       { fondo: cFondo, vigente_desde: cFecha, componentes });
-    if (!r.ok) { setCEco(r.data.motivo || `Error ${r.status}`); return; }
-    setCEco(`Composición del Fondo ${cFondo} guardada, vigente desde ${fFecha(cFecha)}. Recalcula para regenerar la serie.`);
+    if (!r.ok) { setCEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
+    setCEco({ ok: true, texto: `Composición del Fondo ${cFondo} guardada, vigente desde ${fFecha(cFecha)}. Recalcula para regenerar la serie.` });
     cargarComposiciones();
   };
 
@@ -464,7 +504,9 @@ export default function SppCargaPage() {
       `Borrar la composición del Fondo ${g.fondo} vigente desde ${fFecha(g.vigente_desde)}. El siguiente recálculo ya no la usará. ¿Continuar?`)) return;
     const r = await apiSend(
       `/api/spp/benchmark/composicion?fondo=${g.fondo}&vigente_desde=${g.vigente_desde}`, 'DELETE');
-    setCEco(r.ok ? 'Composición borrada.' : (r.data.motivo || `Error ${r.status}`));
+    setCEco(r.ok
+      ? { ok: true, texto: 'Composición borrada.' }
+      : { ok: false, texto: r.data.motivo || `Error ${r.status}` });
     cargarComposiciones();
   };
 
@@ -476,26 +518,40 @@ export default function SppCargaPage() {
       peso: String(c.peso),
       fx: c.fx_ref_id ? JSON.stringify({ fuente: c.fx_fuente, ref_id: c.fx_ref_id }) : '',
     })));
-    setCEco(`Editando la composición vigente desde ${fFecha(g.vigente_desde)}; guardar la reemplaza en esa fecha.`);
+    setCEco({ ok: true, texto: `Editando la composición vigente desde ${fFecha(g.vigente_desde)}; guardar la reemplaza en esa fecha.` });
   };
 
   const recalcularBench = async () => {
     if (!window.confirm(
       `Recalcular el benchmark del Fondo ${cFondo} desde sus composiciones REEMPLAZA la serie completa almacenada (base 100 en el primer rebalanceo). ¿Continuar?`)) return;
     const r = await apiSend('/api/spp/benchmark/recalcular', 'POST', { fondo: cFondo });
-    if (!r.ok) { setCEco(r.data.motivo || `Error ${r.status}`); return; }
-    iniciar(`recalculo del benchmark F${cFondo}`, alTerminarTarea(() => cargarBench()));
+    if (!r.ok) { setCEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
+    // The task's own bitácora is rendered in this area too, but the result
+    // has to be SAID here: before this, a failed recalculation looked
+    // exactly like a successful one - the button dimmed and came back.
+    setCEco({ ok: true, texto: `Recalculando el benchmark F${cFondo}…` });
+    iniciar(`recalculo del benchmark F${cFondo}`, alTerminarTarea((t) => {
+      cargarBench();
+      setCEco(t.error
+        ? { ok: false, texto: `El recálculo falló y la serie anterior sigue intacta: ${t.error}` }
+        : { ok: true, texto: `Benchmark F${cFondo} recalculado desde sus composiciones.` });
+    }));
   };
 
   // The benchmark builds from the TWO component bases: the Bloomberg
   // registry and the manual series (the backend still accepts 'fact'
   // for compositions saved before the redesign).
-  const opcionesFx = [
-    ...((cCatalogoFx?.bloomberg || []).map((s) => ({ v: JSON.stringify({ fuente: 'bloomberg', ref_id: s.ref_id }), t: `${s.etiqueta} (BBG)` }))),
-    ...((cCatalogoFx?.manual || []).map((s) => ({ v: JSON.stringify({ fuente: 'manual', ref_id: s.ref_id }), t: `${s.etiqueta} (manual)` }))),
-  ];
+  const opcionesFx = ['bloomberg', 'manual'].flatMap((fu) =>
+    (cCatalogoFx?.[fu] || []).map((s) => ({
+      v: JSON.stringify({ fuente: fu, ref_id: s.ref_id }),
+      t: `${s.etiqueta} (${nombreFuente(fu)})`,
+    })));
 
   // ---- corrida automatica render ----
+  // 267009 = la tarea sigue corriendo; 0 = terminó bien. Cualquier otro
+  // código significa que el proceso murió antes de dejar su propio rastro,
+  // que es justo el caso que este cuadro leía como «correcta».
+  const EN_CURSO = 267009;
   const progFilas = () => {
     const t = prog?.tarea || {}; const u = prog?.ultima || {};
     const filas = [];
@@ -507,6 +563,7 @@ export default function SppCargaPage() {
       filas.push(['Estado', t.estado || '—']);
       filas.push(['Próxima', fHora(t.proxima)]);
       if (t.omitidas) filas.push(['Corridas omitidas', t.omitidas]);
+      if (t.ultima) filas.push(['Último lanzamiento (Windows)', fHora(t.ultima)]);
     }
     if (u.inicio) {
       filas.push(['Última corrida', `${fHora(u.inicio)} · ${u.segundos || 0} s`]);
@@ -516,6 +573,24 @@ export default function SppCargaPage() {
     } else filas.push(['Última corrida', 'todavía ninguna']);
     return filas;
   };
+
+  // Windows lanzó la tarea y el pipeline no alcanzó a escribir su rastro:
+  // sin esto, el cuadro seguía mostrando la corrida buena anterior.
+  const lanzamientoMudo = () => {
+    const t = prog?.tarea || {}; const u = prog?.ultima || {};
+    if (!t.registrada || !t.ultima) return null;
+    if (t.resultado === EN_CURSO || t.resultado === 0 || t.resultado == null) return null;
+    if (u.inicio && new Date(u.inicio) >= new Date(t.ultima)) return null;
+    return `La última corrida lanzada por Windows (${fHora(t.ultima)}) terminó con `
+      + `código ${t.resultado} sin dejar rastro propio.`;
+  };
+
+  // La tarea guarda la ruta absoluta del proyecto: con el zip es fácil
+  // terminar con dos copias y que la automatización trabaje sobre la vieja.
+  const otraCopia = () => (prog?.tarea?.registrada && prog.tarea.apunta_aqui === false
+    ? `La tarea programada apunta a otra copia del proyecto (${prog.tarea.ejecutable}). `
+      + 'Vuelve a registrarla desde esta carpeta.'
+    : null);
 
   const metricaPaso = rMetrica === 'valor_cuota' ? '0.0000001' : '0.01';
 
@@ -527,11 +602,10 @@ export default function SppCargaPage() {
       <SppTabs />
 
       {/* Three work areas, one visible at a time. All the state lives in
-          this component, so switching segments loses nothing typed. */}
-      <div className="controls" style={{ margin: '12px 0 16px' }}>
-        <SppSeg
-          items={[['Valor cuota', 'vc'], ['Carga de series', 'series'], ['Benchmark', 'benchmark']]}
-          value={seccion} onChange={setSeccion} />
+          this component, so switching areas loses nothing typed. */}
+      <div className="controls spp-controls" style={{ margin: '12px 0 16px' }}>
+        <div className="field"><label>Área</label>
+          <SppSeg items={AREAS} value={seccion} onChange={setSeccion} /></div>
       </div>
 
       {seccion === 'vc' && (<>
@@ -543,39 +617,38 @@ export default function SppCargaPage() {
             precargan con lo que ya hay: escribir uno lo reemplaza y <b>dejarlo vacío borra
             ese dato</b>. Si la fecha queda sin ningún valor, sale del libro.</p>
           <div className="controls spp-controls">
-            <div className="field"><label>Fecha</label>
-              <input className="date-input" type="date" value={rFecha}
+            <div className="field"><label htmlFor="r-fecha">Fecha</label>
+              <input id="r-fecha" className="date-input" type="date" value={rFecha}
                 onChange={(e) => setRFecha(e.target.value)} /></div>
-            <div className="field"><label>AFP</label>
-              <select className="select" value={rAfp} onChange={(e) => setRAfp(e.target.value)}>
+            <div className="field"><label htmlFor="r-afp">AFP</label>
+              <select id="r-afp" className="select" value={rAfp} onChange={(e) => setRAfp(e.target.value)}>
                 {nombres.map((a) => <option key={a} value={a}>{a}</option>)}
               </select></div>
-            <div className="field"><label>Métrica</label>
-              <select className="select" value={rMetrica} onChange={(e) => setRMetrica(e.target.value)}>
+            <div className="field"><label htmlFor="r-metrica">Métrica</label>
+              <select id="r-metrica" className="select" value={rMetrica}
+                onChange={(e) => setRMetrica(e.target.value)}>
                 {metricasDe(cfg).map(([et, v]) => <option key={v} value={v}>{et}</option>)}
               </select></div>
           </div>
           <div className="controls spp-controls" style={{ marginTop: 10 }}>
             {fondosDe(rAfp).map((fo) => (
-              <div className="field" key={fo}><label>Fondo {fo}</label>
-                <input className="date-input" type="number" min="0" step={metricaPaso}
+              <div className="field" key={fo}><label htmlFor={`r-fondo-${fo}`}>Fondo {fo}</label>
+                <input id={`r-fondo-${fo}`} className="date-input" type="number" min="0"
+                  step={metricaPaso}
                   placeholder={rMetrica === 'valor_cuota' ? '0.0000000' : '0.00'}
                   value={rValores[fo] ?? ''}
                   onChange={(e) => setRValores({ ...rValores, [fo]: e.target.value })} /></div>
             ))}
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn" disabled={rPrecarga !== 'ok'}
+            <button className="btn principal" disabled={rPrecarga !== 'ok' || ocupado}
+              title={ocupado ? 'Espera a que termine la operación en curso' : undefined}
               onClick={() => registrar(false)}>Registrar valores</button>
-            <button className="btn" disabled={rPrecarga !== 'ok'}
+            <button className="btn peligro" disabled={rPrecarga !== 'ok' || ocupado}
+              title={ocupado ? 'Espera a que termine la operación en curso' : undefined}
               onClick={() => registrar(true)}>Anular la fecha</button>
           </div>
-          {rMensaje && (
-            <p className="page-sub" style={{ marginTop: 10 }}>
-              <b className={rMensaje.ok ? 'pos' : 'neg'}>{rMensaje.ok ? '✓' : 'No se registró ·'}</b>{' '}
-              {rMensaje.texto}
-            </p>
-          )}
+          <Eco eco={rMensaje} />
         </div>
 
         <div className="panel">
@@ -611,36 +684,32 @@ export default function SppCargaPage() {
             inserta solo lo que falta, con las tres métricas. Es la única carga que corre
             sola. Toma unos 20–90 s.</p>
           <div className="controls">
-            <button className="btn" disabled={ocupado} onClick={() => extraer(false)}>Correr extracción</button>
-            <button className="btn" disabled={ocupado} onClick={() => extraer(true)}>Correr y sobrescribir</button>
+            <button className="btn principal" disabled={ocupado}
+              onClick={() => extraer(false)}>Correr extracción</button>
+            <button className="btn peligro" disabled={ocupado}
+              onClick={() => extraer(true)}>Correr y sobrescribir</button>
           </div>
           <p className="page-sub flag-warn" style={{ marginTop: 10 }}>
             La SBS está detrás del WAF Imperva: <b>se abrirá una ventana de Chrome</b> en la
             máquina donde corre la API. No la cierres mientras corre.
           </p>
-          {ecoExtraer && <p className="page-sub"><b className="neg">{ecoExtraer}</b></p>}
+          <Eco eco={ecoExtraer} />
 
           <div className="panel-title" style={{ marginTop: 14 }}>Corrida automática</div>
           {prog && !prog.tarea?.registrada && prog.tarea?.disponible ? (
             <p className="page-sub">La extracción <b>no corre sola</b> todavía. Para activarla,
-              en PowerShell dentro del repo:{' '}
-              <span className="mono">.\scripts\&quot;Programar extraccion SPP.ps1&quot;</span> —
-              queda diaria a las 18:00 (<span className="mono">-Hora 19:30</span> la cambia,{' '}
+              doble clic en{' '}
+              <span className="mono">scripts\Programar extraccion SPP.bat</span> — queda diaria
+              a las 18:00 (<span className="mono">-Hora 19:30</span> la cambia,{' '}
               <span className="mono">-Quitar</span> la elimina).</p>
           ) : progFilas() ? <Informe filas={progFilas()} /> : <p className="page-sub dim">—</p>}
+          {otraCopia() && <p className="page-sub flag-warn">{otraCopia()}</p>}
+          {lanzamientoMudo() && <p className="page-sub flag-warn">{lanzamientoMudo()}</p>}
         </div>
 
         <div className="panel">
           <div className="panel-title">Bitácora</div>
-          <div className="spp-bitacora mono">
-            {(tarea?.bitacora || []).length
-              ? tarea.bitacora.map((l, i) => (
-                <div key={i} className={String(l).startsWith('ERROR') ? 'neg' : ''}>{l}</div>))
-              : <div className="dim">Sin operaciones en esta sesión.</div>}
-            {tarea && !tarea.activa && (tarea.error
-              ? <div className="neg">ERROR: {tarea.error}</div>
-              : <div className="pos">Operación terminada.</div>)}
-          </div>
+          <Bitacora tarea={tarea} />
 
           <div className="panel-title" style={{ marginTop: 14 }}>Tramos sin dato</div>
           <p className="page-sub">Días hábiles consecutivos sin valor cuota. Los tramos de 1–2
@@ -687,20 +756,20 @@ export default function SppCargaPage() {
               )}
               {hVale && (
                 <div className="controls" style={{ marginTop: 12 }}>
-                  <button className="btn" disabled={ocupado}
+                  <button className="btn principal" disabled={ocupado}
                     onClick={() => cargarHistorico('faltantes')}>Cargar lo que falta</button>
-                  <button className="btn" disabled={ocupado}
+                  <button className="btn peligro" disabled={ocupado}
                     onClick={() => cargarHistorico('sobrescribir')}>Cargar y corregir</button>
                 </div>
               )}
             </>
           )}
-          {hEco && <p className="page-sub"><b>{hEco}</b></p>}
+          <Eco eco={hEco} />
           <div className="controls" style={{ marginTop: 12 }}>
             <a className="btn" target="_blank" rel="noreferrer"
               href="https://www.sbs.gob.pe/app/stats/EstadisticaSistemaFinancieroResultadosHist.asp?c=FP-130706&Y=0">
               Abrir la página de la SBS</a>
-            <a className="btn" href={apiUrl('/api/spp/exportar')}>↓ Bajar lo cargado</a>
+            <a className="btn" href={apiUrl('/api/spp/exportar')}>↓ Bajar todo el libro · CSV</a>
           </div>
         </div>
 
@@ -728,66 +797,72 @@ export default function SppCargaPage() {
             un acto manual por fecha.</p>
 
           <div className="controls spp-controls">
-            <div className="field"><label>Nueva serie</label>
-              <input className="date-input" placeholder="Nombre (p. ej. Índice X)"
+            <div className="field"><label htmlFor="sm-nombre">Nueva serie</label>
+              <input id="sm-nombre" className="date-input" placeholder="Nombre (p. ej. Índice X)"
                 value={smNombre} onChange={(e) => setSmNombre(e.target.value)} /></div>
-            <div className="field"><label>Descripción</label>
-              <input className="date-input" placeholder="opcional"
+            <div className="field"><label htmlFor="sm-desc">Descripción</label>
+              <input id="sm-desc" className="date-input" placeholder="opcional"
                 value={smDesc} onChange={(e) => setSmDesc(e.target.value)} /></div>
-            <div className="field"><label>Moneda</label>
-              <input className="date-input" placeholder="USD / PEN" style={{ width: 90 }}
+            <div className="field"><label htmlFor="sm-moneda">Moneda</label>
+              <input id="sm-moneda" className="date-input" placeholder="USD / PEN"
+                style={{ width: 90 }}
                 value={smMoneda} onChange={(e) => setSmMoneda(e.target.value)} /></div>
-            <div className="field"><label>&nbsp;</label>
-              <button className="btn" disabled={!smNombre.trim()}
-                onClick={crearSerie}>Crear serie</button></div>
+            <div className="field"><label aria-hidden="true">&nbsp;</label>
+              <button className="btn principal" disabled={!smNombre.trim() || ocupado}
+                onClick={crearSerie}>Registrar serie</button></div>
           </div>
+          <p className="page-sub dim">Registrar una serie con un nombre que ya existe actualiza
+            su descripción y moneda; no la duplica.</p>
 
           <div className="controls spp-controls" style={{ marginTop: 12 }}>
-            <div className="field"><label>Serie</label>
-              <select className="select" value={smSel ?? ''}
+            <div className="field"><label htmlFor="sm-serie">Serie</label>
+              <select id="sm-serie" className="select" value={smSel ?? ''}
                 onChange={(e) => setSmSel(e.target.value ? Number(e.target.value) : null)}>
-                {!smSeries.length && <option value="">— crea una serie primero —</option>}
+                {!smSeries.length && <option value="">— registra una serie primero —</option>}
                 {smSeries.map((s) => (
                   <option key={s.serie_id} value={s.serie_id}>
                     {s.nombre}{s.moneda ? ` · ${s.moneda}` : ''}</option>
                 ))}
               </select></div>
-            <div className="field"><label>Fecha</label>
-              <input className="date-input" type="date" value={smFecha}
+            <div className="field"><label htmlFor="sm-fecha">Fecha</label>
+              <input id="sm-fecha" className="date-input" type="date" value={smFecha}
                 onChange={(e) => setSmFecha(e.target.value)} /></div>
-            <div className="field"><label>Valor</label>
-              <input className="date-input" type="number" min="0" step="0.0001"
+            <div className="field"><label htmlFor="sm-valor">Valor</label>
+              <input id="sm-valor" className="date-input" type="number" min="0" step="0.0001"
                 placeholder="0.0000" value={smValor}
                 onChange={(e) => setSmValor(e.target.value)} /></div>
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn" disabled={!smSerie}
+            <button className="btn principal" disabled={!smSerie || ocupado}
               onClick={() => registrarPunto(false)}>Registrar valor</button>
-            <button className="btn" disabled={!smSerie}
+            <button className="btn peligro" disabled={!smSerie || ocupado}
               onClick={() => registrarPunto(true)}>Borrar la fecha</button>
-            <button className="btn" disabled={!smSerie}
+            <button className="btn peligro" disabled={!smSerie || ocupado}
               onClick={borrarSerieManual}>Borrar la serie</button>
           </div>
 
           <div className="controls" style={{ marginTop: 12 }}>
             <input ref={smRef} type="file" accept=".xlsx,.xls,.csv" className="date-input"
+              aria-label="Archivo de valores para la serie"
               onChange={() => subirSerie(true, false)} />
             <span className="page-sub" style={{ margin: 0 }}>{smArchivo}</span>
           </div>
           {smInforme && !smCargado && (
             <div className="controls" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={() => subirSerie(false, false)}>Cargar lo que falta</button>
-              <button className="btn" onClick={() => subirSerie(false, true)}>Cargar y corregir</button>
+              <button className="btn principal" disabled={ocupado}
+                onClick={() => subirSerie(false, false)}>Cargar lo que falta</button>
+              <button className="btn peligro" disabled={ocupado}
+                onClick={() => subirSerie(false, true)}>Cargar y corregir</button>
             </div>
           )}
           <div className="controls" style={{ marginTop: 12 }}>
-            <a className="btn" href={apiUrl('/api/spp/series-manuales/plantilla')}>↓ Plantilla</a>
+            <a className="btn" href={apiUrl('/api/spp/series-manuales/plantilla')}>↓ Plantilla · XLSX</a>
             {smSerie && (
               <a className="btn" href={apiUrl(`/api/spp/series-manuales/${smSerie.serie_id}/exportar`)}>
-                ↓ Bajar «{smSerie.nombre}»</a>
+                ↓ Bajar «{smSerie.nombre}» · XLSX</a>
             )}
           </div>
-          {smEco && <p className="page-sub"><b>{smEco}</b></p>}
+          <Eco eco={smEco} />
         </div>
 
         <div className="panel">
@@ -856,18 +931,22 @@ export default function SppCargaPage() {
             su fecha de vigencia, sin tocar la historia. Entre rebalanceos los pesos <b>derivan </b>
             con los precios (buy-and-hold). Recalcular regenera la serie completa (base 100 en el
             primer rebalanceo). Los niveles nunca se cargan a mano.</p>
+          <p className="page-sub dim">Los componentes salen de las dos bases: los de Bloomberg se
+            administran en la pestaña <b>Series Bloomberg</b>; los demás, en el área
+            <b> Series manuales</b> de aquí al lado.</p>
 
           <div className="controls spp-controls">
-            <div className="field"><label>Fondo</label>
+            <div className="field"><label>Tipo de fondo</label>
               <SppSeg items={(cfg?.fondos_benchmark || []).map((f) => [`Fondo ${f}`, f])}
                 value={cFondo} onChange={setCFondo} /></div>
-            <div className="field"><label>Vigente desde</label>
-              <input className="date-input" type="date" value={cFecha}
+            <div className="field"><label htmlFor="c-fecha">Vigente desde</label>
+              <input id="c-fecha" className="date-input" type="date" value={cFecha}
                 onChange={(e) => setCFecha(e.target.value)} /></div>
           </div>
 
           <div className="controls" style={{ marginTop: 10 }}>
             <input className="date-input" placeholder="Buscar serie (ticker, nombre)…"
+              aria-label="Buscar serie en las dos bases"
               value={cBusqueda} onChange={(e) => setCBusqueda(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && buscarSeries()} />
             <button className="btn" onClick={buscarSeries}>Buscar</button>
@@ -878,12 +957,12 @@ export default function SppCargaPage() {
                 {['bloomberg', 'manual'].flatMap((fu) => (cResultados[fu] || []).map((s) => (
                   <tr key={`${fu}-${s.ref_id}`}>
                     <td className="mono">{s.etiqueta}</td>
-                    <td className="dim">{fu === 'bloomberg' ? 'BBG' : 'manual'} · {s.detalle}</td>
+                    <td className="dim">{nombreFuente(fu)} · {s.detalle}</td>
                     <td><button className="btn" onClick={() => agregarComponente(fu, s)}>+ Agregar</button></td>
                   </tr>
                 )))}
                 {!(cResultados.bloomberg?.length || cResultados.manual?.length) && (
-                  <tr><td className="dim">Sin resultados en las dos bases (Bloomberg y manual).</td></tr>
+                  <tr><td className="dim">Sin resultados en las dos bases (Bloomberg y manuales).</td></tr>
                 )}
               </tbody></table>
             </div>
@@ -897,7 +976,7 @@ export default function SppCargaPage() {
                 {cComponentes.length ? cComponentes.map((c, i) => (
                   <tr key={`${c.fuente}-${c.ref_id}`}>
                     <td className="mono">{c.etiqueta}</td>
-                    <td className="dim">{c.fuente}</td>
+                    <td className="dim">{nombreFuente(c.fuente)}</td>
                     <td className="num">
                       <input className="date-input" type="number" min="0" step="0.01"
                         style={{ width: 90 }} value={c.peso}
@@ -912,7 +991,7 @@ export default function SppCargaPage() {
                         {opcionesFx.map((o) => <option key={o.v} value={o.v}>{o.t}</option>)}
                       </select>
                     </td>
-                    <td><button className="btn"
+                    <td><button className="btn peligro"
                       onClick={() => setCComponentes(cComponentes.filter((_, j) => j !== i))}>Quitar</button></td>
                   </tr>
                 )) : <tr><td colSpan={5} className="dim">Busca series y agrégalas a la canasta.</td></tr>}
@@ -923,12 +1002,15 @@ export default function SppCargaPage() {
             {sumaPesos.toLocaleString('es-PE', { maximumFractionDigits: 4 })}</b> (debe ser 1 o 100)</p>
 
           <div className="controls">
-            <button className="btn" disabled={!cComponentes.length || !sumaOk || !cFecha}
+            <button className="btn principal" disabled={!cComponentes.length || !sumaOk || !cFecha || ocupado}
               onClick={guardarComposicion}>Guardar composición</button>
             <button className="btn" disabled={ocupado} onClick={recalcularBench}>
-              Recalcular benchmark F{cFondo}</button>
+              Recalcular benchmark Fondo {cFondo}</button>
           </div>
-          {cEco && <p className="page-sub"><b>{cEco}</b></p>}
+          <Eco eco={cEco} />
+          {/* La bitácora vive también aquí: el recálculo corre en la misma
+              tarea de fondo, y su rastro estaba solo en el área de valor cuota. */}
+          {tarea && <Bitacora tarea={tarea} />}
         </div>
 
         <div className="panel">
@@ -946,7 +1028,7 @@ export default function SppCargaPage() {
           )}
           {bEstado?.filas > 0 && (
             <div className="controls" style={{ marginBottom: 12 }}>
-              <a className="btn" href={apiUrl('/api/spp/benchmark/exportar')}>↓ Bajar la serie</a>
+              <a className="btn" href={apiUrl('/api/spp/benchmark/exportar')}>↓ Bajar la serie · XLSX</a>
             </div>
           )}
 
@@ -963,7 +1045,7 @@ export default function SppCargaPage() {
               ])} />
               <div className="controls" style={{ marginTop: 6 }}>
                 <button className="btn" onClick={() => editarComposicion(g)}>Editar</button>
-                <button className="btn" onClick={() => borrarComposicion(g)}>Borrar</button>
+                <button className="btn peligro" onClick={() => borrarComposicion(g)}>Borrar</button>
               </div>
             </div>
           )) : <p className="page-sub dim">Ninguna composición declarada todavía.</p>}

@@ -28,16 +28,23 @@ CREATE TABLE IF NOT EXISTS benchmark_composicion (
     fondo            INTEGER NOT NULL,
     vigente_desde    DATE NOT NULL,
 
-    -- What the component is (display) and where it prices from
+    -- What the component is (display) and where it prices from.
+    -- The CHECKs are NAMED and re-stated in 56_spp_migraciones.sql so
+    -- that a database created by an earlier version converges: a
+    -- CREATE TABLE IF NOT EXISTS never alters what already exists.
     etiqueta         TEXT NOT NULL,
-    fuente           TEXT NOT NULL CHECK (fuente IN ('bloomberg', 'fact', 'manual')),
+    fuente           TEXT NOT NULL
+        CONSTRAINT ck_benchmark_composicion_fuente
+        CHECK (fuente IN ('bloomberg', 'fact', 'manual')),
     ref_id           INTEGER NOT NULL,
 
     -- Weight at the rebalance date, normalized to sum 1 per basket
     peso             NUMERIC(9, 6) NOT NULL CHECK (peso > 0),
 
     -- Optional FX leg: component price is multiplied by this series
-    fx_fuente        TEXT CHECK (fx_fuente IN ('bloomberg', 'fact', 'manual')),
+    fx_fuente        TEXT
+        CONSTRAINT ck_benchmark_composicion_fx_fuente
+        CHECK (fx_fuente IN ('bloomberg', 'fact', 'manual')),
     fx_ref_id        INTEGER,
 
     creado_en        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

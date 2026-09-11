@@ -74,6 +74,9 @@ function Muestra({ muestra, titulo }) {
 export default function SppCargaPage() {
   const [cfg, setCfg] = useState(null);
   const [estado, setEstado] = useState(null);
+  // Which of the three work areas is on screen: valor cuota, series
+  // (component bases) or benchmark (weights/composition).
+  const [seccion, setSeccion] = useState('vc');
 
   // ---- shared background task (hook shared with the Bloomberg tab) ----
   const { tarea, ocupado, iniciar } = useSppTarea();
@@ -523,6 +526,15 @@ export default function SppCargaPage() {
         Ningún archivo llega a la base sin haberse mostrado antes.</p>
       <SppTabs />
 
+      {/* Three work areas, one visible at a time. All the state lives in
+          this component, so switching segments loses nothing typed. */}
+      <div className="controls" style={{ margin: '12px 0 16px' }}>
+        <SppSeg
+          items={[['Valor cuota', 'vc'], ['Carga de series', 'series'], ['Benchmark', 'benchmark']]}
+          value={seccion} onChange={setSeccion} />
+      </div>
+
+      {seccion === 'vc' && (<>
       {/* ===== 1 · Registro manual de valor cuota ===== */}
       <div className="spp-dos">
         <div className="panel">
@@ -703,6 +715,9 @@ export default function SppCargaPage() {
         </div>
       </div>
 
+      </>)}
+
+      {seccion === 'series' && (<>
       {/* ===== 4 · Series manuales: componentes fuera de Bloomberg ===== */}
       <div className="spp-dos">
         <div className="panel">
@@ -828,6 +843,9 @@ export default function SppCargaPage() {
         </div>
       </div>
 
+      </>)}
+
+      {seccion === 'benchmark' && (<>
       {/* ===== 5 · Benchmark: composición de la canasta ===== */}
       <div className="spp-dos">
         <div className="panel">
@@ -951,6 +969,7 @@ export default function SppCargaPage() {
           )) : <p className="page-sub dim">Ninguna composición declarada todavía.</p>}
         </div>
       </div>
+      </>)}
     </div>
   );
 }

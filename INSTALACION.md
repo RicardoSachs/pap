@@ -20,7 +20,7 @@ Tres cosas, desde la máquina que hoy tiene todo:
 
 | Qué | Cómo se obtiene | Por qué |
 |---|---|---|
-| El repo | *Download ZIP* desde GitHub (rama `cambios_vc`) | El código y el tablero ya compilado (`web/apps/dashboards/out`) |
+| El repo | El zip de la rama, sin necesidad de cuenta:<br>`https://github.com/RicardoSachs/pap/archive/refs/heads/cambios_vc.zip` | El código y el tablero ya compilado (`web/apps/dashboards/out`) |
 | El respaldo de la base | `python scripts/respaldo_spp.py --exportar` | El libro, las correcciones a mano, Bloomberg, series manuales y composiciones. **Nada de esto se puede volver a raspar.** |
 | Los instaladores | Python, PostgreSQL y Google Chrome | La otra red puede bloquear las descargas |
 
@@ -35,7 +35,7 @@ y copia la carpeta `wheelhouse` junto al zip.
 
 **No copies** `data\browser_profile_spp`: Chrome cifra sus cookies con
 una clave ligada al usuario de Windows, así que el perfil no es
-portable. El paso 8 lo resuelve.
+portable. El paso 7 lo resuelve.
 
 ---
 
@@ -53,7 +53,7 @@ portable. El paso 8 lo resuelve.
 Extrae el zip y **renombra la carpeta a `pap`**, en la ruta donde va a
 vivir — por ejemplo `C:\Users\<usuario>\Documents\Proyectos\pap`.
 
-Muévelo *ahora*, no después: la tarea programada del paso 8 guarda la
+Muévelo *ahora*, no después: la tarea programada del paso 7 guarda la
 ruta absoluta, y los datos (`data\`) nacen como carpeta hermana del
 proyecto.
 
@@ -90,7 +90,14 @@ PG_DBNAME=pap
 PG_USER=postgres
 PG_PASSWORD=<la contraseña de PostgreSQL>
 DATA_DIR=C:\Users\<usuario>\Documents\Proyectos\data
+MACHINE_ID=LAPTOP-NUEVA
+SCRAPER_ENABLED=true
 ```
+
+Este es **el único archivo que tienes que escribir** en la máquina
+nueva. Las dos últimas líneas dicen qué puede hacer esta computadora:
+`SCRAPER_ENABLED=true` es lo que habilita la extracción de la SBS, y
+`MACHINE_ID` es solo el nombre con el que aparece en los registros.
 
 `DATA_DIR` es opcional pero conviene fijarlo: vacío significa "la
 carpeta `data` hermana del proyecto", y si algún día mueves la carpeta
@@ -125,27 +132,7 @@ histórico de la SBS desde **Registro y carga → Valor cuota → carga
 histórica**.
 </details>
 
-## 6. Configuración de máquina
-
-El proyecto lee un archivo fuera del repo para saber qué puede hacer
-esta computadora:
-
-```
-copy config\machine_config.yaml "%USERPROFILE%\Documents\Tools\config\market_data_config.yaml"
-```
-
-Crea la carpeta si no existe y edita el archivo copiado:
-
-```yaml
-machine_id: 'LAPTOP-NUEVA'   # como quieras llamarla en los logs
-scraper_enabled: true        # imprescindible para la extracción SPP
-timezone: 'America/Lima'
-```
-
-Las demás banderas (`bloomberg_enabled`, `fms_enabled`) quedan en
-`false` salvo que esa máquina tenga terminal Bloomberg o acceso a FMS.
-
-## 7. Abrir el tablero
+## 6. Abrir el tablero
 
 Doble clic en **`Tablero SPP.bat`**. Levanta la API, espera a que
 responda y abre el navegador en `http://127.0.0.1:8000/spp/`.
@@ -157,7 +144,7 @@ abierta con el error.
 Comprueba: el Panel muestra los KPIs y el gráfico, y **Libro** trae
 fechas desde 1993.
 
-## 8. Extracción diaria automática
+## 7. Extracción diaria automática
 
 Doble clic en **`scripts\Programar extraccion SPP.bat`**. Registra la
 tarea de Windows *Profuturo - Valor cuota SPP*, todos los días a las
@@ -208,14 +195,33 @@ Prueba opcional de que el código está sano en esta máquina:
 | El navegador abre y el tablero está vacío | Falta `.env` o la base no existe. La ventana de la API tiene el error exacto. |
 | `MissingSecret: PG_PASSWORD is not set` | El `.env` quedó con la línea en blanco (paso 4). |
 | `No se encontro pg_dump` | Agrega `C:\Program Files\PostgreSQL\18\bin` al PATH. |
-| La extracción falla con "El WAF de la SBS bloqueo la peticion" | Haz el paso 8 con el operador delante. |
+| `El scraper no esta habilitado en esta maquina` | Falta `SCRAPER_ENABLED=true` en el `.env` (paso 4). Reinicia el tablero después: la configuración se lee al arrancar. |
+| La extracción falla con "El WAF de la SBS bloqueo la peticion" | Haz el paso 7 con el operador delante. |
 | "Google Chrome no esta instalado" | Instala Chrome real (paso 1.3). |
 | El tablero dice que la tarea apunta a otra copia del proyecto | Quedaron dos carpetas del zip. Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |
 
 ## Actualizar el proyecto más adelante
 
-Descarga el zip nuevo, descomprime **encima** de la carpeta `pap`
-conservando `.env` y `.venv`, y vuelve a abrir `Tablero SPP.bat`. Si el
-zip trae tablas o restricciones nuevas, se aplican solas al arrancar la
-API; la base y su contenido no se tocan.
+La dinámica es de dos pasos, sin git en esta máquina:
+
+1. En la computadora donde se trabaja: subir los cambios a GitHub.
+2. Aquí: bajar otra vez el mismo zip
+
+   ```
+   https://github.com/RicardoSachs/pap/archive/refs/heads/cambios_vc.zip
+   ```
+
+   y descomprimirlo **encima** de la carpeta `pap`, aceptando reemplazar.
+
+`.env`, `.venv\` y la carpeta `data\` sobreviven: los dos primeros
+porque el zip no los trae, la tercera porque vive fuera del proyecto.
+Al volver a abrir `Tablero SPP.bat`, la API aplica sola los cambios de
+esquema y registra lo que falte — no hay paso de migración que se pueda
+olvidar, y la base y su contenido no se tocan.
+
+Un detalle: descomprimir encima **no borra** los archivos que
+desaparezcan del proyecto. En la práctica solo significa que se van
+acumulando piezas viejas del tablero compilado (llevan un código en el
+nombre, así que no estorban). Si alguna vez quieres dejarlo limpio,
+borra la carpeta `pap` entera salvo `.env` y `.venv`, y descomprime.

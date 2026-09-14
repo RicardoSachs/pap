@@ -89,8 +89,7 @@ def main() -> int:
     if not scraper_enabled():
         raise RuntimeError(
             f"Scraper is not enabled on this machine ({machine_id()}). "
-            "Set scraper_enabled: true in "
-            "%USERPROFILE%\\Documents\\Tools\\config\\market_data_config.yaml.")
+            "Set SCRAPER_ENABLED=true in the project's .env file.")
 
     if args.historico_descargar:
         run_historico(download=True, refresh=args.refresh)

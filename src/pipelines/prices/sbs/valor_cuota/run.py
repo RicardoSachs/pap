@@ -375,14 +375,12 @@ def correr_programado(refrescar: bool = False) -> dict:
         # The machine gate lives INSIDE the trail on purpose: an
         # unattended run that dies before writing anything is
         # indistinguishable from one that never fired, and this is the
-        # first thing to fail on a machine whose market_data_config.yaml
-        # was never created.
+        # first thing to fail on a machine whose .env never declared
+        # SCRAPER_ENABLED.
         if not scraper_enabled():
             raise RuntimeError(
                 f"El scraper no esta habilitado en esta maquina ({machine_id()}). "
-                "Copia config\\machine_config.yaml a "
-                "%USERPROFILE%\\Documents\\Tools\\config\\market_data_config.yaml "
-                "y pon scraper_enabled: true.")
+                "Pon SCRAPER_ENABLED=true en el archivo .env del proyecto.")
         res = run_daily(refresh=refrescar)
         estado.update(ok=True, error=None, **res)
     except Exception as exc:

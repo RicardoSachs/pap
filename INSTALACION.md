@@ -231,7 +231,7 @@ Deben pasar los 40.
 | "Google Chrome no esta instalado" | Instala Chrome real (paso 1.2). |
 | `ModuleNotFoundError: multipart` o la API no arranca | Falta la descarga de `dependencias-faltantes-py310` (paso 0). Vuelve a correr el instalador con las dos carpetas. |
 | `Could not find a version that satisfies...` al instalar | La carpeta de `pypro_packs` está incompleta, o el Python no es 3.10 de 64 bits. |
-| `there is no unique or exclusion constraint matching the ON CONFLICT specification` | La base viene de una versión anterior y le faltan restricciones. Desde el 2026-09-14 se arregla solo al abrir el tablero; en una copia antigua, corre `scripts
+| `there is no unique or exclusion constraint matching the ON CONFLICT specification` | A la base le faltan restricciones que el código necesita, porque la creó una versión anterior. Doble clic en **`scripts\Verificar esquema.bat`**: compara tu base con el esquema del proyecto, dice exactamente qué falta y se ofrece a agregarlo. |
 eparar_restricciones.sql` (con pgAdmin o `psql -d pap -f ...`). |
 | El tablero dice que la tarea apunta a otra copia del proyecto | Quedaron dos carpetas del zip. Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |

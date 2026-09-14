@@ -637,6 +637,52 @@ def tabla(limite, metrica: str, fondo_arg: str) -> dict:
             "fondo": fondo_arg, "filas": filas}
 
 
+def tabla_benchmark(limite) -> dict:
+    """
+    El benchmark sobre la MISMA rejilla de fechas del libro.
+
+    La pregunta que responde esta tabla es "que dias falta el
+    benchmark", asi que las filas son los dias con valor cuota - no los
+    dias que el benchmark tiene. Si se listaran solo estos ultimos, un
+    dia sin benchmark simplemente no apareceria, que es justo lo que
+    hay que ver.
+    """
+    from src.pipelines.prices.sbs.valor_cuota.benchmark import (columna_bench,
+                                                                leer_bench)
+    fondos_b = reg.fondos_benchmark()
+    columnas_sel = [{"col": columna_bench(f), "fondo": f, "afp": f"Fondo {f}",
+                     "metrica": "benchmark"} for f in fondos_b]
+
+    desde = _corte_reciente(["valor_cuota"], limite) if limite else None
+    libro = leer(["valor_cuota"], desde=desde)
+    if libro.empty:
+        return {"columnas": columnas_sel, "filas": [], "faltantes": 0,
+                "fechas": 0}
+
+    rejilla = (libro if limite is None else libro.tail(int(limite)))["fecha"]
+    bench = leer_bench(desde=rejilla.min(), hasta=rejilla.max())
+    por_fecha = {}
+    if not bench.empty:
+        for _, fila in bench.iterrows():
+            por_fecha[fila["fecha"]] = fila
+
+    nombres_col = [c["col"] for c in columnas_sel]
+    filas, faltantes = [], 0
+    for fecha in rejilla.iloc[::-1]:
+        fila = por_fecha.get(fecha)
+        valores = []
+        for col in nombres_col:
+            v = None
+            if fila is not None and col in bench.columns and not pd.isna(fila[col]):
+                v = float(fila[col])
+            valores.append(v)
+        if any(v is None for v in valores):
+            faltantes += 1
+        filas.append({"fecha": str(fecha), "valores": valores})
+    return {"columnas": columnas_sel, "filas": filas,
+            "faltantes": faltantes, "fechas": len(filas)}
+
+
 def exportar_csv(metrica: str, fondo_arg: str, limite,
                  desde=None, hasta=None) -> bytes:
     """The same cut as tabla(), as CSV bytes built in memory."""

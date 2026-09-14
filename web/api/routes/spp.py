@@ -80,6 +80,14 @@ def get_tabla(limite: str = Query("60"),
     return svc.tabla(lim, metrica.strip(), fondo.strip().lower())
 
 
+@router.get("/benchmark-tabla")
+def get_benchmark_tabla(limite: str = Query("60")) -> dict:
+    """El benchmark dia a dia, sobre la rejilla de fechas del libro."""
+    crudo = limite.strip().lower()
+    lim = None if crudo in ("todas", "todos") else _entero(crudo, 60, 1, 5000)
+    return svc.tabla_benchmark(lim)
+
+
 @router.get("/exportar")
 def get_exportar(metrica: str = Query("todas"),
                  fondo: str = Query("todos"),

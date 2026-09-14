@@ -20,6 +20,13 @@ import os
 import sys
 from pathlib import Path
 
+# La consola de Windows suele ser cp1252 y PostgreSQL responde en
+# espanol: sin esto, imprimir un error con acentos revienta con
+# UnicodeEncodeError y tapa el mensaje que hacia falta leer.
+for _flujo in (sys.stdout, sys.stderr):
+    if hasattr(_flujo, "reconfigure"):
+        _flujo.reconfigure(errors="replace")
+
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 

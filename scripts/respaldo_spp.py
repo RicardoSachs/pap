@@ -29,6 +29,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+# La consola de Windows suele ser cp1252 y PostgreSQL responde en
+# espanol: sin esto, imprimir un error con acentos revienta con
+# UnicodeEncodeError y tapa el mensaje que hacia falta leer.
+for _flujo in (sys.stdout, sys.stderr):
+    if hasattr(_flujo, "reconfigure"):
+        _flujo.reconfigure(errors="replace")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.shared.config_pg import get_db_config

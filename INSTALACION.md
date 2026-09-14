@@ -119,8 +119,28 @@ se te quedan atrás el rastro de las extracciones y el perfil de Chrome.
 
 ## 5. Crear la base y llenarla
 
-Crea la base vacía (desde pgAdmin, o con `createdb pap`). El esquema y
-las series se crean solos al abrir el tablero en el paso siguiente.
+Doble clic en **`scripts\Crear base.bat`**. Lee el `.env`, crea la base
+con ese nombre si no existe y le aplica el esquema. Si ya existe no la
+toca, y se puede repetir sin miedo.
+
+<details>
+<summary>A mano, si prefieres</summary>
+
+Desde **pgAdmin**: en el árbol de la izquierda, clic derecho sobre
+*Databases* → *Create* → *Database…*, escribe `pap` en **Database** y
+*Save*.
+
+Desde la **consola** (el `bin` de PostgreSQL no suele estar en el PATH,
+así que conviene la ruta completa):
+
+```
+"C:\Program Files\PostgreSQL8in\createdb.exe" -U postgres pap
+```
+
+Te pedirá la contraseña del usuario `postgres`. El nombre tiene que ser
+el mismo que pusiste en `PG_DBNAME`. El esquema se crea solo al abrir el
+tablero.
+</details>
 
 El libro de valor cuota **se reconstruye desde la fuente**, que es
 pública:
@@ -211,7 +231,8 @@ Deben pasar los 40.
 | "Google Chrome no esta instalado" | Instala Chrome real (paso 1.2). |
 | `ModuleNotFoundError: multipart` o la API no arranca | Falta la descarga de `dependencias-faltantes-py310` (paso 0). Vuelve a correr el instalador con las dos carpetas. |
 | `Could not find a version that satisfies...` al instalar | La carpeta de `pypro_packs` está incompleta, o el Python no es 3.10 de 64 bits. |
-| `there is no unique or exclusion constraint matching the ON CONFLICT specification` | La base viene de una versión anterior y le faltan restricciones. Desde el 2026-09-14 se arregla solo al abrir el tablero; en una copia antigua, corre `scriptseparar_restricciones.sql` (con pgAdmin o `psql -d pap -f ...`). |
+| `there is no unique or exclusion constraint matching the ON CONFLICT specification` | La base viene de una versión anterior y le faltan restricciones. Desde el 2026-09-14 se arregla solo al abrir el tablero; en una copia antigua, corre `scripts
+eparar_restricciones.sql` (con pgAdmin o `psql -d pap -f ...`). |
 | El tablero dice que la tarea apunta a otra copia del proyecto | Quedaron dos carpetas del zip. Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |
 

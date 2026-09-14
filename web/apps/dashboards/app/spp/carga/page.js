@@ -19,6 +19,7 @@ import {
 } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
+import useVerTodo from '../../../components/useVerTodo';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
@@ -43,15 +44,16 @@ function Informe({ filas }) {
 
 // Preview of a reviewed file: last rows, most recent first.
 function Muestra({ muestra, titulo }) {
+  const [visibles, VerTodo] = useVerTodo(muestra?.filas, 10);
   if (!muestra || !muestra.filas?.length) return null;
   return (
     <div style={{ marginTop: 12 }}>
       <div className="panel-title">{titulo} · {nEnt(muestra.total)} fechas en total</div>
-      <div className="table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+      <div className="table-wrap">
         <table>
           <thead><tr><th>Fecha</th>{muestra.columnas.map((c) => <th key={c} className="num">{c}</th>)}</tr></thead>
           <tbody>
-            {muestra.filas.map((f) => (
+            {visibles.map((f) => (
               <tr key={f[0]}>
                 <td>{fFecha(f[0])}</td>
                 {f.slice(1).map((v, i) => (
@@ -65,6 +67,7 @@ function Muestra({ muestra, titulo }) {
           </tbody>
         </table>
       </div>
+      <VerTodo etiqueta="filas del archivo" />
     </div>
   );
 }
@@ -466,6 +469,12 @@ export default function SppCargaPage() {
     cargarBench();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg]);
+
+  // Hasta 100 resultados (50 por base): se muestran los primeros y el resto
+  // llega con el boton, en vez de encerrarlos en una caja con scroll.
+  const cHallazgos = ['bloomberg', 'manual'].flatMap((fu) =>
+    (cResultados?.[fu] || []).map((s) => ({ ...s, fu })));
+  const [cVisibles, VerMasSeries] = useVerTodo(cHallazgos, 8);
 
   const buscarSeries = async () => {
     try {
@@ -899,7 +908,7 @@ export default function SppCargaPage() {
           {smSerie && smPuntos.length > 0 && !smInforme && (
             <div style={{ marginTop: 12 }}>
               <div className="panel-title">Últimos valores de «{smSerie.nombre}»</div>
-              <div className="table-wrap" style={{ maxHeight: 260, overflowY: 'auto' }}>
+              <div className="table-wrap">
                 <table>
                   <thead><tr><th>Fecha</th><th className="num">Valor</th></tr></thead>
                   <tbody>
@@ -952,21 +961,23 @@ export default function SppCargaPage() {
             <button className="btn" onClick={buscarSeries}>Buscar</button>
           </div>
           {cResultados && (
-            <div className="table-wrap" style={{ maxHeight: 180, overflowY: 'auto', marginTop: 8 }}>
+            <div className="table-wrap" style={{ marginTop: 8 }}>
               <table><tbody>
-                {['bloomberg', 'manual'].flatMap((fu) => (cResultados[fu] || []).map((s) => (
-                  <tr key={`${fu}-${s.ref_id}`}>
+                {cVisibles.map((s) => (
+                  <tr key={`${s.fu}-${s.ref_id}`}>
                     <td className="mono">{s.etiqueta}</td>
-                    <td className="dim">{nombreFuente(fu)} · {s.detalle}</td>
-                    <td><button className="btn" onClick={() => agregarComponente(fu, s)}>+ Agregar</button></td>
+                    <td className="dim">{nombreFuente(s.fu)} · {s.detalle}</td>
+                    <td><button className="btn"
+                      onClick={() => agregarComponente(s.fu, s)}>+ Agregar</button></td>
                   </tr>
-                )))}
-                {!(cResultados.bloomberg?.length || cResultados.manual?.length) && (
+                ))}
+                {!cHallazgos.length && (
                   <tr><td className="dim">Sin resultados en las dos bases (Bloomberg y manuales).</td></tr>
                 )}
               </tbody></table>
             </div>
           )}
+          {cResultados && <VerMasSeries etiqueta="series encontradas" />}
 
           <div className="table-wrap" style={{ marginTop: 10 }}>
             <table>

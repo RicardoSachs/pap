@@ -120,7 +120,7 @@ export default function SppLibroPage() {
 
       <div className="panel">
         {loading ? <div className="loading">Cargando…</div> : (
-          <div className="table-wrap spp-vent" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          <div className="table-wrap spp-vent">
             <table>
               <thead>
                 <tr><th>Fecha</th>{columnas.map((c) => <th key={c.col} className="num">{cab(c)}</th>)}</tr>

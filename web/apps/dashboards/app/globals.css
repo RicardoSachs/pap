@@ -223,12 +223,21 @@ a { color: inherit; text-decoration: none; }
 /* ----- Tables --------------------------------------------------------------- */
 .table-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .table-tools .right { display: flex; gap: 8px; position: relative; }
-.table-wrap { overflow: auto; max-height: 62vh; border: 1px solid var(--s4); border-radius: 10px; }
+/* NINGUN cuadro tiene scroll vertical propio: crece con su contenido y
+   quien scrollea es la pagina. Cuanto se ve lo deciden los botones de
+   expandir/contraer (components/useVerTodo.js), no una cajita con barra.
+   Queda el scroll HORIZONTAL, que no es opcional: una tabla de cincuenta
+   columnas sin el desbordaria la pagina entera y descuadraria la barra
+   lateral y la cabecera. */
+.table-wrap { overflow-x: auto; border: 1px solid var(--s4); border-radius: 10px; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--s4); white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
 thead th {
-  position: sticky; top: 0; z-index: 2;
+  /* Se declara pegajoso bajo la cabecera del tablero para donde el
+     navegador pueda resolverlo; el scroll horizontal del contenedor lo
+     limita, y sin scroll vertical propio no hay nada que se escape. */
+  position: sticky; top: var(--header-h); z-index: 2;
   background: var(--s3); color: var(--text-secondary); font-weight: 600;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; user-select: none;
 }
@@ -320,7 +329,7 @@ tfoot th, tfoot td {
 .spp-bitacora {
   margin-top: 10px; padding: 10px 12px; background: var(--s0);
   border: 1px solid var(--s4); border-radius: 6px; font-size: 12px;
-  max-height: 220px; overflow-y: auto; white-space: pre-wrap;
+  white-space: pre-wrap;
 }
 
 /* Carga view: act on the left, see on the right. Collapses on narrow screens. */

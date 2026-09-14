@@ -1,52 +1,50 @@
 # Instalar el tablero SPP en otra computadora
 
 Guía para dejar el tablero de **Valor Cuota SPP** funcionando en una
-máquina nueva, partiendo del zip del repositorio (sin git) más un
-respaldo de la base de datos.
+máquina de la red interna, **todo por descarga**: sin USB, sin git y
+sin acceso a PyPI.
 
-Al terminar tendrás: el tablero abriéndose con doble clic, el libro
-completo desde 1993, el registro Bloomberg, las series manuales, las
-composiciones del benchmark y la extracción diaria automática a las
-18:00.
+Al terminar tendrás el tablero abriéndose con doble clic, el libro de
+valor cuota completo desde 1993 y la extracción diaria automática a
+las 18:00.
 
-Verificado el 2026-09-11 sobre Windows 11, Python 3.14.7 y
-PostgreSQL 18.6.
-
----
-
-## 0. Qué llevar en el USB
-
-Tres cosas, desde la máquina que hoy tiene todo:
-
-| Qué | Cómo se obtiene | Por qué |
-|---|---|---|
-| El repo | El zip de la rama, sin necesidad de cuenta:<br>`https://github.com/RicardoSachs/pap/archive/refs/heads/cambios_vc.zip` | El código y el tablero ya compilado (`web/apps/dashboards/out`) |
-| El respaldo de la base | `python scripts/respaldo_spp.py --exportar` | El libro, las correcciones a mano, Bloomberg, series manuales y composiciones. **Nada de esto se puede volver a raspar.** |
-| Los instaladores | Python, PostgreSQL y Google Chrome | La otra red puede bloquear las descargas |
-
-Si la máquina destino **no llega a PyPI**, agrega un cuarto elemento —
-las ruedas de Python, preparadas desde esta máquina:
-
-```
-python -m pip download -r requirements.lock.txt -d wheelhouse
-```
-
-y copia la carpeta `wheelhouse` junto al zip.
-
-**No copies** `data\browser_profile_spp`: Chrome cifra sus cookies con
-una clave ligada al usuario de Windows, así que el perfil no es
-portable. El paso 7 lo resuelve.
+Verificado el 2026-09-14 reproduciendo ese entorno completo (Python
+3.10.6 portable + los wheels de `pypro_packs`): los 40 tests pasan, la
+API levanta, crea el esquema, registra las series y sirve el tablero.
 
 ---
+
+## 0. Qué descargar
+
+Cuatro descargas, todas desde el navegador de esa misma máquina:
+
+| Qué | De dónde |
+|---|---|
+| **El proyecto** | `https://github.com/RicardoSachs/pap/archive/refs/heads/cambios_vc.zip` (2 MB — incluye el tablero ya compilado) |
+| **Python 3.10** | `https://github.com/gabdejo/py_versions` → carpeta `3106`. Si esa máquina ya tiene Python 3.10, sáltatelo |
+| **Las librerías** | `https://github.com/gabdejo/pypro_packs` — el wheelhouse que ya usas |
+| **Lo que falta** | `https://github.com/RicardoSachs/pap/releases/download/deps-py310/dependencias-faltantes-py310.zip` (38 MB) |
+
+Esa última descarga trae cuatro paquetes que **no están** en
+`pypro_packs` y el proyecto necesita:
+
+- **`python-multipart`** — sin él la API ni siquiera arranca: FastAPI lo
+  exige para recibir archivos, y de eso depende la carga del XLS
+  histórico.
+- **`playwright`** (con `pyee` y `greenlet`) — la extracción de la SBS.
+
+Descomprime cada zip en una carpeta que puedas ubicar; el instalador
+del paso 3 las busca solo si están junto al proyecto o en *Descargas*.
 
 ## 1. Programas base
 
-1. **Python 3** (3.14 recomendado, el probado) — marca *Add python.exe
-   to PATH* en el instalador.
-2. **PostgreSQL 18** — anota la contraseña del usuario `postgres`; deja
-   el puerto en 5432.
-3. **Google Chrome** — obligatorio: el WAF de la SBS rechaza navegadores
+1. **PostgreSQL** — anota la contraseña del usuario `postgres`; deja el
+   puerto en 5432.
+2. **Google Chrome** — obligatorio: el WAF de la SBS rechaza navegadores
    headless y el Chromium que trae Playwright. Tiene que ser Chrome real.
+
+Python no hace falta instalarlo: el del paso 0 (`py_versions/3106`) es
+portable y se usa tal cual.
 
 ## 2. Descomprimir el proyecto en su lugar definitivo
 
@@ -59,18 +57,23 @@ proyecto.
 
 ## 3. Crear el entorno de Python
 
-Desde la carpeta del proyecto, en una consola:
+Doble clic en **`scripts\Instalar entorno.bat`**. Crea el `.venv` con el
+Python 3.10 portable e instala todo desde las carpetas del paso 0, sin
+tocar internet.
+
+Si no encuentra alguna carpeta te lo dice; en ese caso pásale las rutas:
 
 ```
-py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.lock.txt
+scripts\"Instalar entorno.bat" C:\ruta\pypro_packs C:\ruta\dependencias-faltantes-py310
 ```
 
-Sin acceso a PyPI, usando el `wheelhouse` del paso 0:
+Termina comprobando que todo importa. Las versiones son las de
+`requirements-oficina.txt`, alineadas con el wheelhouse (pandas 2.3.3,
+FastAPI 0.137.1…).
 
-```
-.venv\Scripts\python.exe -m pip install --no-index --find-links wheelhouse -r requirements.lock.txt
-```
+> `requirements.lock.txt` es **otra cosa**: describe la máquina de
+> desarrollo (Python 3.14, pandas 3.x). Esos wheels no existen en
+> `pypro_packs` y aquí no hay de dónde bajarlos.
 
 ## 4. Configurar la conexión a la base (`.env`)
 
@@ -99,38 +102,44 @@ nueva. Las dos últimas líneas dicen qué puede hacer esta computadora:
 `SCRAPER_ENABLED=true` es lo que habilita la extracción de la SBS, y
 `MACHINE_ID` es solo el nombre con el que aparece en los registros.
 
+Si **esa** máquina tiene terminal Bloomberg, agrega también:
+
+```
+BLOOMBERG_ENABLED=true
+```
+
+y la pestaña *Series Bloomberg* podrá descargar de verdad los
+componentes del benchmark. Déjalo fuera en las máquinas sin terminal:
+el tablero sigue funcionando igual, solo que esa descarga responde que
+no hay terminal aquí.
+
 `DATA_DIR` es opcional pero conviene fijarlo: vacío significa "la
 carpeta `data` hermana del proyecto", y si algún día mueves la carpeta
 se te quedan atrás el rastro de las extracciones y el perfil de Chrome.
 
-## 5. Traer la base de datos
+## 5. Crear la base y llenarla
 
-Con el `.dump` del paso 0:
+Crea la base vacía (desde pgAdmin, o con `createdb pap`). El esquema y
+las series se crean solos al abrir el tablero en el paso siguiente.
 
-```
-.venv\Scripts\python.exe scripts\respaldo_spp.py --importar "C:\ruta\al\pap_AAAAMMDD_HHMM.dump" --crear
-```
+El libro de valor cuota **se reconstruye desde la fuente**, que es
+pública:
 
-Al terminar imprime cuántas filas quedaron en cada tabla. Debe decir
-decenas de miles en `fact_prices`; si dice 0, algo falló y no sigas.
+1. Abre el tablero (paso 6) y ve a **Registro y carga → Valor cuota**.
+2. Pulsa *Abrir la página de la SBS* y descarga el Excel
+   «Valores cuota desde Agosto 1993».
+3. Súbelo en **carga histórica por Excel**. Revisa lo que muestra y
+   confirma con *Cargar lo que falta*.
 
-<details>
-<summary>¿Y si no tienes respaldo?</summary>
+Eso deja el libro completo desde 1993. La extracción diaria se encarga
+del resto.
 
-Se puede arrancar de cero, aceptando que se pierden las correcciones
-manuales y el registro Bloomberg:
-
-```
-.venv\Scripts\python.exe -c "from src.db.connection import get_connection; from src.db.bootstrap import create_schema; conn=get_connection().__enter__(); create_schema(conn); conn.commit()"
-```
-
-(`scripts\bootstrap_db.py` no sirve aquí: exige archivos de semillas que
-no vienen en el repo.)
-
-Después crea la base `pap` en PostgreSQL, abre el tablero y carga el XLS
-histórico de la SBS desde **Registro y carga → Valor cuota → carga
-histórica**.
-</details>
+> Lo que no viaja por esta vía es lo que solo existe en la otra
+> computadora: las correcciones hechas a mano, el registro de series
+> Bloomberg, las series manuales y las composiciones del benchmark. Son
+> pocas y se vuelven a declarar desde el tablero en minutos. Si algún
+> día quieres moverlas tal cual y tienes cómo pasar un archivo, está
+> `scripts\respaldo_spp.py --exportar` / `--importar`.
 
 ## 6. Abrir el tablero
 
@@ -179,12 +188,14 @@ Otros comandos del mismo archivo: `-Estado` (qué hay registrado),
 | La tarea dice *Ready* y una próxima ejecución | **Registro y carga → Valor cuota**, cuadro "Corrida automática" |
 | La extracción escribe rastro | `data\spp\extraccion.log` |
 
-Prueba opcional de que el código está sano en esta máquina:
+Prueba opcional de que el código está sano en esta máquina (necesita
+`pytest`, que no viene en el wheelhouse):
 
 ```
-.venv\Scripts\python.exe -m pip install pytest
 .venv\Scripts\python.exe -m pytest tests\prices tests\shared -q
 ```
+
+Deben pasar los 40.
 
 ---
 
@@ -197,7 +208,9 @@ Prueba opcional de que el código está sano en esta máquina:
 | `No se encontro pg_dump` | Agrega `C:\Program Files\PostgreSQL\18\bin` al PATH. |
 | `El scraper no esta habilitado en esta maquina` | Falta `SCRAPER_ENABLED=true` en el `.env` (paso 4). Reinicia el tablero después: la configuración se lee al arrancar. |
 | La extracción falla con "El WAF de la SBS bloqueo la peticion" | Haz el paso 7 con el operador delante. |
-| "Google Chrome no esta instalado" | Instala Chrome real (paso 1.3). |
+| "Google Chrome no esta instalado" | Instala Chrome real (paso 1.2). |
+| `ModuleNotFoundError: multipart` o la API no arranca | Falta la descarga de `dependencias-faltantes-py310` (paso 0). Vuelve a correr el instalador con las dos carpetas. |
+| `Could not find a version that satisfies...` al instalar | La carpeta de `pypro_packs` está incompleta, o el Python no es 3.10 de 64 bits. |
 | El tablero dice que la tarea apunta a otra copia del proyecto | Quedaron dos carpetas del zip. Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |
 
@@ -216,6 +229,8 @@ La dinámica es de dos pasos, sin git en esta máquina:
 
 `.env`, `.venv\` y la carpeta `data\` sobreviven: los dos primeros
 porque el zip no los trae, la tercera porque vive fuera del proyecto.
+Las librerías tampoco hay que reinstalarlas, salvo que el proyecto
+estrene alguna dependencia nueva.
 Al volver a abrir `Tablero SPP.bat`, la API aplica sola los cambios de
 esquema y registra lo que falte — no hay paso de migración que se pueda
 olvidar, y la base y su contenido no se tocan.

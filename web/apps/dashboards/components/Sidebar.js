@@ -18,7 +18,9 @@ const ITEMS = [
   { href: '/prices/', label: 'Prices', icon: '↗' },
   { href: '/positioning/', label: 'Positioning', icon: '▦' },
   { href: '/contribution/', label: 'Contribution', icon: '≡' },
-  { href: '/comparacion/', label: 'Comparison', icon: '⇄' },
+  // NUESTRO: 'Comparison' queda fuera. Aguas arriba existe, pero su vista
+  // pide endpoints que esta API no sirve, y dejarla en el menu solo producia
+  // un 404 al precargarla.
   // NUESTRO: el tablero de valor cuota SPP, que no existe aguas arriba.
   { href: '/spp/', label: 'Valor Cuota SPP', icon: '◷' },
 ];

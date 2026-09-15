@@ -8,5 +8,8 @@
 // ---------------------------------------------------------------------------
 export const rutaActiva = (path, href) => {
   const base = href.replace(/\/$/, '');
+  // La raiz es el caso limite: su base queda vacia, y un prefijo vacio
+  // coincide con TODO - el Home del menu se encendia en cada pagina.
+  if (!base) return path === '/' || path === '';
   return path === href || path === base || path.startsWith(`${base}/`);
 };

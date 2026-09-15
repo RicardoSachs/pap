@@ -453,6 +453,32 @@ export default function SppCargaPage() {
   const [composiciones, setComposiciones] = useState([]);
   const [cEco, setCEco] = useState('');
 
+  // ---- benchmark: definicion (uno por fondo, con nombre) ----
+  const [defs, setDefs] = useState([]);
+  const [dNombre, setDNombre] = useState('');
+  const [dDesc, setDDesc] = useState('');
+  const [dFondo, setDFondo] = useState(1);
+  const [dEco, setDEco] = useState('');
+
+  const cargarDefiniciones = () =>
+    apiGet('/api/spp/benchmark/definiciones')
+      .then((j) => setDefs(j.benchmarks || [])).catch(() => {});
+
+  const defDe = (f) => defs.find((d) => d.fondo === Number(f)) || null;
+  const nombreDe = (f) => defDe(f)?.nombre || `Fondo ${f}`;
+
+  const guardarDefinicion = async () => {
+    setDEco('');
+    const r = await apiSend('/api/spp/benchmark/definicion', 'POST',
+      { fondo: dFondo, nombre: dNombre, descripcion: dDesc });
+    if (!r.ok) { setDEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
+    setDEco({ ok: true, texto: `Benchmark del Fondo ${dFondo}: «${r.data.resultado.nombre}».` });
+    setDNombre(''); setDDesc('');
+    await cargarDefiniciones();
+    // Habilitar un fondo nuevo cambia la lista de fondos con benchmark.
+    apiGet('/api/spp/config').then(setCfg).catch(() => {});
+  };
+
   const cargarComposiciones = () =>
     apiGet('/api/spp/benchmark/composicion').then((j) => setComposiciones(j.composiciones || [])).catch(() => {});
 
@@ -465,6 +491,7 @@ export default function SppCargaPage() {
     if (!cfg) return;
     setCFecha(hoyLocal());
     cargarComposiciones();
+    cargarDefiniciones();
     cargarCatalogoFx();
     cargarBench();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -930,10 +957,61 @@ export default function SppCargaPage() {
       </>)}
 
       {seccion === 'benchmark' && (<>
-      {/* ===== 5 · Benchmark: composición de la canasta ===== */}
+      {/* ===== 5a · Benchmark: cuáles hay y cómo se llaman ===== */}
+      <div className="panel">
+        <div className="panel-title">Benchmarks declarados</div>
+        <p className="page-sub">Cada tipo de fondo tiene <b>un</b> benchmark, con su propio
+          nombre. Declarar uno para un fondo que no lo tenía es lo que se lo habilita:
+          su serie queda registrada al guardarlo.</p>
+
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Fondo</th><th>Benchmark</th><th>Descripción</th>
+              <th className="num">Rebalanceos</th><th className="num">Días calculados</th></tr></thead>
+            <tbody>
+              {defs.length ? defs.map((d) => (
+                <tr key={d.fondo}>
+                  <td>Fondo {d.fondo}</td>
+                  <td className={d.declarado ? '' : 'dim'}>{d.nombre}</td>
+                  <td className="dim">{d.descripcion || '—'}</td>
+                  <td className="num">{nEnt(d.rebalanceos)}</td>
+                  <td className={`num ${d.puntos ? '' : 'dim'}`}>
+                    {d.puntos ? nEnt(d.puntos) : 'sin calcular'}</td>
+                </tr>
+              )) : <tr><td colSpan={5} className="dim">Cargando…</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="controls spp-controls" style={{ marginTop: 12 }}>
+          <div className="field"><label htmlFor="d-fondo">Tipo de fondo</label>
+            <select id="d-fondo" className="select" value={dFondo}
+              onChange={(e) => setDFondo(Number(e.target.value))}>
+              {(cfg?.fondos || []).map((f) => (
+                <option key={f} value={f}>Fondo {f}</option>
+              ))}
+            </select></div>
+          <div className="field" style={{ flex: '1 1 260px' }}>
+            <label htmlFor="d-nombre">Nombre del benchmark</label>
+            <input id="d-nombre" className="date-input"
+              placeholder="p. ej. Renta mixta global 60/40"
+              value={dNombre} onChange={(e) => setDNombre(e.target.value)} /></div>
+          <div className="field" style={{ flex: '1 1 260px' }}>
+            <label htmlFor="d-desc">Descripción</label>
+            <input id="d-desc" className="date-input" placeholder="opcional"
+              value={dDesc} onChange={(e) => setDDesc(e.target.value)} /></div>
+          <div className="field"><label aria-hidden="true">&nbsp;</label>
+            <button className="btn principal" disabled={!dNombre.trim() || ocupado}
+              onClick={guardarDefinicion}>
+              {defDe(dFondo)?.declarado ? 'Renombrar' : 'Crear benchmark'}</button></div>
+        </div>
+        <Eco eco={dEco} />
+      </div>
+
+      {/* ===== 5b · Benchmark: composición de la canasta ===== */}
       <div className="spp-dos">
         <div className="panel">
-          <div className="panel-title">Benchmark · composición de la canasta</div>
+          <div className="panel-title">Composición de «{nombreDe(cFondo)}»</div>
           <p className="page-sub">El benchmark de cada fondo se <b>construye</b> desde las dos
             bases de componentes (Bloomberg y series manuales): una canasta de series con pesos,
             <b> versionada por fecha</b>: cambiar tickers o pesos crea una composición nueva desde
@@ -1016,7 +1094,7 @@ export default function SppCargaPage() {
             <button className="btn principal" disabled={!cComponentes.length || !sumaOk || !cFecha || ocupado}
               onClick={guardarComposicion}>Guardar composición</button>
             <button className="btn" disabled={ocupado} onClick={recalcularBench}>
-              Recalcular benchmark Fondo {cFondo}</button>
+              Recalcular «{nombreDe(cFondo)}»</button>
           </div>
           <Eco eco={cEco} />
           {/* La bitácora vive también aquí: el recálculo corre en la misma
@@ -1033,7 +1111,7 @@ export default function SppCargaPage() {
           </p>
           {bEstado?.series?.length > 0 && (
             <Informe filas={bEstado.series.map((x) => [
-              `Fondo ${x.fondo}`,
+              nombreDe(x.fondo),
               x.puntos ? `${nEnt(x.puntos)} fechas · último ${x.valor} el ${fFecha(x.fecha)}` : 'sin datos',
             ])} />
           )}
@@ -1049,7 +1127,7 @@ export default function SppCargaPage() {
           {composiciones.length ? composiciones.map((g) => (
             <div key={`${g.fondo}-${g.vigente_desde}`} style={{ marginBottom: 12 }}>
               <div className="panel-title" style={{ fontSize: 13 }}>
-                Fondo {g.fondo} · desde {fFecha(g.vigente_desde)}</div>
+                {nombreDe(g.fondo)} · desde {fFecha(g.vigente_desde)}</div>
               <Informe filas={g.componentes.map((c) => [
                 `${c.etiqueta}${c.fx_ref_id ? ' (con FX)' : ''}`,
                 `${(c.peso * 100).toLocaleString('es-PE', { maximumFractionDigits: 2 })} %`,

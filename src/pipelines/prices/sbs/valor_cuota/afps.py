@@ -96,9 +96,45 @@ def fondos() -> list[int]:
     return [int(f) for f in registro().get("fondos", [0, 1, 2, 3])]
 
 
-def fondos_benchmark() -> list[int]:
-    declared = registro().get("fondos_benchmark", [1, 2, 3])
-    return [int(f) for f in declared if int(f) in fondos()]
+def fondos_benchmark(conn=None) -> list[int]:
+    """
+    Fund types that carry a benchmark.
+
+    Es la UNION de los que declara config/afps.yaml y los que alguien
+    declaro en la tabla: nombrar el benchmark de un fondo AGREGA ese
+    fondo, nunca apaga los demas - lo contrario haria que ponerle
+    nombre a uno dejara a los otros sin benchmark.
+    """
+    base = [int(f) for f in registro().get("fondos_benchmark", [1, 2, 3])
+            if int(f) in fondos()]
+    try:
+        if conn is not None:
+            filas = conn.execute("SELECT fondo FROM benchmark").fetchall()
+        else:
+            from src.db.connection import get_connection
+            with get_connection() as c:
+                filas = c.execute("SELECT fondo FROM benchmark").fetchall()
+    except Exception:
+        return base                # sin tabla todavia (base recien creada)
+    declarados = [int(f["fondo"]) for f in filas if int(f["fondo"]) in fondos()]
+    return sorted(set(base) | set(declarados))
+
+
+def nombre_benchmark(fondo: int, conn=None) -> str:
+    """El nombre que el operador le puso, o uno por defecto."""
+    porDefecto = f"Benchmark Fondo {int(fondo)}"
+    try:
+        if conn is not None:
+            fila = conn.execute("SELECT nombre FROM benchmark WHERE fondo = %s",
+                                (int(fondo),)).fetchone()
+        else:
+            from src.db.connection import get_connection
+            with get_connection() as c:
+                fila = c.execute("SELECT nombre FROM benchmark WHERE fondo = %s",
+                                 (int(fondo),)).fetchone()
+    except Exception:
+        return porDefecto
+    return (fila["nombre"] if fila and fila["nombre"] else porDefecto)
 
 
 def afps() -> list[dict]:
@@ -250,12 +286,12 @@ def register_series(conn) -> int:
             for field in METRICA_FIELD.values():
                 inserted += _serie(entity_id, field, SOURCE_SBS)
 
-    for f in fondos_benchmark():
+    for f in fondos_benchmark(conn):
         entity_id = get_or_create_entity_id(
             conn,
             procode=procode_bench(f),
             entity_type="index",
-            name=f"Benchmark SPP Fondo {f}",
+            name=nombre_benchmark(f, conn),
         )
         inserted += _serie(entity_id, "PX_LAST", SOURCE_BENCH)
 

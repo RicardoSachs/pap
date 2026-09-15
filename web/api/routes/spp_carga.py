@@ -301,6 +301,36 @@ def get_benchmark() -> dict:
     return {"estado": bench.estado_benchmark()}
 
 
+# ---- Benchmark: definicion (uno por fondo, con nombre) --------------------
+
+@router.get("/benchmark/definiciones")
+def get_definiciones() -> dict:
+    return {"benchmarks": bcomp.leer_definiciones()}
+
+
+@router.post("/benchmark/definicion")
+def post_definicion(datos: dict) -> JSONResponse:
+    """Crea o renombra el benchmark de un fondo; declararlo habilita ese
+    fondo y registra su serie."""
+    try:
+        return JSONResponse({"ok": True, "resultado": bcomp.guardar_definicion(
+            datos.get("fondo"), datos.get("nombre"), datos.get("descripcion"))})
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
+    except Exception as exc:
+        logger.exception("definicion de benchmark")
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
+
+
+@router.delete("/benchmark/definicion")
+def delete_definicion(fondo: str) -> JSONResponse:
+    try:
+        return JSONResponse({"ok": True,
+                             "resultado": bcomp.borrar_definicion(fondo)})
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
+
+
 # ---- Benchmark: composicion (canasta versionada) --------------------------
 
 @router.get("/benchmark/composicion")

@@ -34,6 +34,91 @@ BASE_INDICE = 100.0
 FUENTES = ("bloomberg", "fact", "manual")
 
 
+# ---- Definicion: un benchmark por fondo, con nombre ------------------
+
+def leer_definiciones() -> list[dict]:
+    """Los benchmarks declarados, con su cobertura y cuantos rebalanceos
+    tienen. Incluye los fondos que todavia no tienen nombre propio."""
+    with get_connection() as conn:
+        declarados = {f["fondo"]: f for f in conn.execute(
+            "SELECT fondo, nombre, descripcion FROM benchmark ORDER BY fondo"
+        ).fetchall()}
+        composiciones = {f["fondo"]: f["n"] for f in conn.execute(
+            "SELECT fondo, COUNT(DISTINCT vigente_desde) AS n "
+            "FROM benchmark_composicion GROUP BY fondo").fetchall()}
+        fondos = reg.fondos_benchmark(conn)
+        salida = []
+        for f in fondos:
+            d = declarados.get(f)
+            serie = reg.series_map(conn).get((reg.procode_bench(f), "PX_LAST"))
+            puntos = 0
+            if serie:
+                puntos = conn.execute(
+                    "SELECT COUNT(*) AS n FROM fact_prices WHERE series_id = %s",
+                    (serie["series_id"],)).fetchone()["n"]
+            salida.append({
+                "fondo": f,
+                "nombre": (d["nombre"] if d else reg.nombre_benchmark(f, conn)),
+                "descripcion": (d["descripcion"] if d else None),
+                "declarado": d is not None,
+                "rebalanceos": composiciones.get(f, 0),
+                "puntos": int(puntos),
+            })
+    return salida
+
+
+def guardar_definicion(fondo: int, nombre: str, descripcion=None) -> dict:
+    """
+    Crea o renombra el benchmark de un fondo.
+
+    Declararlo es tambien lo que HABILITA a ese fondo a tener uno: la
+    serie de niveles se registra aqui mismo, sin tocar
+    config/afps.yaml. El nombre viaja a dim_entity.name, que es de
+    donde lo leen el grafico y el libro.
+    """
+    fondo = int(fondo)
+    if fondo not in reg.fondos():
+        raise ValueError(
+            f"El Fondo {fondo} no existe. Fondos: "
+            + ", ".join(str(x) for x in reg.fondos()) + ".")
+    nombre = str(nombre or "").strip()
+    if not nombre:
+        raise ValueError("El benchmark necesita un nombre.")
+    descripcion = str(descripcion).strip() or None if descripcion else None
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO benchmark (fondo, nombre, descripcion)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (fondo) DO UPDATE
+                SET nombre = EXCLUDED.nombre,
+                    descripcion = COALESCE(EXCLUDED.descripcion,
+                                           benchmark.descripcion),
+                    actualizado_en = CURRENT_TIMESTAMP
+            """, (fondo, nombre, descripcion))
+        # Registra la serie del fondo recien habilitado y pone el nombre
+        # en la entidad, para que el resto del tablero lo vea.
+        reg.register_series(conn)
+        conn.execute(
+            "UPDATE dim_entity SET name = %s WHERE procode = %s AND entity_type = 'index'",
+            (nombre, reg.procode_bench(fondo)))
+    logger.info(f"benchmark Fondo {fondo}: '{nombre}'.")
+    return {"fondo": fondo, "nombre": nombre}
+
+
+def borrar_definicion(fondo: int) -> dict:
+    """
+    Quita el NOMBRE del benchmark de un fondo; no toca sus composiciones
+    ni la serie calculada, que siguen ahi si vuelve a declararse.
+    """
+    fondo = int(fondo)
+    with get_connection() as conn:
+        n = conn.execute("DELETE FROM benchmark WHERE fondo = %s",
+                         (fondo,)).rowcount
+    return {"fondo": fondo, "borrados": n}
+
+
 # ---- Composiciones (CRUD versionado) --------------------------------
 
 def leer_composiciones(fondo: int | None = None) -> list[dict]:
@@ -244,13 +329,25 @@ def encadenar(periodos: list[dict], base: float = BASE_INDICE) -> list[tuple]:
         if not comps:
             raise ValueError(f"Composicion vacia desde {desde}.")
 
-        # Common grid: union of component dates within [desde, hasta).
+        # Common grid: component dates within [desde, hasta] - the next
+        # rebalance date INCLUDED.
+        #
+        # That day belongs to the OLD basket: the new one takes over from
+        # the following close. Ending the period the day before instead
+        # meant the next period struck its holdings at the previous
+        # close's level and priced them at the rebalance date, so the
+        # index came out flat that day and the real return was lost -
+        # once per rebalance, always.
         grid = sorted({d for c in comps for d in c["precios"]
-                       if d >= desde and (hasta is None or d < hasta)})
+                       if d >= desde and (hasta is None or d <= hasta)})
         if not grid or grid[0] != desde:
             # The period must start pricing AT its rebalance date; the
             # holdings are struck there.
             grid = [desde] + [d for d in grid if d > desde]
+        if hasta is not None and grid[-1] != hasta:
+            # Nobody quoted exactly on the handover date: carry the last
+            # known prices to it, so the baton always changes hands there.
+            grid.append(hasta)
 
         # Forward-filled price per component per grid date.
         def precio_en(c, d):

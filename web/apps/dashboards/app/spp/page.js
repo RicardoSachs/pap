@@ -318,7 +318,7 @@ export default function SppPanelPage() {
           <div className="field"><label>Ventana</label>
             <SppSeg items={VENTANAS} value={ventana} onChange={setVentana} /></div>
           <div className="field"><label>Escala</label>
-            <SppSeg items={[['Nivel', 'nivel'], ['Log', 'log'], ['Base 100', 'base']]}
+            <SppSeg items={[['Nivel', 'nivel'], ['Base 100', 'base']]}
               value={escala} onChange={setEscala} /></div>
           <div className="field"><label>AFP en pantalla</label>
             <SppSeg multi items={nombres.filter((a) => opera(a, fondo)).map((a) => [a, a])}
@@ -345,7 +345,7 @@ export default function SppPanelPage() {
               margin: { l: 70, r: 20, t: 10, b: 60 },
               xaxis: { hoverformat: '%Y-%m-%d' },
               yaxis: {
-                type: escala === 'log' ? 'log' : 'linear',
+                type: 'linear',
                 title: escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
                 zeroline: false,
               },

@@ -71,9 +71,13 @@ export const nombreFuente = (f) => NOMBRE_FUENTE[f] || f;
 // FALLBACKS only, for the instant before /api/spp/config arrives: the
 // metric universe and its labels are owned by the backend (cfg.metricas)
 // - use metricasDe(cfg) / nombreMetrica(cfg, clave) below.
+// RESPALDO del selector, para el instante antes de que llegue
+// /api/spp/config, que es quien manda. 'Cuotas' no esta aqui ni alli: el
+// dato existe y la tabla de cierres lo muestra, pero graficarlo no dice
+// nada. NOMBRE_METRICA y ROTULO_KPI si la conservan, porque la API sigue
+// aceptando metrica=cuotas y hay que saber como llamarla.
 export const METRICAS = [
   ['Valor cuota', 'valor_cuota'],
-  ['Cuotas', 'cuotas'],
   ['Fondo (S/)', 'fondo'],
 ];
 export const NOMBRE_METRICA = {

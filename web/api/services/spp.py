@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 SUFIJO = {"valor_cuota": "", "cuotas": "_cuotas", "fondo": "_fondo"}
 METRICAS = list(SUFIJO)
 
+# Lo que el selector del tablero OFRECE, que no es lo mismo que lo que se
+# guarda. 'cuotas' se sigue extrayendo, cargando y sirviendo - la tabla de
+# cierres la muestra y la API la acepta por su nombre - pero como serie que
+# graficar no aporta: son unidades administrativas, no un precio, y su
+# rendimiento no significa nada. Sacarla de METRICAS en cambio la habria
+# borrado del dato: esa lista manda tambien en que columnas se leen.
+METRICAS_TABLERO = ["valor_cuota", "fondo"]
+
 MESES_CORTOS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
                 "JUL", "AGO", "SET", "OCT", "NOV", "DIC"]
 
@@ -179,7 +187,7 @@ def config() -> dict:
         "fondos_benchmark": reg.fondos_benchmark(),
         "casa": reg.afp_casa(),
         "metricas": [{"clave": k, "etiqueta": reg.ETIQUETA_METRICA[k]}
-                     for k in METRICAS],
+                     for k in METRICAS_TABLERO],
         "afps": [{"clave": a["clave"],
                   "nombre": a["nombre"],
                   "color": a.get("color", "#1A1A1A"),

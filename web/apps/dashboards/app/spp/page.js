@@ -239,6 +239,14 @@ export default function SppPanelPage() {
     return grisLinea(alpha.toFixed(2));
   };
 
+  // La MISMA tinta en todas partes: lineas, chips del selector, puntos de las
+  // tablas. El color dice "esta es la casa", no "esta es tal AFP" - si cada
+  // competidora lleva su color de marca, con un tema rojo Habitat (#c50331) y
+  // Prima (#ca3f04) compiten visualmente con Profuturo en vez de quedar
+  // detras. `lista` decide el reparto de la escala de grises.
+  const tintaDe = (afp, lista) =>
+    (afp === casa ? colorDe(cfg, afp, true) : grisDe(afp, lista));
+
   const series = serieData?.series || [];
   const traces = useMemo(() => {
     const conDatos = series.filter((s) => s.puntos.length);
@@ -252,7 +260,7 @@ export default function SppPanelPage() {
     const enPantalla = conDatos.map((s) => s.afp);
     return conDatos.map((s) => {
       const esCasa = s.afp === casa;
-      const color = esCasa ? colorDe(cfg, s.afp, true) : grisDe(s.afp, enPantalla);
+      const color = tintaDe(s.afp, enPantalla);
       let pts = s.puntos;
       let base = null;
       if (escala === 'base') {
@@ -351,7 +359,7 @@ export default function SppPanelPage() {
     if (!xs.length) return null;
     const esCasa = afp === casa;
     // Same house-vs-grays scheme as the historic series chart.
-    const color = esCasa ? colorDe(cfg, afp, true) : grisDe(afp, compitenPos);
+    const color = tintaDe(afp, compitenPos);
     return {
       x: xs, y: ys, type: 'scatter', mode: 'lines+markers', name: afp,
       legendrank: ordenCasa(cfg, compitenPos).indexOf(afp) + 1,
@@ -397,7 +405,10 @@ export default function SppPanelPage() {
               value={escala} onChange={setEscala} /></div>
           <div className="field"><label>AFP en pantalla</label>
             <SppSeg multi items={nombres.filter((a) => opera(a, fondo)).map((a) => [a, a])}
-              value={afpsSel} colorOf={(a) => colorDe(cfg, a)}
+              value={afpsSel}
+              // Sobre la lista COMPLETA del fondo, no sobre la seleccion: asi
+              // el tono de cada AFP no cambia al encender o apagar a otra.
+              colorOf={(a) => tintaDe(a, nombres.filter((x) => opera(x, fondo)))}
               onChange={(v) => setAfpsSel((prev) => {
                 const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
                 return next.length ? next : [v];
@@ -511,8 +522,10 @@ export default function SppPanelPage() {
             <tbody>
               {cierres.length ? cierres.map((s) => (
                 <tr key={s.afp}>
-                  <td><span className="spp-chip" style={{ background: colorDe(cfg, s.afp) }} />
-                    <b style={{ color: colorDe(cfg, s.afp, true) }}>{s.afp}</b></td>
+                  <td><span className="spp-chip"
+                    style={{ background: tintaDe(s.afp, cierres.map((x) => x.afp)) }} />
+                    <b style={{ color: s.afp === casa ? colorDe(cfg, s.afp, true) : 'inherit' }}>
+                      {s.afp}</b></td>
                   <td className="num">{nf(s.valor)}</td>
                   <td className={`num ${signo(s.var_bps)}`}>
                     {s.var_bps == null ? '—' : `${s.var_bps >= 0 ? '+' : ''}${s.var_bps} bps`}</td>
@@ -602,7 +615,8 @@ export default function SppPanelPage() {
                 const base = esCasa ? colorDe(cfg, afp, true) : GRIS_COMPETIDOR;
                 return (
                   <tr key={afp}>
-                    <td><span className="spp-chip" style={{ background: colorDe(cfg, afp) }} />
+                    <td><span className="spp-chip"
+                      style={{ background: tintaDe(afp, compitenPos) }} />
                       <b style={{ color: esCasa ? colorDe(cfg, afp, true) : 'inherit' }}>{afp}</b></td>
                     {periodos.map((p) => {
                       const q = fila.puestos[p.clave];

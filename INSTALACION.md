@@ -9,7 +9,7 @@ valor cuota completo desde 1993 y la extracción diaria automática a
 las 18:00.
 
 Verificado el 2026-09-14 reproduciendo ese entorno completo (Python
-3.10.6 portable + los wheels de `pypro_packs`): los 40 tests pasan, la
+3.10.6 portable + los wheels de `pypro_packs`): los tests pasan, la
 API levanta, crea el esquema, registra las series y sirve el tablero.
 
 ---
@@ -231,10 +231,10 @@ Prueba opcional de que el código está sano en esta máquina (necesita
 `pytest`, que no viene en el wheelhouse):
 
 ```
-.venv\Scripts\python.exe -m pytest tests\prices tests\shared -q
+.venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web -q
 ```
 
-Deben pasar los 40.
+Deben pasar los 51.
 
 ---
 

@@ -78,7 +78,8 @@ export default function SppPanelPage() {
     });
     apiGet(`/api/spp/serie?${q}`).then(setSerieData).catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, estado, metrica, fondo, ventana, afpsSel, vent?.fechas?.mes, vent?.fechas?.anio]);
+  }, [cfg, estado, metrica, fondo, ventana, afpsSel,
+      vent?.fechas?.mes, vent?.fechas?.anio, vent?.fechas?.fy]);
 
   // Windows + positions follow metric and control date.
   useEffect(() => {
@@ -546,7 +547,8 @@ export default function SppPanelPage() {
             {vent?.control && (
               <p className="page-sub" style={{ margin: '4px 0 0' }}>
                 Control {fFecha(vent.fechas.t)} · inicio de mes {fFecha(vent.fechas.mes)} ·
-                M-1 {fFecha(vent.fechas.mes1)} · inicio de año {fFecha(vent.fechas.anio)}
+                M-1 {fFecha(vent.fechas.mes1)} · inicio de año {fFecha(vent.fechas.anio)} ·
+                inicio de ejercicio {fFecha(vent.fechas.fy)}
               </p>
             )}
           </div>
@@ -564,7 +566,8 @@ export default function SppPanelPage() {
             <details className="spp-desplegable">
               <summary>Rendimiento absoluto</summary>
               <TablaVentanas cols={vent.cols_rend} filas={vent.absolutos} conUnidad />
-              <p className="page-sub">Hasta meses en puntos básicos; YTD y año pasado en porcentaje.
+              <p className="page-sub">Hasta meses en puntos básicos; FY, YTD y año pasado en
+                porcentaje. FY es el ejercicio, del 31/10 al 31/10.
                 Las columnas diarias son el movimiento de ese día, no acumulados.</p>
             </details>
             <details className="spp-desplegable">

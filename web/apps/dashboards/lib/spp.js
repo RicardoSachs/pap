@@ -118,8 +118,11 @@ export const metricasDe = (cfg) =>
 export const nombreMetrica = (cfg, clave) =>
   (cfg?.metricas || []).find((m) => m.clave === clave)?.etiqueta
     || NOMBRE_METRICA[clave] || clave;
+// Ordenadas por lo que abarcan. FY es el ejercicio, de 31/10 a 31/10: va
+// despues de YTD porque casi siempre es mas largo - solo en noviembre y
+// diciembre, recien empezado, es mas corto que el año calendario.
 export const VENTANAS = [
-  ['MTD', 'mtd'], ['YTD', 'ytd'], ['1A', 1], ['3A', 3], ['5A', 5], ['10A', 10],
+  ['MTD', 'mtd'], ['YTD', 'ytd'], ['FY', 'fy'], ['1A', 1], ['3A', 3], ['5A', 5], ['10A', 10],
 ];
 
 export const signo = (v) => (v == null ? '' : (v < 0 ? 'neg' : (v > 0 ? 'pos' : '')));
@@ -191,15 +194,28 @@ export function fmtRend(v, unidad, metrica = 'valor_cuota') {
   return s + abs + (unidad === 'pct' ? '%' : ' bps');
 }
 
-// MTD/YTD start at the LAST CLOSE of the prior period (same base the
+// MTD/YTD/FY start at the LAST CLOSE of the prior period (same base the
 // windows tables use); numeric values are years back from the last close.
+//
+// Lo de abajo es el RESPALDO de calendario, para el instante antes de que
+// llegue /api/spp/ventanas. Cae en el dia natural, que puede no ser dia de
+// cotizacion; en cuanto llegan las fechas de control manda la del cierre.
 export function desdeVentana(v, estado, fechasVent) {
   const base = fechasVent || {};
   if (v === 'mtd' && base.mes) return base.mes;
   if (v === 'ytd' && base.anio) return base.anio;
+  if (v === 'fy' && base.fy) return base.fy;
   const h = estado && estado.hasta ? new Date(`${estado.hasta}T00:00:00`) : new Date();
   if (v === 'mtd') { const d = new Date(h.getFullYear(), h.getMonth(), 0); return d.toISOString().slice(0, 10); }
   if (v === 'ytd') { const d = new Date(h.getFullYear(), 0, 0); return d.toISOString().slice(0, 10); }
+  if (v === 'fy') {
+    // El 31/10 cierra el ejercicio, no lo abre: parado en esa fecha se mira
+    // el año que termina. Por eso el corte es "despues del 31/10", igual
+    // que en el backend (_inicio_fy).
+    const finDeEjercicio = new Date(h.getFullYear(), 9, 31);
+    const anio = h > finDeEjercicio ? h.getFullYear() : h.getFullYear() - 1;
+    return new Date(anio, 9, 31).toISOString().slice(0, 10);
+  }
   h.setFullYear(h.getFullYear() - v);
   return h.toISOString().slice(0, 10);
 }

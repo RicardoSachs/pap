@@ -40,6 +40,11 @@ CLAVES_NIVEL = ["anio1", "anio", "mes2", "mes1", "mes",
                 "t5", "t4", "t3", "t2", "t1", "t"]
 CLAVES_REND = [
     ("a1",  None,          "pct"),
+    # El ejercicio arranca el 31/10, o sea ANTES del 1/1, salvo en
+    # noviembre y diciembre, cuando el ejercicio ya empezo y el año no.
+    # La columna no se mueve de sitio esos dos meses: reordenarla dos
+    # veces al año costaria mas de lo que aclara.
+    ("fy",  "FY",          "pct"),
     ("ytd", "YTD",         "pct"),
     ("m2",  None,          "bps"),
     ("m1",  None,          "bps"),
@@ -357,6 +362,20 @@ def _primer_dia_mes(d: dt.date, retroceso: int = 0) -> dt.date:
     return dt.date(y, m, 1)
 
 
+def _inicio_fy(d: dt.date) -> dt.date:
+    """
+    Day the fiscal year containing `d` starts. The year runs 31/10 to
+    31/10.
+
+    The boundary date belongs to the year that ENDS on it: standing on
+    31/10 the operator is reading the twelve months just closed, not a
+    year that is one day old. So the new year starts on 1/11, and the
+    close of 31/10 is its base - which is what "desde el 31/10" means.
+    """
+    anio = d.year if d > dt.date(d.year, 10, 31) else d.year - 1
+    return dt.date(anio, 11, 1)
+
+
 def _ultimo_antes(fechas: list, limite: dt.date):
     previos = [f for f in fechas if f < limite]
     return previos[-1] if previos else None
@@ -378,6 +397,10 @@ def fechas_referencia(fechas: list, control: dt.date) -> dict:
     ref["mes2"] = _ultimo_antes(fechas, _primer_dia_mes(control, 2))
     ref["anio"] = _ultimo_antes(fechas, dt.date(control.year, 1, 1))
     ref["anio1"] = _ultimo_antes(fechas, dt.date(control.year - 1, 1, 1))
+    # El ejercicio: misma regla que el mes y el año - la base es el ultimo
+    # cierre del periodo anterior, o sea el del 31/10 (o el ultimo dia de
+    # cotizacion de octubre, si el 31 cayo en fin de semana o feriado).
+    ref["fy"] = _ultimo_antes(fechas, _inicio_fy(control))
     return ref
 
 
@@ -395,8 +418,9 @@ def ventanas(fecha=None, metrica: str = "valor_cuota") -> dict:
     metrica = _metrica_valida(metrica)
     vacio = {"control": None, "fechas": {}, "niveles": [], "absolutos": [],
              "relativos": [], "cols_nivel": [], "cols_rend": []}
-    # Every window base (t-5, month starts, Jan 1 of the prior year) lives
-    # within two calendar years of the control date: bound the read there
+    # Every window base (t-5, month starts, 31/10 of the fiscal year, Jan 1
+    # of the prior year) lives within two calendar years of the control
+    # date: bound the read there
     # instead of pulling the book since 1993 on every request.
     tope = _ultima_fecha()
     if tope is None:
@@ -440,6 +464,7 @@ def ventanas(fecha=None, metrica: str = "valor_cuota") -> dict:
                 "mtd": _variacion(v["t"],  v["mes"]),
                 "m1":  _variacion(v["mes"],  v["mes1"]),
                 "m2":  _variacion(v["mes1"], v["mes2"]),
+                "fy":  _variacion(v["t"],    v["fy"]),
                 "ytd": _variacion(v["t"],    v["anio"]),
                 "a1":  _variacion(v["anio"], v["anio1"]),
             }

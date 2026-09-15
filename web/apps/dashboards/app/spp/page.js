@@ -15,11 +15,10 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  GRIS_COMPETIDOR, ROTULO_KPI, VENTANAS, colorDe, desdeVentana, fFecha,
+  GRIS_COMPETIDOR, VENTANAS, colorDe, desdeVentana, fFecha,
   fmtMetrica, fmtRend, grisLinea, metricasDe, nEnt, nf, nombreMetrica,
   opera as operaCfg, ordenCasa, signo, valorMostrado,
 } from '../../lib/spp';
-import KpiBar from '../../components/KpiBar';
 import SppSeg from '../../components/SppSeg';
 import SppTabs from '../../components/SppTabs';
 import { chartTheme } from '../../lib/theme';
@@ -42,7 +41,6 @@ export default function SppPanelPage() {
   const [pos, setPos] = useState(null);
   const [fechaControl, setFechaControl] = useState('');
   const [fondoPos, setFondoPos] = useState(2);
-  const [r12, setR12] = useState(null);
 
   // Config first: without it we don't know how many AFPs exist.
   useEffect(() => {
@@ -85,74 +83,6 @@ export default function SppPanelPage() {
     if (fechaControl) q2.set('fecha', fechaControl);
     apiGet(`/api/spp/posiciones?${q2}`).then(setPos).catch((e) => setError(e.message));
   }, [cfg, metrica, fechaControl]);
-
-  // 12M return is always computed on valor cuota - the definition of a
-  // fund's performance, whatever metric is on screen. Keyed on the derived
-  // reference AFP, not the whole multi-select: toggling a competitor chip
-  // must not re-fetch a year of data the KPI does not use.
-  const afpRef12 = casa && afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
-  useEffect(() => {
-    if (!cfg || !afpRef12) return;
-    const desde = desdeVentana(1, estado, vent?.fechas);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    const q = new URLSearchParams({ fondo: String(fondo), afps: afpRef12, metrica: 'valor_cuota', desde });
-    apiGet(`/api/spp/serie?${q}`).then((d) => {
-      const p = d.series?.[0]?.puntos;
-      setR12(p && p.length > 1 ? { afp: afpRef12, ret: p[p.length - 1][1] / p[0][1] - 1, desde: p[0][0] } : null);
-    }).catch(() => setR12(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, estado, fondo, afpRef12]);
-
-  // ---- KPIs -------------------------------------------------------------
-  const afpRef = casa && afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
-  const sRef = (estado?.series || []).find((x) => x.afp === afpRef && x.fondo === fondo);
-  const campo = {
-    valor_cuota: ['valor', 'var_bps', 'fecha'],
-    cuotas: ['cuotas', 'cuotas_var_bps', 'cuotas_fecha'],
-    fondo: ['fondo_soles', 'fondo_var_bps', 'fondo_fecha'],
-  }[metrica];
-  const kVal = sRef ? sRef[campo[0]] : null;
-  const kBps = sRef ? sRef[campo[1]] : null;
-  const kCuando = sRef ? sRef[campo[2]] : null;
-
-  // Staleness policy lives with the coverage semantics in the backend
-  // (estado.rezago_habiles / estado.integridad) - the page only renders tone.
-  const finCompleta = estado?.hasta_completa || estado?.hasta;
-  const rezago = estado?.rezago_habiles ?? 0;
-  const abiertos = (estado?.huecos || []).length;
-  const integridad = estado?.integridad || 'Dentro';
-
-  const kpis = [
-    {
-      label: ROTULO_KPI[metrica],
-      value: kVal == null ? '—' : fmtMetrica(kVal, metrica, true),
-      meta: `${afpRef || '—'} · Fondo ${fondo}${kCuando ? ` · al ${fFecha(kCuando)}` : ' · sin dato'}`,
-    },
-    {
-      label: 'Variación diaria',
-      value: kBps == null ? '—' : `${kBps >= 0 ? '+' : ''}${nEnt(kBps)} bps`,
-      tone: kBps == null ? undefined : (kBps >= 0 ? 'pos' : 'neg'),
-      meta: 'vs cierre previo',
-    },
-    {
-      label: 'Rentabilidad 12M',
-      value: r12 ? `${r12.ret >= 0 ? '+' : ''}${(r12.ret * 100).toFixed(2)}%` : '—',
-      tone: r12 ? (r12.ret >= 0 ? 'pos' : 'neg') : undefined,
-      meta: r12 ? `${r12.afp} F${fondo} · desde ${fFecha(r12.desde)}` : 'sin histórico suficiente',
-    },
-    {
-      label: 'Rezago de la serie',
-      value: `${rezago} d.h.`,
-      tone: rezago > 3 ? 'neg' : undefined,
-      meta: finCompleta ? `último cierre completo ${fFecha(finCompleta)}` : '—',
-    },
-    {
-      label: 'Integridad',
-      value: integridad,
-      tone: integridad === 'Dentro' ? 'pos' : (integridad === 'Excedido' ? 'neg' : undefined),
-      meta: abiertos ? `${abiertos} tramo(s) sin dato` : `${nEnt(estado?.completas)} fechas completas`,
-    },
-  ];
 
   // ---- Chart traces ------------------------------------------------------
   // The house AFP stands out in its brand color; competitors render in a
@@ -300,8 +230,6 @@ export default function SppPanelPage() {
           llevaba por delante los controles con los que el operador podría
           corregir la selección que lo causó, y nada lo limpiaba salvo F5. */}
       {error && <div className="panel error">Error: {error}</div>}
-
-      <KpiBar tiles={kpis} />
 
       <div className="panel">
         <div className="controls spp-controls">

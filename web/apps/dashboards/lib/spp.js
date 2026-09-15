@@ -74,19 +74,14 @@ export const nombreFuente = (f) => NOMBRE_FUENTE[f] || f;
 // RESPALDO del selector, para el instante antes de que llegue
 // /api/spp/config, que es quien manda. 'Cuotas' no esta aqui ni alli: el
 // dato existe y la tabla de cierres lo muestra, pero graficarlo no dice
-// nada. NOMBRE_METRICA y ROTULO_KPI si la conservan, porque la API sigue
-// aceptando metrica=cuotas y hay que saber como llamarla.
+// nada. NOMBRE_METRICA si la conserva, porque la API sigue aceptando
+// metrica=cuotas y hay que saber como llamarla.
 export const METRICAS = [
   ['Valor cuota', 'valor_cuota'],
   ['Fondo (S/)', 'fondo'],
 ];
 export const NOMBRE_METRICA = {
   valor_cuota: 'Valor cuota', cuotas: 'Cuotas', fondo: 'Fondo (S/)',
-};
-// Presentation copy, legitimately client-side ("Último cuotas" can't be said).
-export const ROTULO_KPI = {
-  valor_cuota: 'Último valor cuota', cuotas: 'Cuotas al cierre',
-  fondo: 'Fondo al cierre (S/)',
 };
 
 // ---- Config-driven helpers ------------------------------------------------

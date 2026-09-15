@@ -146,45 +146,93 @@ def upsert_entity_identifier(
     id_value: str,
     source: str,
     is_primary: bool = False,
+    seen_date: Optional[date] = None,
 ) -> None:
     """
-    Inserts or updates a single identifier mapping.
-    Called by bootstrap seed loader, SBS registry, and enrichment pipelines.
+    Records an identifier OBSERVATION for an entity. The identifier table
+    is MULTI-VALUED per (entity_id, id_type, source): real-world codes get
+    re-issued (SBS re-codes instruments, issuers change ISINs), so every
+    value ever observed persists as an alias and exactly one is flagged
+    is_primary - the current code, enforced by uq_entity_identifiers_primary.
+    Consumers wanting the current value join vw_entity_identifier_current;
+    resolution paths query the base table so historical codes still resolve.
 
-    Semantics when the (entity_id, id_type, source) row already exists:
-    - id_value: last writer wins, but a change of value is logged as a
-      WARNING so vendor disagreements (e.g. SBS vs Bloomberg ISIN) leave
-      a trace instead of being silently overwritten.
-    - is_primary is sticky: once TRUE it stays TRUE (OR semantics), so the
-      SBS registry (is_primary=False) cannot demote a primary flag set by
-      enrichment, and vice versa - eliminates last-writer churn.
+    Primacy rules:
+    - the first value observed for a key becomes primary regardless of the
+      flag (single-valued entities stay visible in the current view);
+    - re-observing the primary value just refreshes its seen window;
+    - a DIFFERENT value promotes only when is_primary=True AND its
+      observation is not older than the current primary's last_seen_date
+      (seen_date=None counts as today) - historical backfills can never
+      demote the current code, which kills the old overwrite ping-pong;
+    - promotion demotes the old primary to an alias and logs a WARNING.
     """
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT id_value FROM dim_entity_identifiers
-        WHERE entity_id = %s AND id_type = %s AND source = %s
-        """,
-        (entity_id, id_type, source),
-    )
-    row = cur.fetchone()
-    if row and row['id_value'] != id_value:
-        logger.warning(
-            f"identifier change entity_id={entity_id} {id_type}/{source}: "
-            f"{row['id_value']!r} -> {id_value!r}"
-        )
 
+    # 1. Record / refresh the alias row. Never touches primacy on conflict.
+    #    (PG LEAST/GREATEST ignore NULLs, so unknown dates merge cleanly.)
     cur.execute(
         """
         INSERT INTO dim_entity_identifiers
-            (entity_id, id_type, id_value, source, is_primary)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (entity_id, id_type, source) DO UPDATE SET
-            id_value   = EXCLUDED.id_value,
-            is_primary = dim_entity_identifiers.is_primary OR EXCLUDED.is_primary
+            (entity_id, id_type, id_value, source, is_primary,
+             first_seen_date, last_seen_date)
+        VALUES (%s, %s, %s, %s, FALSE, %s, %s)
+        ON CONFLICT (entity_id, id_type, source, id_value) DO UPDATE SET
+            first_seen_date = LEAST(dim_entity_identifiers.first_seen_date,
+                                    EXCLUDED.first_seen_date),
+            last_seen_date  = GREATEST(dim_entity_identifiers.last_seen_date,
+                                       EXCLUDED.last_seen_date)
         """,
-        (entity_id, id_type, id_value, source, is_primary),
+        (entity_id, id_type, id_value, source, seen_date, seen_date),
     )
+
+    # 2. Resolve primacy.
+    cur.execute(
+        """
+        SELECT id_value, last_seen_date FROM dim_entity_identifiers
+        WHERE entity_id = %s AND id_type = %s AND source = %s AND is_primary
+        """,
+        (entity_id, id_type, source),
+    )
+    prim = cur.fetchone()
+
+    if prim and prim['id_value'] == id_value:
+        return                                     # already the current value
+
+    if prim is None:
+        promote = True                             # first value = current
+    elif not is_primary:
+        promote = False                            # alias-only observation
+    else:
+        observed = seen_date or date.today()
+        promote = (prim['last_seen_date'] is None
+                   or observed >= prim['last_seen_date'])
+
+    if promote:
+        cur.execute(
+            """
+            UPDATE dim_entity_identifiers SET is_primary = FALSE
+            WHERE entity_id = %s AND id_type = %s AND source = %s AND is_primary
+            """,
+            (entity_id, id_type, source),
+        )
+        cur.execute(
+            """
+            UPDATE dim_entity_identifiers SET is_primary = TRUE
+            WHERE entity_id = %s AND id_type = %s AND source = %s AND id_value = %s
+            """,
+            (entity_id, id_type, source, id_value),
+        )
+        if prim:
+            logger.warning(
+                f"identifier primary change entity_id={entity_id} {id_type}/{source}: "
+                f"{prim['id_value']!r} -> {id_value!r} (old value kept as alias)"
+            )
+    elif is_primary and prim:
+        logger.info(
+            f"identifier alias recorded entity_id={entity_id} {id_type}/{source}: "
+            f"{id_value!r} (primary stays {prim['id_value']!r})"
+        )
 
 
 # ── Series registry ────────────────────────────────────────────
@@ -218,15 +266,15 @@ def get_active_series(
             codigo_sbs.id_value AS codigo_sbs
         FROM series_registry sr
         JOIN dim_entity e ON sr.entity_id = e.entity_id
-        LEFT JOIN dim_entity_identifiers bbg
+        LEFT JOIN vw_entity_identifier_current bbg
             ON  bbg.entity_id = sr.entity_id
             AND bbg.id_type   = 'parsekyable'
             AND bbg.source    = 'bloomberg'
-        LEFT JOIN dim_entity_identifiers isin
+        LEFT JOIN vw_entity_identifier_current isin
             ON  isin.entity_id = sr.entity_id
             AND isin.id_type   = 'isin'
             AND isin.source    = 'internal'
-        LEFT JOIN dim_entity_identifiers codigo_sbs
+        LEFT JOIN vw_entity_identifier_current codigo_sbs
             ON  codigo_sbs.entity_id = sr.entity_id
             AND codigo_sbs.id_type   = 'codigo_sbs'
             AND codigo_sbs.source    = 'sbs'
@@ -269,15 +317,15 @@ def get_backfill_pending_series(
             codigo_sbs.id_value AS codigo_sbs
         FROM series_registry sr
         JOIN dim_entity e ON sr.entity_id = e.entity_id
-        LEFT JOIN dim_entity_identifiers bbg
+        LEFT JOIN vw_entity_identifier_current bbg
             ON  bbg.entity_id = sr.entity_id
             AND bbg.id_type   = 'parsekyable'
             AND bbg.source    = 'bloomberg'
-        LEFT JOIN dim_entity_identifiers isin
+        LEFT JOIN vw_entity_identifier_current isin
             ON  isin.entity_id = sr.entity_id
             AND isin.id_type   = 'isin'
             AND isin.source    = 'internal'
-        LEFT JOIN dim_entity_identifiers codigo_sbs
+        LEFT JOIN vw_entity_identifier_current codigo_sbs
             ON  codigo_sbs.entity_id = sr.entity_id
             AND codigo_sbs.id_type   = 'codigo_sbs'
             AND codigo_sbs.source    = 'sbs'
@@ -320,7 +368,7 @@ def get_suspended_series(
         FROM series_registry sr
         JOIN dim_entity e
           ON sr.entity_id = e.entity_id
-        LEFT JOIN dim_entity_identifiers bbg
+        LEFT JOIN vw_entity_identifier_current bbg
             ON  bbg.entity_id = sr.entity_id
             AND bbg.id_type   = 'parsekyable'
             AND bbg.source    = 'bloomberg'
@@ -362,7 +410,7 @@ def get_inactive_series(
         FROM series_registry sr
         JOIN dim_entity e
           ON sr.entity_id = e.entity_id
-        LEFT JOIN dim_entity_identifiers bbg
+        LEFT JOIN vw_entity_identifier_current bbg
             ON  bbg.entity_id = sr.entity_id
             AND bbg.id_type   = 'parsekyable'
             AND bbg.source    = 'bloomberg'
@@ -405,7 +453,7 @@ def get_error_hold_series(
         FROM series_registry sr
         JOIN dim_entity e
           ON sr.entity_id = e.entity_id
-        LEFT JOIN dim_entity_identifiers bbg
+        LEFT JOIN vw_entity_identifier_current bbg
             ON  bbg.entity_id = sr.entity_id
             AND bbg.id_type   = 'parsekyable'
             AND bbg.source    = 'bloomberg'
@@ -445,7 +493,7 @@ def get_registered_securities(
             bbg.id_value AS parsekyable
         FROM dim_entity e
         JOIN dim_security ds ON ds.entity_id = e.entity_id
-        LEFT JOIN dim_entity_identifiers bbg
+        LEFT JOIN vw_entity_identifier_current bbg
             ON  bbg.entity_id = e.entity_id
             AND bbg.id_type   = 'parsekyable'
             AND bbg.source    = 'bloomberg'

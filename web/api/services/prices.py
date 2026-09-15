@@ -45,7 +45,7 @@ def get_price_series(
                 LEFT JOIN dim_security_equity eq  ON eq.security_id = s.security_id
                 LEFT JOIN dim_security_fund   fnd ON fnd.security_id = s.security_id
                 LEFT JOIN dim_security_bond   bd  ON bd.security_id = s.security_id
-                LEFT JOIN dim_entity_identifiers idi ON idi.entity_id = e.entity_id AND idi.id_type = 'isin'
+                LEFT JOIN vw_entity_identifier_current idi ON idi.entity_id = e.entity_id AND idi.id_type = 'isin'
                 WHERE e.entity_id = %s""",
             (entity_id,),
         )

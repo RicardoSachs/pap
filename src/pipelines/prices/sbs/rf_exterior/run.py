@@ -23,7 +23,7 @@ from src.db.queries import (
     update_series_status
 )
 from src.calendars.calendar_sbs import is_reporting_day
-from src.pipelines.prices.sbs.registry import discover_and_register, FILE_TYPE_FIELDS
+from src.pipelines.prices.sbs.discovery import discover_and_register, FILE_TYPE_FIELDS
 from src.pipelines.prices.sbs.rf_exterior.extract import extract, load_stg
 from src.pipelines.prices.sbs.rf_exterior.transform import transform
 from src.pipelines.prices.sbs.rf_exterior.loader import load_facts, load_dims

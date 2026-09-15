@@ -47,16 +47,21 @@
    0.2s en que la barra cambia de ancho. */
 .side-marca {
   flex-shrink: 0; overflow: hidden;
-  width: 100%; height: 36px;
+  width: 100%; height: 52px;
   display: flex; align-items: center; justify-content: center;
   transition: justify-content 0.2s ease, padding 0.2s ease;
 }
 .sidebar:hover .side-marca, .sidebar.expanded .side-marca {
   justify-content: flex-start; padding-left: 14px;
 }
-.side-marca img { display: block; }
-.side-marca-simbolo { width: 26px; height: auto; }
-.side-marca-lockup { width: 112px; height: auto; }
+/* Medidos por ALTO con el ancho en auto: los dos archivos tienen distinta
+   proporcion (300x106 el lockup, 85x106 el simbolo, que es mas alto que
+   ancho), y fijar el ancho deformaria uno de los dos o desbordaria el alto
+   de la fila. El lockup queda en 132px de ancho, dentro de los 180px de la
+   barra desplegada; el simbolo en 26px, dentro de los 48px de la plegada. */
+.side-marca img { display: block; width: auto; }
+.side-marca-simbolo { height: 32px; }
+.side-marca-lockup { height: 47px; }
 /* plegada: solo el simbolo */
 .sidebar:not(:hover):not(.expanded) .side-marca-lockup { display: none; }
 /* desplegada: solo el lockup, que ya trae su propio simbolo */

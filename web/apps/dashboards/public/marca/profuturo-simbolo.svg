@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40" role="img" aria-label="Profuturo">
-  <!-- NUESTRO. El simbolo suelto: es lo unico que cabe en la barra plegada
-       (48px). Dentro de un <img> el SVG es un documento aparte y no ve las
-       variables CSS del tablero, asi que el rojo de marca va escrito; si
-       cambia, cambia aqui y en la variable "brand" del sistema de diseno. -->
-  <title>Profuturo</title>
-  <path fill="#E83224" d="M62 5C46 24 26 32 4 26c20 12 42 0 58-21z"/>
-</svg>

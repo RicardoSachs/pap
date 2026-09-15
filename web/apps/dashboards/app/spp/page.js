@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
@@ -43,13 +43,6 @@ export default function SppPanelPage() {
   const [fechaControl, setFechaControl] = useState('');
   const [fondoPos, setFondoPos] = useState(2);
   const [r12, setR12] = useState(null);
-
-  // Cuadro resumen flotante del grafico: que dice cada AFP en la fecha que
-  // esta bajo el cursor. La etiqueta nativa de Plotly solo alcanza para un
-  // valor suelto; aqui interesa la comparacion - cuanto rinde cada una ese
-  // dia, en la ventana, y cuanto se separa de la casa.
-  const [tip, setTip] = useState(null);
-  const cajaGrafico = useRef(null);
 
   // Config first: without it we don't know how many AFPs exist.
   useEffect(() => {
@@ -109,73 +102,6 @@ export default function SppPanelPage() {
     }).catch(() => setR12(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, estado, fondo, afpRef12]);
-
-  // Retornos de la AFP de referencia terminando en la fecha señalada. Las
-  // ventanas son de dias de cotizacion, no de calendario: sobre la serie que
-  // ya esta en pantalla, que es lo que el operador esta mirando.
-  const cintaRetornos = (puntos, i) => {
-    if (!puntos || i == null || i < 0) return null;
-    const hasta = puntos[i]?.[1];
-    if (!hasta) return null;
-    const retroceder = (n) => {
-      const j = i - n;
-      const desde = j >= 0 ? puntos[j]?.[1] : null;
-      return desde ? hasta / desde - 1 : null;
-    };
-    const anio = String(puntos[i][0]).slice(0, 4);
-    const primeroDelAnio = puntos.findIndex((p) => String(p[0]).slice(0, 4) === anio);
-    const baseAnio = primeroDelAnio >= 0 && primeroDelAnio < i ? puntos[primeroDelAnio][1] : null;
-    return [
-      ['1D', retroceder(1)],
-      ['1S', retroceder(5)],
-      ['1M', retroceder(21)],
-      ['YTD', baseAnio ? hasta / baseAnio - 1 : null],
-    ];
-  };
-
-  const alPasarPorElGrafico = (e) => {
-    const puntos = e?.points;
-    if (!puntos || !puntos.length) return;
-    const filas = puntos
-      .map((pt) => {
-        const cd = pt.customdata || [];
-        return { afp: cd[3], color: cd[4], valor: cd[0], diaria: cd[1], ventana: cd[2] };
-      })
-      .filter((f) => f.afp);
-    if (!filas.length) return;
-    // La casa manda el orden y es contra quien se mide el resto.
-    const ordenadas = ordenCasa(cfg, filas.map((f) => f.afp))
-      .map((a) => filas.find((f) => f.afp === a))
-      .filter(Boolean);
-    const laCasa = ordenadas.find((f) => f.afp === casa);
-    const referencia = puntos.find((pt) => pt.customdata?.[3] === casa) || puntos[0];
-    const serieRef = series.find((x) => x.afp === referencia.customdata?.[3]);
-    const i = referencia.pointNumber ?? referencia.pointIndex;
-
-    // Posicion: a la derecha del cursor, y volteado cuando queda poco sitio.
-    const caja = cajaGrafico.current;
-    const ev = e.event;
-    let left = 16;
-    let top = 16;
-    if (caja && ev) {
-      const r = caja.getBoundingClientRect();
-      const x = ev.clientX - r.left;
-      const y = ev.clientY - r.top;
-      const ancho = 250;
-      const alto = 76 + ordenadas.length * 62;
-      left = Math.max(4, x > r.width * 0.6 ? x - 16 - ancho : x + 16);
-      top = Math.min(Math.max(4, y - 16 - alto), Math.max(4, r.height - alto - 8));
-    }
-    setTip({
-      fecha: puntos[0].x,
-      filas: ordenadas,
-      casa: laCasa,
-      cinta: serieRef ? cintaRetornos(serieRef.puntos, i) : null,
-      left,
-      top,
-    });
-  };
-  const alSalirDelGrafico = () => setTip(null);
 
   // ---- KPIs -------------------------------------------------------------
   const afpRef = casa && afpsSel.includes(casa) ? casa : (afpsSel[0] || casa);
@@ -268,28 +194,18 @@ export default function SppPanelPage() {
         pts = s.puntos.filter((p) => p[0] >= baseFecha);
         base = pts.length ? pts[0][1] : null;
       }
-      const primero = pts.length ? pts[0][1] : null;
       return {
         x: pts.map((p) => p[0]),
         y: pts.map((p) => (base ? (p[1] / base) * 100 : p[1])),
-        // customdata viaja con cada punto hasta el evento de hover: valor
-        // del dia, variacion diaria y variacion acumulada en la ventana.
-        // Calcularlo aqui evita rebuscar la serie en cada movimiento.
-        customdata: pts.map((p, i) => [
-          p[1],
-          i > 0 && pts[i - 1][1] ? p[1] / pts[i - 1][1] - 1 : null,
-          primero ? p[1] / primero - 1 : null,
-          s.afp,
-          color,
-        ]),
         type: 'scatter', mode: 'lines', name: s.afp,
         // legendrank puts the house first in the LEGEND while the trace
         // order (house last) keeps its line drawn on top of the grays.
         legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
         line: { color, width: esCasa ? 2.8 : 1.6 },
-        // El cuadro propio sustituye a la etiqueta nativa; los eventos de
-        // hover siguen llegando igual.
-        hoverinfo: 'none',
+        // La etiqueta de un solo valor, que es lo que el grafico necesita:
+        // la comparacion entre AFP ya esta en las tablas de abajo.
+        hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:,.4f}<extra></extra>`,
+        hoverlabel: { bordercolor: color },
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -423,83 +339,18 @@ export default function SppPanelPage() {
           {escala === 'base' ? ' · base 100' : ''}
         </div>
         {traces.length ? (
-          <div ref={cajaGrafico} style={{ position: 'relative' }}>
-            <PlotlyChart
-              data={traces}
-              onHover={alPasarPorElGrafico}
-              onUnhover={alSalirDelGrafico}
-              layout={{
-                margin: { l: 70, r: 20, t: 10, b: 60 },
-                // hovermode 'x unified' entrega, en un solo evento, el punto
-                // mas cercano de CADA serie visible en esa fecha: sin eso el
-                // cuadro solo podria hablar de la linea que se toco.
-                hovermode: 'x unified',
-                hoverdistance: -1,
-                xaxis: { hoverformat: '%Y-%m-%d', showspikes: true, spikemode: 'across',
-                  spikethickness: 1, spikedash: 'dot', spikecolor: 'var(--text-muted)' },
-                yaxis: {
-                  type: escala === 'log' ? 'log' : 'linear',
-                  title: escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
-                  zeroline: false,
-                },
-              }}
-            />
-            {tip && (
-              <div style={{ position: 'absolute', left: tip.left, top: tip.top,
-                pointerEvents: 'none', zIndex: 5 }}>
-                <div className="px-tip">
-                  <div className="px-tip-date">{fFecha(tip.fecha)}</div>
-                  {tip.filas.map((f) => {
-                    const esCasa = f.afp === casa;
-                    // La brecha contra la casa es la lectura que importa aqui:
-                    // no cuanto rindio cada una, sino cuanto se separo de
-                    // nosotros en la ventana que esta en pantalla.
-                    const brecha = (!esCasa && tip.casa && f.ventana != null
-                      && tip.casa.ventana != null) ? tip.casa.ventana - f.ventana : null;
-                    return (
-                      <div key={f.afp}>
-                        <div className="px-tip-div" />
-                        <div className="px-tip-head" style={{ color: f.color }}>
-                          {f.afp}{esCasa ? ' · la casa' : ''}
-                        </div>
-                        <div className="px-tip-row">
-                          <span className="px-tip-label">{nombreMetrica(cfg, metrica)}</span>
-                          <span className="px-tip-val">{fmtMetrica(f.valor, metrica, metrica !== 'valor_cuota')}</span>
-                        </div>
-                        <div className="px-tip-row">
-                          <span className="px-tip-label">Variación diaria</span>
-                          <span className={`px-tip-val ${signo(f.diaria)}`}>
-                            {f.diaria == null ? '—' : fmtRend(f.diaria, 'bps')}</span>
-                        </div>
-                        <div className="px-tip-row">
-                          <span className="px-tip-label">En la ventana</span>
-                          <span className={`px-tip-val ${signo(f.ventana)}`}>
-                            {f.ventana == null ? '—' : fmtRend(f.ventana, 'pct')}</span>
-                        </div>
-                        {brecha != null && (
-                          <div className="px-tip-row">
-                            <span className="px-tip-label">{casa} − {f.afp}</span>
-                            <span className={`px-tip-val ${signo(brecha)}`}>{fmtRend(brecha, 'pct')}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {tip.cinta && (
-                  <div className="px-ribbon">
-                    {tip.cinta.map(([etiqueta, valor]) => (
-                      <div className="px-ribbon-item" key={etiqueta}>
-                        <span className="px-ribbon-label">{etiqueta}</span>
-                        <span className={`px-ribbon-val ${signo(valor)}`}>
-                          {valor == null ? '—' : fmtRend(valor, 'pct')}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <PlotlyChart
+            data={traces}
+            layout={{
+              margin: { l: 70, r: 20, t: 10, b: 60 },
+              xaxis: { hoverformat: '%Y-%m-%d' },
+              yaxis: {
+                type: escala === 'log' ? 'log' : 'linear',
+                title: escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
+                zeroline: false,
+              },
+            }}
+          />
         ) : serieData == null
           ? <div className="loading">Cargando…</div>
           : <p className="page-sub dim">Sin datos para esta selección.</p>}

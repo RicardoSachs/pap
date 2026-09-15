@@ -13,6 +13,8 @@ import { usePathname, useSearchParams } from 'next/navigation';
 // NUESTRO: el monitor tiene sub-rutas (/spp/libro, /spp/carga...) y la
 // comparacion exacta dejaria el menu apagado dentro de ellas.
 import { rutaActiva } from '../lib/rutas';
+// NUESTRO: la marca, que aguas arriba no existe (alli la barra empieza en Home).
+import Marca from './Marca';
 
 const ITEMS = [
   { href: '/prices/', label: 'Prices', icon: '↗' },
@@ -38,6 +40,11 @@ export default function Sidebar({ expanded, onToggle }) {
 
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : ''}`}>
+      {/* NUESTRO: el logo encabeza la barra — es la esquina superior izquierda
+          del tablero, ya que esta cromatica no lleva cabecera. */}
+      <Marca />
+      <div className="side-sep" />
+
       {/* Home / menu — top item, divider below separates it from the dashboards */}
       <Link href={`/${q}`} className={`side-item ${isActive('/') ? 'active' : ''}`}>
         <span className="icon" aria-hidden="true">⌂</span>

@@ -33,3 +33,31 @@
    62vh, y sin esto el scroll vertical vuelve con cada actualizacion del
    sistema de diseno. El borde, el radio y la sombra SI se heredan. */
 .table-wrap { overflow-x: auto; overflow-y: visible; max-height: none; }
+
+/* ----- La marca, en la cabecera de la barra lateral ------------------------
+   La cromatica de aguas arriba no trae cabecera, asi que la esquina superior
+   izquierda del tablero es el tope de la barra flotante. La marca vive ahi.
+
+   No es un .side-item: no navega (Home esta justo debajo) y no debe encender
+   ninguna tinta de estado al pasar el cursor.
+
+   El cambio simbolo <-> lockup usa los MISMOS selectores de estado que la
+   base aplica a las etiquetas del menu, para que todo entre y salga junto.
+   `height` fija y `overflow: hidden` evitan el salto de alto durante los
+   0.2s en que la barra cambia de ancho. */
+.side-marca {
+  flex-shrink: 0; overflow: hidden;
+  width: 100%; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  transition: justify-content 0.2s ease, padding 0.2s ease;
+}
+.sidebar:hover .side-marca, .sidebar.expanded .side-marca {
+  justify-content: flex-start; padding-left: 14px;
+}
+.side-marca img { display: block; }
+.side-marca-simbolo { width: 26px; height: auto; }
+.side-marca-lockup { width: 112px; height: auto; }
+/* plegada: solo el simbolo */
+.sidebar:not(:hover):not(.expanded) .side-marca-lockup { display: none; }
+/* desplegada: solo el lockup, que ya trae su propio simbolo */
+.sidebar:hover .side-marca-simbolo, .sidebar.expanded .side-marca-simbolo { display: none; }

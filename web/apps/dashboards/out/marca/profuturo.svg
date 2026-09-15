@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48" viewBox="0 0 224 48" role="img" aria-label="Profuturo">
+  <!-- NUESTRO. El lockup completo: solo se ve con la barra desplegada. -->
+  <title>Profuturo</title>
+  <text x="0" y="36" fill="#E83224" font-size="34" font-weight="600" letter-spacing="-0.8"
+    font-family="Inter, 'Segoe UI', system-ui, -apple-system, sans-serif">Profuturo</text>
+  <path fill="#E83224" transform="translate(166 1) scale(0.52)" d="M62 5C46 24 26 32 4 26c20 12 42 0 58-21z"/>
+</svg>

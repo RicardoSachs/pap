@@ -1,0 +1,19 @@
+El logo del tablero va aqui. Si esta carpeta no tiene ninguna imagen, la
+barra lateral empieza directamente en Home, sin hueco ni marco vacio.
+
+Basta con soltar el archivo; no hay que tocar codigo ni recompilar.
+Sirve PNG, SVG, JPG o WEBP, con cualquier nombre.
+
+Son dos piezas, porque son dos situaciones distintas:
+
+  - El que lleve "simbolo" en el nombre se usa con la barra PLEGADA,
+    donde solo hay 48px de ancho. Ahi no entra una palabra.
+  - Cualquier otra imagen se usa con la barra DESPLEGADA (180px), y es
+    donde cabe el logo completo con su bajada.
+
+Si solo pones una de las dos, la otra situacion simplemente no muestra
+nada. Conviene que vengan con fondo transparente: el tablero tiene tema
+claro y oscuro, y un fondo blanco se veria como un recuadro en el oscuro.
+
+Las proporciones se respetan solas: el CSS las mide por alto y deja el
+ancho libre.

@@ -43,7 +43,6 @@ export default function Sidebar({ expanded, onToggle }) {
       {/* NUESTRO: el logo encabeza la barra — es la esquina superior izquierda
           del tablero, ya que esta cromatica no lleva cabecera. */}
       <Marca />
-      <div className="side-sep" />
 
       {/* Home / menu — top item, divider below separates it from the dashboards */}
       <Link href={`/${q}`} className={`side-item ${isActive('/') ? 'active' : ''}`}>

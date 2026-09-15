@@ -4,26 +4,51 @@
 // adoptamos aguas arriba no tiene cabecera: la esquina superior izquierda del
 // tablero ES el tope de esta barra flotante, y ahi va la marca.
 //
-// Son dos archivos porque son dos situaciones distintas, no dos tamanos del
-// mismo dibujo: plegada la barra mide 48px y solo entra el simbolo; desplegada
-// mide 180px y entra el lockup con la palabra y la bajada. Cual se ve lo
-// decide el CSS (app/estilos/ajustes.css), con los mismos selectores de
-// estado que usa el resto de la barra, para que aparezca y desaparezca a la
-// vez que las etiquetas del menu.
+// Mientras no haya logo, esto no ocupa sitio: la barra empieza en Home, sin
+// hueco reservado ni separador suelto. Cuando aparezca una imagen en
+// public/marca/, se muestra sola. Por eso el alto y el separador dependen de
+// que algo haya cargado de verdad, no de que el archivo este declarado.
 //
-// Son los PNG oficiales, con transparencia: 300x106 el lockup y 85x106 el
-// simbolo. El CSS los mide por ALTO y deja el ancho en auto, para respetar
-// esas proporciones sin repetirlas aqui. Si algun dia llegan en SVG, basta
-// reemplazar los archivos y la extension en estas dos lineas.
+// Cual archivo es lo dice la API (/api/marca), no una ruta escrita aqui. Es a
+// proposito: en las maquinas donde esto corre no hay Node, asi que un nombre
+// fijo obligaria a recompilar para estrenar un logo, y probar-y-fallar con
+// <img> dejaria un 404 por carga en el log que el operador lee cuando algo va
+// mal de verdad. Preguntando, el operador suelta el archivo y ya.
 // ---------------------------------------------------------------------------
+'use client';
+
+import { useEffect, useState } from 'react';
+
 export default function Marca() {
+  const [marca, setMarca] = useState(null);
+
+  useEffect(() => {
+    let vigente = true;
+    fetch('/api/marca')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (vigente) setMarca(d); })
+      // Sin logo se ve exactamente igual que con la API caida, y esa es la
+      // lectura correcta: el logo nunca es motivo para avisar de nada.
+      .catch(() => {});
+    return () => { vigente = false; };
+  }, []);
+
+  if (!marca || (!marca.simbolo && !marca.lockup)) return null;
+
   return (
-    <div className="side-marca">
-      {/* El simbolo va con alt vacio y aria-hidden: es el mismo logo que el
-          lockup, y anunciar los dos hacia que el lector de pantalla leyera
-          "Profuturo" dos veces seguidas al entrar en la barra. */}
-      <img className="side-marca-simbolo" src="/marca/profuturo-simbolo.png" alt="" aria-hidden="true" />
-      <img className="side-marca-lockup" src="/marca/profuturo.png" alt="Profuturo" />
-    </div>
+    <>
+      <div className="side-marca">
+        {/* El simbolo va con alt vacio y aria-hidden: es el mismo logo que el
+            lockup, y anunciar los dos hacia que el lector de pantalla leyera
+            el nombre dos veces seguidas al entrar en la barra. */}
+        {marca.simbolo && (
+          <img className="side-marca-simbolo" src={marca.simbolo} alt="" aria-hidden="true" />
+        )}
+        {marca.lockup && (
+          <img className="side-marca-lockup" src={marca.lockup} alt="Profuturo" />
+        )}
+      </div>
+      <div className="side-sep" />
+    </>
   );
 }

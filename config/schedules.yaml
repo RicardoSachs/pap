@@ -1,6 +1,57 @@
+# config/schedules.yaml
+# ---------------------------------------------------------------
+# Cron times for scripts/scheduler.py — the single source of truth
+# for WHEN each job fires. WHICH jobs register on a given machine
+# is decided by the capability flags in machine_config
+# (bloomberg_enabled, scraper_enabled, sbs_ingestion_enabled,
+# fms_enabled), not by this file.
+#
+# Fields per job:
+#   day_of_week          APScheduler cron expression (e.g. mon-fri)
+#   hour, minute         fire time in `timezone`
+#   timezone             optional IANA name; defaults to the
+#                        machine timezone from machine_config
+#   misfire_grace_time   optional seconds; defaults to 3600
+#
+# Daily chain (all times America/Lima unless noted):
+#   08:30 acquire_sbs       browser scrape of prev reporting day
+#   09:00 check_sbs         gate: files arrived on network share
+#   09:15 ingest_sbs        SBS staging -> fact
+#   13:00 positions_fms     four FMS feeds, prev NYSE-or-XLIM day
+#   17:30 prices_bloomberg  America/New_York — DST-proof "after
+#                           NYSE close" regardless of season
+# ---------------------------------------------------------------
 
-reference:
-  - reference_data.securities
+jobs:
+  prices_bloomberg:
+    day_of_week: mon-fri
+    hour: 17
+    minute: 30
+    timezone: America/New_York
 
-daily:
-  - prices.equity_daily
+  dim_enrichment:
+    day_of_week: mon
+    hour: 9
+    minute: 0
+
+  acquire_sbs:
+    day_of_week: mon-fri
+    hour: 8
+    minute: 30
+
+  check_sbs:
+    day_of_week: mon-fri
+    hour: 9
+    minute: 0
+    misfire_grace_time: 1800
+
+  ingest_sbs:
+    day_of_week: mon-fri
+    hour: 9
+    minute: 15
+    misfire_grace_time: 1800
+
+  positions_fms:
+    day_of_week: mon-fri
+    hour: 13
+    minute: 0

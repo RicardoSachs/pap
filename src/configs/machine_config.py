@@ -46,9 +46,8 @@ def get_machine_config() -> dict:
     else:
         path = _BASE_CONFIG
         logger.warning(
-            'machine_config.local.yaml not found. '
-            'Copy config/machine_config.yaml to '
-            'configs/machine_config.local.yaml and fill in values '
+            f'{_LOCAL_CONFIG} not found. '
+            'Copy config/machine_config.yaml there and fill in values '
             'for this machine before running any pipelines'
         )
 
@@ -66,7 +65,7 @@ def machine_id() -> str:
     val = get_machine_config().get('machine_id', '')
     if not val:
         logger.warning(
-            'machine_id not set in machine_config.local.yaml.'
+            'machine_id not set in market_data_config.yaml.'
         )
     return val or 'unknown'
 
@@ -81,6 +80,14 @@ def automated_scraper_enabled() -> bool:
 
 def fms_enabled() -> bool:
     return bool(get_machine_config().get('fms_enabled', False))
+
+def sbs_ingestion_enabled() -> bool:
+    """
+    True on the machine that ingests SBS files from the network
+    share into Postgres (the i7 server). Exactly one machine
+    should set this, or the daily ingest runs twice.
+    """
+    return bool(get_machine_config().get('sbs_ingestion_enabled', False))
 
 def chromedriver_path() -> str | None:
     """
@@ -114,7 +121,7 @@ def assert_bloomberg() -> None:
     if not bloomberg_enabled():
         raise RuntimeError(
             f'Bloomberg is not enabled on this machine ({machine_id()}). '
-            'Set bloomberg_enabled: true in machine_config.local.yaml'
+            'Set bloomberg_enabled: true in market_data_config.yaml'
             'and ensure the Bloomberg BLP is installed to access the API.'
         )
     
@@ -126,7 +133,7 @@ def assert_fms() -> None:
     if not fms_enabled():
         raise RuntimeError(
             f"FMS is not enabled on this machine ({machine_id()})"
-            "Set fms_enabled: true in machine_config.local.yaml."
+            "Set fms_enabled: true in market_data_config.yaml."
         )
     
 def assert_scraper() -> None:
@@ -137,13 +144,13 @@ def assert_scraper() -> None:
     if not scraper_enabled():
         raise RuntimeError(
             f'Scraper is not enabled on this machine ({machine_id()}). '
-            'Set scraper_enabled: true in machine_config.local.yaml.'
+            'Set scraper_enabled: true in market_data_config.yaml.'
         )
     
     driver = chromedriver_path()
     if not driver:
         raise RuntimeError(
-            'chromedriver_path is not set in machine_config.local.yaml. '
+            'chromedriver_path is not set in market_data_config.yaml. '
             'Download chromedriver.exe and set the path.'
         )
     
@@ -155,5 +162,5 @@ def assert_automated_scraper() -> None:
     if not automated_scraper_enabled():
         raise RuntimeError(
             f'Automated scaper is not enabled on this machine ({machine_id()}). '
-            f'Set automated_scraper_enabled: true in machine_config.local.yaml. '
+            f'Set automated_scraper_enabled: true in market_data_config.yaml. '
         )

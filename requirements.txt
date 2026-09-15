@@ -10,3 +10,4 @@ pyyaml
 selenium
 beautifulsoup4
 exchange_calendars
+apscheduler<4

@@ -27,7 +27,6 @@
 # ---------------------------------------------------------------
 
 import argparse
-import importlib
 import logging
 import sys
 from datetime import date
@@ -36,17 +35,10 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.pipelines.prices.sbs.registry import SBS_PIPELINES, run_sbs_pipelines
 from src.shared.logging import setup_logging
 
 logger = logging.getLogger(__name__)
-
-# Registry of SBS sub-pipelines
-SBS_PIPELINES = {
-    "vector_completo": "src.pipelines.prices.sbs.vector_completo.run",
-    "rf_local":        "src.pipelines.prices.sbs.rf_local.run",
-    "rf_exterior":     "src.pipelines.prices.sbs.rf_exterior.run",
-    "tipo_cambio":     "src.pipelines.prices.sbs.tipo_cambio.run",
-}
 
 
 def main() -> None:
@@ -64,7 +56,7 @@ def main() -> None:
         "--source",
         type=str,
         default="bloomberg",
-        choices=["bloomberg", "refinitiv", "sbs"],
+        choices=["bloomberg", "sbs"],
         help="Data source to run. Defaults to bloomberg.",
     )
     parser.add_argument(
@@ -122,17 +114,11 @@ def main() -> None:
                     conn, domain="prices", source="sbs"
                 )
 
-        # Scope to one file type or run all
-        to_run = (
-            {args.file_type: SBS_PIPELINES[args.file_type]}
-            if args.file_type
-            else SBS_PIPELINES
+        run_sbs_pipelines(
+            run_date=args.date,
+            series_override=series_override,
+            file_type=args.file_type,
         )
-
-        for file_type, module_path in to_run.items():
-            logger.info(f"--- SBS pipeline: {file_type} ---")
-            mod = importlib.import_module(module_path)
-            mod.run(run_date=args.date, series_override=series_override)
 
 
 if __name__ == "__main__":

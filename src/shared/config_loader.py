@@ -1,7 +1,11 @@
 # src/shared/config_loader.py
 # ---------------------------------------------------------------
-# YAML config loaders: reads the securities/series/pipelines/schedules
-# config files from the config directory.
+# YAML config loaders for the config/ directory.
+# Only files with live consumers have loaders:
+#   schedules.yaml -> scripts/scheduler.py
+#   pipelines.yaml -> src/pipelines/dim/bloomberg/security/run.py
+# Series/universe definitions live in series_registry (seeded from
+# src/seeds/), not in YAML.
 
 from pathlib import Path
 import yaml
@@ -13,59 +17,12 @@ def _load_yaml(path: Path) -> dict:
         raise FileNotFoundError(f'Missing config file: {path}')
     with open(path, 'r') as f:
         return yaml.safe_load(f)
-    
-def load_securities() -> dict:
-    """
-    Securities, identifiers and universes
-    """
-    return _load_yaml(CONFIG_DIR / 'securities.yaml')
-
-def load_series() -> dict:
-    """
-    Series definitions (prices, fundamentals, cadence, default start)
-    """
-    return _load_yaml(CONFIG_DIR / 'series.yaml')
 
 def load_schedules() -> dict:
     """
-    Orchestration schedules
+    Scheduler job fire times (cron fields per job id)
     """
     return _load_yaml(CONFIG_DIR / 'schedules.yaml')
-
-def load_all_configs() -> dict:
-    """
-    Convenience loader for orchestrators
-    """
-    return {
-        'securities': load_securities(),
-        'series': load_series(),
-        'schedules': load_schedules
-    }
-
-def load_series_config(series_name:str) -> dict:
-    """
-    Load configuration for a logical series / pipeline
-    
-    """
-
-    cfg = _load_yaml(CONFIG_DIR / 'series.yaml')
-
-    if series_name not in cfg:
-        raise KeyError(f"Series '{series_name}' not found in series.yaml")
-    
-    return cfg[series_name]
-
-def load_universe(universe_name: str) -> list[dict]:
-    """
-    Load universe definition (list of securities)
-    
-    """
-    cfg = _load_yaml(CONFIG_DIR / 'universes.yaml')
-
-    if universe_name not in cfg:
-        raise KeyError(f"Universe '{universe_name}' not found in securities.yaml")
-    
-    return cfg[universe_name]
 
 def load_pipelines() -> dict:
     """

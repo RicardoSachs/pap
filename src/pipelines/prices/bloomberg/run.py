@@ -50,6 +50,12 @@ def run(
     """
     run_date = run_date or (date.today() - timedelta(days = 1))
 
+    # Incremental runs skip NYSE holidays; backfills (series_override)
+    # pass through, same gating pattern as the SBS pipelines.
+    if series_override is None and not is_business_day(run_date):
+        logger.info(f'{run_date} is not a NYSE business day. Skipping.')
+        return
+
     logger.info(
         f'=== prices/bloomberg run started | run_date={run_date} | '
         f"mode={'backfill' if series_override else 'incremental'} ==="

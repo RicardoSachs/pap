@@ -281,6 +281,58 @@ def _validar_referencias(conn, componentes: list[dict], fondo: int) -> None:
 
 # ---- Precios --------------------------------------------------------
 
+def usos_de(conn, fuente: str, ref_id: int) -> tuple[list[dict], list[dict]]:
+    """
+    Where a priced series is used by the benchmark, split into the
+    baskets in force and the superseded ones.
+
+    The split is the whole point. This table is VERSIONED: a rebalance
+    inserts a new basket instead of editing rows, so a component dropped
+    years ago still has rows here forever. Counting all of them together
+    and telling the operator to "take it out of the basket" names
+    something they cannot find - it is not in the current basket. What
+    they can act on is the fund and the date of the version that still
+    holds it.
+
+    Returns (vigentes, historicos), each row with fondo and vigente_desde.
+    """
+    filas = conn.execute(
+        """
+        SELECT c.fondo, c.vigente_desde,
+               c.vigente_desde = (SELECT MAX(v.vigente_desde)
+                                  FROM benchmark_composicion v
+                                  WHERE v.fondo = c.fondo) AS vigente
+        FROM benchmark_composicion c
+        WHERE (c.fuente = %s AND c.ref_id = %s)
+           OR (c.fx_fuente = %s AND c.fx_ref_id = %s)
+        ORDER BY c.fondo, c.vigente_desde
+        """, (fuente, ref_id, fuente, ref_id)).fetchall()
+    return ([f for f in filas if f["vigente"]],
+            [f for f in filas if not f["vigente"]])
+
+
+def motivo_en_uso(nombre: str, vigentes: list[dict], historicos: list[dict]) -> str:
+    """The refusal, written so the next step is obvious."""
+    def lista(filas):
+        return ", ".join(f"fondo {f['fondo']} (desde {f['vigente_desde']})"
+                         for f in filas)
+
+    if vigentes:
+        aviso = (f"'{nombre}' esta en la canasta vigente del benchmark: "
+                 f"{lista(vigentes)}. Quitala de esa canasta antes de borrarla.")
+        if historicos:
+            aviso += (f" Tambien aparece en {len(historicos)} version(es) "
+                      "anterior(es).")
+        return aviso
+    # Solo en versiones superadas: decirle "quitala de la canasta" seria
+    # mandarlo a buscar algo que ya no esta ahi.
+    return (f"'{nombre}' ya no esta en ninguna canasta vigente, pero si en "
+            f"{len(historicos)} version(es) anterior(es) del benchmark: "
+            f"{lista(historicos)}. Borrarla dejaria esos tramos sin poder "
+            "recalcularse. Si ya no necesitas reproducirlos, borra primero "
+            "esas versiones de la composicion.")
+
+
 def _precios(conn, fuente: str, ref_id: int) -> dict:
     """{date: price} of one series, whole history."""
     if fuente == "bloomberg":

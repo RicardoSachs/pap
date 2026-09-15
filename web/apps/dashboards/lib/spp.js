@@ -12,6 +12,21 @@ import { BASE } from './api';
 // Absolute URL for download links (CSV/XLSX) that bypass fetch.
 export const apiUrl = (path) => `${BASE}${path}`;
 
+// Lo que significa cada codigo EN ESTE TABLERO, no en abstracto. Solo se
+// usa cuando la API no mando motivo: si lo mando, manda el suyo, que
+// siempre es mas concreto que esto.
+const ESTADOS = {
+  400: 'Los datos enviados no son validos.',
+  404: 'Esa operacion no existe en la API. Suele ser que el tablero quedo '
+    + 'de una version mas nueva que la API: cierra y vuelve a abrir «Tablero SPP».',
+  409: 'La operacion choca con el estado actual: o hay otra corriendo, o lo '
+    + 'que intentas borrar o cambiar esta en uso. El detalle esta en la '
+    + 'ventana «Tablero SPP (API)».',
+  503: 'Esta maquina no puede hacer eso (falta el terminal o el permiso en el .env).',
+};
+const explicarEstado = (estado) => ESTADOS[estado]
+  || `La API respondio ${estado}. El detalle esta en la ventana «Tablero SPP (API)».`;
+
 // Mutating fetch (JSON or FormData). Returns {ok, status, data} instead of
 // throwing so callers can show the backend's `motivo` verbatim.
 //
@@ -30,6 +45,11 @@ export async function apiSend(path, method, body, isForm = false) {
   try {
     const res = await fetch(`${BASE}${path}`, opts);
     const data = await res.json().catch(() => ({}));
+    // Una respuesta de error SIEMPRE sale con motivo. Los dieciseis
+    // sitios que llaman aqui muestran el motivo o, si no viene, "Error
+    // 409" - un numero que es del protocolo, no del problema, y que al
+    // operador no le dice nada. Rellenarlo aqui los arregla a todos.
+    if (!res.ok && !data.motivo) data.motivo = explicarEstado(res.status);
     return { ok: res.ok, status: res.status, data };
   } catch {
     return {

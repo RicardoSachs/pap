@@ -27,6 +27,7 @@ import pandas as pd
 
 from src.configs.machine_config import bloomberg_enabled, machine_id
 from src.db.connection import get_connection
+from src.pipelines.prices.sbs.valor_cuota.benchmark_composicion import (motivo_en_uso, usos_de)
 from src.shared import tabular
 
 logger = logging.getLogger(__name__)
@@ -177,20 +178,13 @@ def borrar_serie(serie_id: int, con_datos: bool = False) -> dict:
         # diagnosis that sends the operator looking for missing prices
         # instead of the series they deleted. The manual store already
         # guards this; both stores have to behave the same way.
-        usos = conn.execute(
-            """
-            SELECT COUNT(*) AS n FROM benchmark_composicion
-            WHERE (fuente = 'bloomberg' AND ref_id = %s)
-               OR (fx_fuente = 'bloomberg' AND fx_ref_id = %s)
-            """, (serie_id, serie_id)).fetchone()["n"]
-        if usos:
+        vigentes, historicos = usos_de(conn, "bloomberg", serie_id)
+        if vigentes or historicos:
             fila = conn.execute(
                 "SELECT ticker, campo FROM bloomberg_serie WHERE serie_id = %s",
                 (serie_id,)).fetchone()
             nombre = f"{fila['ticker']} {fila['campo']}" if fila else serie_id
-            raise ValueError(
-                f"'{nombre}' aparece en {usos} composicion(es) del benchmark. "
-                "Quitala de la canasta antes de borrarla.")
+            raise ValueError(motivo_en_uso(nombre, vigentes, historicos))
 
         n = conn.execute(
             "SELECT COUNT(*) AS n FROM bloomberg_dato WHERE serie_id = %s",

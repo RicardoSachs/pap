@@ -30,6 +30,7 @@ import logging
 import pandas as pd
 
 from src.db.connection import get_connection
+from src.pipelines.prices.sbs.valor_cuota.benchmark_composicion import (motivo_en_uso, usos_de)
 from src.shared import tabular
 
 logger = logging.getLogger(__name__)
@@ -129,16 +130,9 @@ def borrar_serie(serie_id: int, con_datos: bool = False) -> dict:
     serie_id = int(serie_id)
     with get_connection() as conn:
         serie = _serie_o_error(conn, serie_id)
-        usos = conn.execute(
-            """
-            SELECT COUNT(*) AS n FROM benchmark_composicion
-            WHERE (fuente = 'manual' AND ref_id = %s)
-               OR (fx_fuente = 'manual' AND fx_ref_id = %s)
-            """, (serie_id, serie_id)).fetchone()["n"]
-        if usos:
-            raise ValueError(
-                f"'{serie['nombre']}' aparece en {usos} composicion(es) del "
-                "benchmark. Quitala de la canasta antes de borrarla.")
+        vigentes, historicos = usos_de(conn, "manual", serie_id)
+        if vigentes or historicos:
+            raise ValueError(motivo_en_uso(serie["nombre"], vigentes, historicos))
         puntos = conn.execute(
             "SELECT COUNT(*) AS n FROM serie_manual_dato WHERE serie_id = %s",
             (serie_id,)).fetchone()["n"]

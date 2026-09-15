@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/DashboardProvider.js
 // ---------------------------------------------------------------------------
 // Global dashboard context: portfolio, period, and source — the shared state
@@ -62,10 +61,10 @@ export default function DashboardProvider({ children }) {
   useEffect(() => {
     if (!hydrated) return;
     try { localStorage.setItem(LS_KEY, JSON.stringify(ctx)); } catch { /* ignore */ }
-    // The SPP tablero has no portfolio/period/source dimension - the Header
-    // already hides those controls there - so stamping them on its URLs only
-    // produced links and bookmarks carrying parameters no SPP view reads.
-    // localStorage above still keeps the context for the other dashboards.
+    // NUESTRO: el monitor SPP no lee cartera, periodo ni fuente, asi que
+    // estamparlos en su URL solo produce enlaces y marcadores cargados de
+    // parametros que ninguna de sus vistas mira. El localStorage de arriba
+    // sigue guardando el contexto para los demas tableros.
     if (rutaActiva(pathname, '/spp/')) return;
     const sp = new URLSearchParams();
     if (ctx.portfolioId) sp.set('portfolio', ctx.portfolioId);
@@ -118,4 +117,3 @@ export default function DashboardProvider({ children }) {
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
-

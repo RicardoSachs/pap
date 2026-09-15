@@ -14,16 +14,22 @@
 /* Weight follows consequence: one default action per panel, and the ones
    that delete or overwrite say so before they are clicked. Every button
    used to look identical, so "Registrar valores" and "Anular la fecha"
-   sat side by side with the same visual pull. */
-.btn.principal { background: var(--blue); border-color: var(--blue); color: #fff; }
-.btn.principal:hover { filter: brightness(1.08); color: #fff; }
-.btn.principal:disabled { filter: none; }
-.btn.peligro { color: var(--rose); }
-.btn.peligro:hover { border-color: var(--rose); color: var(--rose); }
+   sat side by side with the same visual pull.
+   La accion principal lleva el color de MARCA; lo destructivo, el
+   semantico de negativo. Nunca al reves: la marca no significa peligro. */
+.btn.principal { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.principal:hover { background: var(--brand-dark); border-color: var(--brand-dark); color: #fff; }
+.btn.principal:disabled { background: var(--brand); }
+.btn.peligro { color: var(--negative); }
+.btn.peligro:hover { border-color: var(--negative); color: var(--negative); }
 /* NINGUN cuadro tiene scroll vertical propio: crece con su contenido y
    quien scrollea es la pagina. Cuanto se ve lo deciden los botones de
    expandir/contraer (components/useVerTodo.js), no una cajita con barra.
    Queda el scroll HORIZONTAL, que no es opcional: una tabla de cincuenta
    columnas sin el desbordaria la pagina entera y descuadraria la barra
-   lateral y la cabecera. */
-.table-wrap { overflow-x: auto; border: 1px solid var(--s4); border-radius: 10px; }
+   lateral y la cabecera.
+
+   El max-height hay que anularlo a mano: la base trae .table-wrap con
+   62vh, y sin esto el scroll vertical vuelve con cada actualizacion del
+   sistema de diseno. El borde, el radio y la sombra SI se heredan. */
+.table-wrap { overflow-x: auto; overflow-y: visible; max-height: none; }

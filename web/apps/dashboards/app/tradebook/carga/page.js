@@ -289,6 +289,11 @@ function PorArchivo({ alCargar, origen, traders }) {
 }
 
 
+// El mismo asterisco que marca las columnas obligatorias en la ventana del
+// formato: una sola manera de decir «esto hace falta» en todo el módulo.
+const Req = () => <span className="fmt-req">*</span>;
+
+
 // ---- Captura a mano (solo la vía de traders) -------------------------------
 
 function AMano({ alCargar, traders }) {
@@ -312,43 +317,47 @@ function AMano({ alCargar, traders }) {
     } else setEco({ ok: false, texto: r.data.motivo });
   };
 
+  // A mano se piden precio y moneda, que en la carga por archivo son
+  // opcionales: quien escribe una operacion tiene el boleto delante, y la
+  // moneda en blanco se rellenaria sola con PEN sin que nadie lo note.
   const listo = form.fecha && form.instrumento && form.cantidad
-    && (form.monto || form.precio) && form.trader.trim();
+    && form.precio && form.moneda.trim() && form.trader.trim();
 
   return (
     <div className="panel">
       <div className="panel-title">Captura a mano</div>
       <p className="page-sub">
-        Para la operación suelta que no viene en el archivo. El monto se
-        calcula de cantidad × precio si no lo escribes.
+        Para la operación suelta que no viene en el archivo. Los campos
+        con <Req /> son obligatorios; el monto se calcula de cantidad × precio
+        si no lo escribes.
       </p>
       <div className="controls spp-controls" style={{ marginTop: 10 }}>
-        <div className="field"><label>Trader</label>
+        <div className="field"><label>Trader<Req /></label>
           <input className="text-input" list="traders-conocidos" style={{ width: 170 }}
             value={form.trader} onChange={set('trader')} />
           <datalist id="traders-conocidos">
             {traders.map((t) => <option key={t} value={t} />)}
           </datalist></div>
-        <div className="field"><label>Fecha</label>
+        <div className="field"><label>Fecha<Req /></label>
           <input className="date-input" type="date" value={form.fecha} onChange={set('fecha')} /></div>
-        <div className="field"><label>Fondo</label>
+        <div className="field"><label>Fondo<Req /></label>
           <input className="text-input" style={{ width: 70 }} value={form.fondo} onChange={set('fondo')} /></div>
         <div className="field"><label>Lado</label>
           <SppSeg items={LADOS} value={form.lado}
             onChange={(v) => setForm((f) => ({ ...f, lado: v }))} /></div>
-        <div className="field"><label>Instrumento</label>
+        <div className="field"><label>Instrumento<Req /></label>
           <input className="text-input" style={{ width: 230 }} placeholder="PERU 3.55 03/31"
             value={form.instrumento} onChange={set('instrumento')} /></div>
       </div>
       <div className="controls spp-controls" style={{ marginTop: 10 }}>
-        <div className="field"><label>Cantidad</label>
+        <div className="field"><label>Cantidad<Req /></label>
           <input className="text-input" style={{ width: 130 }} value={form.cantidad} onChange={set('cantidad')} /></div>
-        <div className="field"><label>Precio</label>
+        <div className="field"><label>Precio<Req /></label>
           <input className="text-input" style={{ width: 110 }} value={form.precio} onChange={set('precio')} /></div>
         <div className="field"><label>Monto</label>
           <input className="text-input" style={{ width: 140 }} placeholder="se calcula"
             value={form.monto} onChange={set('monto')} /></div>
-        <div className="field"><label>Moneda</label>
+        <div className="field"><label>Moneda<Req /></label>
           <input className="text-input" style={{ width: 80 }} value={form.moneda} onChange={set('moneda')} /></div>
       </div>
       <div className="controls spp-controls" style={{ marginTop: 10 }}>

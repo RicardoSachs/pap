@@ -37,6 +37,17 @@ ORIGENES = ("fms", "excel", "manual")
 # trader signifique algo.
 ORIGENES_TRADER = ("excel", "manual")
 
+# Lo que la CAPTURA A MANO exige de mas. Escribir una operacion a mano es
+# tener el boleto delante, asi que el precio y la moneda estan ahi para
+# copiarlos; en un archivo pueden faltar legitimamente, porque el sistema que
+# lo genero a veces solo trae el monto.
+#
+# La moneda importa mas de lo que parece: se rellena sola con PEN cuando
+# viene vacia, y eso en un archivo es comodo y a mano es una trampa - un
+# descuido convierte una operacion en dolares en una en soles, y el numero
+# queda plausible.
+EXIGE_A_MANO = ("precio", "moneda")
+
 # Como puede venir llamada cada columna. La clave es el nombre normalizado
 # por tabular.clave_col (sin tildes, minusculas, sin separadores).
 _ALIAS = {
@@ -179,6 +190,16 @@ def _validar(op: dict) -> dict:
     if origen not in ORIGENES:
         raise ValueError(f"Origen '{origen}' desconocido.")
 
+    if origen == "manual":
+        # Se mira el valor CRUDO, no el ya normalizado: normalizar_moneda
+        # devuelve PEN para una cadena vacia, asi que despues de pasar por
+        # ella no hay forma de distinguir "no lo puso" de "puso PEN".
+        nombre = {"precio": "el precio", "moneda": "la moneda"}
+        faltan = [c for c in EXIGE_A_MANO if _texto(op.get(c)) is None]
+        if faltan:
+            raise ValueError("Falta " + " y ".join(nombre[c] for c in faltan)
+                             + ". Al registrar a mano se piden los dos.")
+
     # El trader es lo que separa los dos libros. Se exige donde la fila es
     # el registro de alguien, y se rechaza donde no lo es: una fila de FMS
     # con un trader escrito seria una atribucion inventada, y el reparto por
@@ -254,13 +275,24 @@ def registrar(op: dict) -> dict:
 
 
 def actualizar(operacion_id: int, op: dict) -> dict:
-    """Corrects a stored operation, keeping its id."""
-    fila = _validar(op)
+    """
+    Corrects a stored operation, keeping its id AND its origen.
+
+    El origen no se toca al corregir: dice de donde salio la fila, y eso
+    no cambia porque alguien arregle un precio. Dejarlo en manos de quien
+    llama significaba que una correccion sin ese campo reetiquetaba una
+    fila de FMS como capturada a mano - y con ella cambiaban las reglas
+    que se le exigen.
+    """
+    with get_connection() as conn:
+        actual = conn.execute(
+            "SELECT origen FROM tradebook WHERE operacion_id = %s",
+            (operacion_id,)).fetchone()
+        if not actual:
+            raise ValueError(f"No existe la operacion {operacion_id}.")
+    fila = _validar({**op, "origen": actual["origen"]})
     fila["operacion_id"] = int(operacion_id)
     with get_connection() as conn:
-        if not conn.execute("SELECT 1 FROM tradebook WHERE operacion_id = %s",
-                            (operacion_id,)).fetchone():
-            raise ValueError(f"No existe la operacion {operacion_id}.")
         conn.execute("""
             UPDATE tradebook SET
                 referencia = %(referencia)s, fecha = %(fecha)s, fondo = %(fondo)s,

@@ -185,3 +185,58 @@ def test_posiciones_ya_no_es_un_origen():
     """La derivacion desde tenencias se retiro; el valor no debe volver."""
     with pytest.raises(ValueError, match="Origen"):
         _validar({**BASE, "origen": "posiciones"})
+
+
+# ---- Lo que la captura A MANO exige de mas ---------------------------------
+
+A_MANO = {**BASE, "origen": "manual"}
+
+
+def test_a_mano_el_precio_es_obligatorio():
+    sin = {k: v for k, v in A_MANO.items() if k != "precio"}
+    with pytest.raises(ValueError, match="el precio"):
+        _validar({**sin, "monto": 98_450})
+
+
+def test_a_mano_la_moneda_es_obligatoria():
+    """
+    La moneda vacia NO cae en PEN cuando se captura a mano. En un archivo
+    ese valor por defecto es comodo; a mano es una trampa: un descuido
+    convierte una operacion en dolares en una en soles, y el numero queda
+    perfectamente plausible.
+    """
+    sin = {k: v for k, v in A_MANO.items() if k != "moneda"}
+    with pytest.raises(ValueError, match="la moneda"):
+        _validar(sin)
+
+
+@pytest.mark.parametrize("vacio", ["", "   ", None])
+def test_a_mano_la_moneda_en_blanco_no_vale(vacio):
+    with pytest.raises(ValueError, match="la moneda"):
+        _validar({**A_MANO, "moneda": vacio})
+
+
+def test_a_mano_los_dos_que_faltan_se_nombran_juntos():
+    sin = {k: v for k, v in A_MANO.items() if k not in ("precio", "moneda")}
+    with pytest.raises(ValueError, match="el precio y la moneda"):
+        _validar({**sin, "monto": 98_450})
+
+
+def test_a_mano_con_los_dos_pasa():
+    op = _validar(A_MANO)
+    assert op["precio"] == 98.45 and op["moneda"] == "USD"
+
+
+@pytest.mark.parametrize("origen", ["excel", "fms"])
+def test_por_archivo_siguen_siendo_opcionales(origen):
+    """
+    Lo exigido de mas es de la captura a mano, no del libro. Un archivo
+    puede traer solo el monto, porque el sistema que lo genero a veces no
+    da el precio, y endurecerlo aqui romperia cargas que hoy funcionan.
+    """
+    sin = {k: v for k, v in BASE.items() if k not in ("precio", "moneda")}
+    if origen == "fms":
+        sin.pop("trader", None)
+    op = _validar({**sin, "monto": 98_450, "origen": origen})
+    assert op["precio"] is None
+    assert op["moneda"] == "PEN"      # ahi si se rellena sola

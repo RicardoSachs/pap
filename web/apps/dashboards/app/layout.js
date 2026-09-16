@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/app/layout.js
 // ---------------------------------------------------------------------------
 // Root layout: self-hosted fonts (Inter + IBM Plex Mono via next/font), the
@@ -40,4 +39,3 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
-

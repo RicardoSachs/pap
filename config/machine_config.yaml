@@ -19,9 +19,14 @@ machine_id: ''
 # and whether run_prices.py --source bloomberg is permitted.
 bloomberg_enabled: false
 
-# Set to true on machines that are intended to query from FMS SQL Server
-# on the scheduling routines. Not necesary that is not able to reach
+# Set to true on machines that can reach the FMS SQL Server and should
+# run the FMS positions pipelines in the scheduler.
 fms_enabled: false
+
+# Set to true on the machine that ingests SBS files from the network
+# share into Postgres (the i7 server). Exactly ONE machine should set
+# this, or the daily SBS ingest runs twice.
+sbs_ingestion_enabled: false
 
 # Set to true on machines used for SBS browser acquisition.
 # Controls whether scraper jobs are registered in the scheduler
@@ -29,13 +34,13 @@ fms_enabled: false
 scraper_enabled: false
 
 # Set to true on machines that run fully automated scrapers
-# (no manual login required). Tipically the PostgreSQL server.
+# (no manual login required). Typically the PostgreSQL server.
 # Distinct from scraper_enabled which covers the SBS manual image pad.
-automatic_scraper_enabled: false
+automated_scraper_enabled: false
 
 # Absolute path to chromedriver.exe.
-# Only required if scraped_enabled is true.
-# Use %USERPROFULE% to avoid harcoding the username:
+# Only required if scraper_enabled is true.
+# Use %USERPROFILE% to avoid hardcoding the username:
 #   "%USERPROFILE%\\Documents\\Tools\\chromedriver\\chromedriver.exe"
 # Leave empty string if scraper_enabled is false.
 chromedriver_path: ''

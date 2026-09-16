@@ -4,37 +4,14 @@
 
    globals.css es el sistema de diseno de aguas arriba y se queda verbatim:
    cuando llegue una version nueva se reemplaza entero y esto sobrevive.
-   Aqui van dos cosas: el puente de tokens que nuestros tableros necesitan,
-   y las pocas reglas globales en que divergimos.
+   Aqui va SOLO lo que globals.css no trae o trae distinto para todo el sitio.
+   Lo de cada tablero va en su hoja (app/spp/spp.css, app/tradebook/
+   tradebook.css) y lo que ambos comparten en estilos/tablero.css.
+
+   Los tokens (--brand, --positive, --negative, --warning, --card-border) los
+   define globals.css desde la release 0.1.8 de aguas arriba con los mismos
+   nombres que usan nuestros tableros: no hace falta puente.
    =========================================================================== */
-
-/* ----- Puente de tokens -------------------------------------------------------
-   El monitor de valor cuota y el Tradebook se escribieron sobre un sistema de
-   diseno con nombres SEMANTICOS (--brand, --positive, --negative, --warning).
-   El de aguas arriba nombra los mismos colores por su tono (--blue, --teal,
-   --rose, --amber). En vez de reescribir los tableros, se traduce aqui una
-   sola vez: el acento de la interfaz es el azul de aguas arriba, y los
-   semanticos apuntan a los suyos. Un cambio de paleta en globals.css llega a
-   nuestros tableros sin tocarlos.
-
-   OJO: --brand es el acento de la INTERFAZ (botones, pestanas activas). El
-   rojo de Profuturo en los graficos no pasa por aqui: sale de config/afps.yaml
-   y significa "esta es la casa", no "esto es un boton". */
-:root {
-  --brand: var(--blue);
-  --brand-dark: #4A78E6;
-  --brand-light: #7DA3FF;
-  --brand-tint: rgba(91, 140, 255, 0.10);
-  --brand-tint2: rgba(91, 140, 255, 0.18);
-  --positive: var(--teal);
-  --negative: var(--rose);
-  --warning: var(--amber);
-  --accent-blue: var(--blue);
-  --card-border: 1px solid var(--s4);
-  --card-shadow: none;
-}
-
-/* ----- Divergencias globales -------------------------------------------------- */
 
 /* .dim means "fainter than the surrounding text" everywhere, so it has to
    win over .page-sub's own color: same specificity, and .page-sub is
@@ -43,8 +20,8 @@
 
 /* Weight follows consequence: one default action per panel, and the ones
    that delete or overwrite say so before they are clicked. La accion
-   principal lleva el acento de la interfaz; lo destructivo, el semantico de
-   negativo. Nunca al reves. */
+   principal lleva el color de MARCA; lo destructivo, el semantico de
+   negativo. Nunca al reves: la marca no significa peligro. */
 .btn.principal { background: var(--brand); border-color: var(--brand); color: #fff; }
 .btn.principal:hover { background: var(--brand-dark); border-color: var(--brand-dark); color: #fff; }
 .btn.principal:disabled { background: var(--brand); }
@@ -58,13 +35,18 @@
    el desbordaria la pagina entera.
 
    globals.css trae .table-wrap con max-height: 62vh; hay que anularlo a mano
-   o el scroll vertical vuelve con cada actualizacion. El borde y el radio SI
-   se heredan. */
+   o el scroll vertical vuelve con cada actualizacion. El borde, el radio y la
+   sombra SI se heredan. */
 .table-wrap { overflow-x: auto; overflow-y: visible; max-height: none; }
 
-/* Sin scrollbox, el thead pegajoso se pega al viewport, y el viewport tiene
-   una cabecera fija de --header-h delante: con top: 0 la fila de titulos se
-   escondia debajo de ella al bajar. En la ventana del formato, que si tiene
-   scroll propio, vuelve a 0. */
-thead th { top: var(--header-h); }
-.fmt-ejemplo thead th { top: 0; }
+/* Dos clases que globals.css no trae y las paginas SI usan. Estaban en el
+   sistema de diseno anterior y se perdieron al cambiarlo; sin ellas el aviso
+   se pinta como texto normal y deja de avisar, que es un fallo que no rompe
+   nada y por eso nadie nota. .flag-warn lo usan la vista de precios de aguas
+   arriba y seis sitios del monitor; .combo-meta, el buscador de valores.
+   Color SEMANTICO de aviso, no el de marca: aqui dice "mira esto". */
+.flag-warn { color: var(--warning); }
+.combo-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-secondary);
+}

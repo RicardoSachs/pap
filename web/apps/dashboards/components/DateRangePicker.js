@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/DateRangePicker.js
 // ---------------------------------------------------------------------------
 // Shared From/To date-range selector — the common date-selection pattern for
@@ -52,4 +51,3 @@ export default function DateRangePicker({
     </>
   );
 }
-

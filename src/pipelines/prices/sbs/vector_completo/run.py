@@ -13,7 +13,7 @@ from src.db.queries import (
     update_series_status
 )
 from src.calendars.calendar_sbs import is_reporting_day
-from src.pipelines.prices.sbs.registry import discover_and_register
+from src.pipelines.prices.sbs.discovery import discover_and_register
 from src.pipelines.prices.sbs.vector_completo.extract import read_raw, load_stg
 from src.pipelines.prices.sbs.vector_completo.transform import transform
 from src.pipelines.prices.sbs.vector_completo.loader import load_facts, load_dims

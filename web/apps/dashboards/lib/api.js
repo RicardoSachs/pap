@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/lib/api.js
 // ---------------------------------------------------------------------------
 // Tiny fetch helper. BASE is empty in production (relative /api, same origin as
@@ -27,4 +26,3 @@ export function num(x, digits = 0) {
   if (x === null || x === undefined || Number.isNaN(x)) return '-';
   return x.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
-

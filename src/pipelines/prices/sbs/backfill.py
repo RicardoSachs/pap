@@ -47,7 +47,7 @@ import pandas as pd
 from psycopg import sql
 
 from src.db.connection import get_connection
-from src.pipelines.prices.sbs.registry import discover_and_register, FILE_TYPE_FIELDS
+from src.pipelines.prices.sbs.discovery import discover_and_register, FILE_TYPE_FIELDS
 from src.pipelines.prices.sbs.vector_completo.extract import read_raw as _extract_vector_completo
 from src.pipelines.prices.sbs.rf_local.extract import extract as _extract_rf_local
 from src.pipelines.prices.sbs.rf_exterior.extract import extract as _extract_rf_exterior

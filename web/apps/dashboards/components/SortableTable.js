@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/SortableTable.js
 // ---------------------------------------------------------------------------
 // Small client-side sortable table. Columns: {key, label, align, render, sortable}.
@@ -67,4 +66,3 @@ export default function SortableTable({ columns, rows, initialSort, initialDir =
     </table>
   );
 }
-

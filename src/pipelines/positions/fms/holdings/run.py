@@ -120,7 +120,14 @@ def run_from_stg(batch_id: str) -> None:
 # ---------------------------------------------------------------
 
 def _load_securities(conn) -> pd.DataFrame:
-    """Load the sbs -> entity map: (codigo_sbs, security_entity_id)."""
+    """
+    Load the sbs -> entity map: (codigo_sbs, security_entity_id).
+
+    Queries the BASE identifier table deliberately (not the _current view):
+    identifiers are multi-valued, so a re-coded instrument keeps its old
+    codigo_sbs as an alias row - historical FMS holdings, which carry the
+    code of their era, resolve to the same entity as current ones.
+    """
     with conn.cursor() as cur:
         cur.execute(
             # Aliases must match the DataFrame columns below: psycopg dict

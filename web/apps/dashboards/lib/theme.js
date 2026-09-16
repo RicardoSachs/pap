@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/lib/theme.js
 // ---------------------------------------------------------------------------
 // Chart theming bridge. Plotly is plain JS and can't read CSS custom properties,
@@ -9,8 +8,8 @@
 import { useState, useEffect } from 'react';
 
 // Dark fallback used during SSR/prerender (no document) and before hydration.
-const DARK = { surface: '#1C2030', panel: '#141720', border: '#2E3348', text: '#E8EAF0', muted: '#8892A4',
-  positive: '#2DD4A0', negative: '#F06580', brand: '#5B8CFF',
+const DARK = { surface: '#1F1918', panel: '#181413', border: '#332A29', text: '#EDE8E8', muted: '#9A8F8F',
+  positive: '#2DD4A0', negative: '#F06580', brand: '#E83224',
 };
 
 export function chartTheme() {
@@ -24,11 +23,10 @@ export function chartTheme() {
     text: v('--text-primary', DARK.text),
     muted: v('--text-secondary', DARK.muted),
     // NUESTRO: Plotly no resuelve var(--x) en marker.color ni line.color; se
-    // queda con su paleta por defecto. Se le da el valor ya resuelto, leido de
-    // los tokens de esta hoja: teal, rose y blue.
-    positive: v('--teal', DARK.positive),
-    negative: v('--rose', DARK.negative),
-    brand: v('--blue', DARK.brand),
+    // queda con su paleta por defecto. Se le da el valor ya resuelto.
+    positive: v('--positive', DARK.positive),
+    negative: v('--negative', DARK.negative),
+    brand: v('--brand', DARK.brand),
   };
 }
 
@@ -44,4 +42,3 @@ export function useThemeVersion() {
   }, []);
   return version;
 }
-

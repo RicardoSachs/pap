@@ -37,18 +37,18 @@
 --   `date` is added by extract.py (not selected here).
 --   Tier 2 -> raw_payload: none (the source is already aggregated per currency).
 --
--- TODO(dev) — confirm/finalize before running:
---   (a) IndEstado: the sketch was missing the operator. This assumes
---       4168 = OPEN/pending and 4169 = SETTLED (kept only if it settled AFTER
---       the as-of date). Verify those two state codes.
---   (b) Currency: the procs emit M.Simbolo; this uses M.CodigoISO so codes match
---       fact_positions_cash. Switch back to Simbolo if that's what you index on.
+-- Confirmed (2026-09-09, verified by the developer against FMS):
+--   (a) IndEstado: 4168 = OPEN/pending; 4169 = SETTLED (kept only when it
+--       settled AFTER the as-of date). These two state codes are correct.
+--   (b) Currency: M.CodigoISO is the official FX code here (matches
+--       fact_positions_cash); M.Simbolo deliberately not used.
+-- This query is the official version.
 -- ---------------------------------------------------------------
 
 SELECT
     -- ===================== Tier 1 =====================
     FP.CodigoFondo                                                     AS CodigoFondo,
-    M.CodigoISO                                                        AS CodigoIsoMoneda,   -- TODO(b): Simbolo vs CodigoISO
+    M.CodigoISO                                                        AS CodigoIsoMoneda,   -- official FX code (confirmed vs Simbolo)
     SUM(CASE WHEN T.IdIndicador = 1 THEN ABS(CCP.Importe) ELSE 0 END)  AS MontoCobrar,       -- receivables (CxC)
     SUM(CASE WHEN T.IdIndicador = 2 THEN ABS(CCP.Importe) ELSE 0 END)  AS MontoPagar,        -- payables    (CxP)
 
@@ -72,8 +72,8 @@ LEFT JOIN FMS.MonedaCambio mc
 WHERE CCP.FlgActivo = 1
   AND T.IdIndicador IN (1, 2)
   AND CCP.IdSecuencialFechaOperacion <= ?                                           -- as-of (bind #2)
-  AND (CCP.IndEstado = 4168                                                         -- TODO(a): OPEN/pending
-       OR (CCP.IndEstado = 4169 AND CCP.IdSecuencialFechaLiquidacionReal > ?))      -- as-of (bind #3); settled after
+  AND (CCP.IndEstado = 4168                                                         -- OPEN/pending (confirmed)
+       OR (CCP.IndEstado = 4169 AND CCP.IdSecuencialFechaLiquidacionReal > ?))      -- as-of (bind #3); SETTLED after (confirmed)
 GROUP BY
     FP.CodigoFondo,
     M.CodigoISO,

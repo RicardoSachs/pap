@@ -311,7 +311,14 @@ function AMano({ alCargar, traders }) {
 
   // Lo mismo que exige el backend, calculado aquí para poder DECIR qué falta
   // en vez de solo apagar el botón.
-  const num = (v) => { const n = Number(String(v).replace(/,/g, '')); return Number.isFinite(n) ? n : null; };
+  // Vacio es null, no cero: Number('') da 0, y la fila prevista pintaba
+  // «0» y «0.0000» en un formulario en el que nadie habia escrito nada.
+  const num = (v) => {
+    const t = String(v ?? '').replace(/,/g, '').trim();
+    if (!t) return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  };
   const faltan = [
     !form.trader.trim() && 'trader', !form.fecha && 'fecha', !form.fondo && 'fondo',
     !form.instrumento.trim() && 'instrumento', !(num(form.cantidad) > 0) && 'cantidad',

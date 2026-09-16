@@ -1,13 +1,16 @@
 // web/apps/dashboards/app/tradebook/carga/page.js
 // ---------------------------------------------------------------------------
-// Tradebook · Registro y carga. Tres maneras de meter operaciones, en tres
-// segmentos, más el libro de lo cargado para corregir o anular.
+// Tradebook · Registro y carga.
 //
-// El orden no es casual: primero el archivo, que es como entra el grueso;
-// después la captura a mano, que es la excepción; y al final la derivación
-// desde posiciones, que es la más delicada y por eso la que menos a la vista
-// está. Ninguna de las tres guarda nada sin haber mostrado antes lo que va a
-// guardar.
+// El libro se llena por DOS vías, y la pantalla las separa porque no son el
+// mismo dato:
+//
+//   - el registro de los traders, a mano o por Excel, que trae el detalle y
+//     sobre todo trae quién operó;
+//   - FMS, la operación tal como sale del sistema: general, y sin dueño.
+//
+// Ninguna de las dos guarda nada sin haber mostrado antes lo que va a
+// guardar. Debajo, el libro de lo cargado, para mirarlo y anular.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -20,20 +23,19 @@ import useVerTodo from '../../../components/useVerTodo';
 import { apiGet } from '../../../lib/api';
 import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
 
-const SECCIONES = [
-  ['Carga por archivo', 'archivo'],
-  ['Captura a mano', 'manual'],
-  ['Derivar de posiciones', 'posiciones'],
+const VIAS = [
+  ['Registro de traders', 'traders'],
+  ['Desde FMS', 'fms'],
 ];
 const LADOS = [['Compra', 'compra'], ['Venta', 'venta']];
 const VACIO = {
   fecha: '', fondo: '2', lado: 'compra', instrumento: '', cantidad: '',
   precio: '', monto: '', moneda: 'PEN', contraparte: '', fecha_liquidacion: '',
-  referencia: '', nota: '',
+  referencia: '', trader: '', nota: '',
 };
 
 export default function TradebookCarga() {
-  const [seccion, setSeccion] = useState('archivo');
+  const [via, setVia] = useState('traders');
   const [estado, setEstado] = useState(null);
   const [error, setError] = useState(null);
 
@@ -41,13 +43,16 @@ export default function TradebookCarga() {
     .then(setEstado).catch((e) => setError(e.message));
   useEffect(() => { cargarEstado(); }, []);
 
+  const deTraders = (estado?.origenes?.excel || 0) + (estado?.origenes?.manual || 0);
+  const deFms = estado?.origenes?.fms || 0;
+
   return (
     <div>
       <h1 className="page-title">Tradebook</h1>
       <p className="page-sub">
         Registro y carga
         {estado?.filas
-          ? ` · ${nEnt(estado.filas)} operaciones en el libro (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})`
+          ? ` · ${nEnt(estado.filas)} operaciones (${nEnt(deTraders)} de traders, ${nEnt(deFms)} de FMS)`
           : ' · el libro está vacío'}
       </p>
       <TradebookTabs />
@@ -56,14 +61,28 @@ export default function TradebookCarga() {
 
       <div className="panel">
         <div className="controls">
-          <div className="field"><label>Cómo entran</label>
-            <SppSeg items={SECCIONES} value={seccion} onChange={setSeccion} /></div>
+          <div className="field"><label>Vía</label>
+            <SppSeg items={VIAS} value={via} onChange={setVia} /></div>
         </div>
+        {/* La diferencia entre las dos vías no es de dónde sale el archivo
+            sino cuánto dice cada fila. Decirlo aquí evita que alguien cargue
+            el reporte de FMS por la vía del trader y le invente un dueño. */}
+        <p className="page-sub dim" style={{ marginTop: 4 }}>
+          {via === 'traders'
+            ? 'El registro propio: lleva siempre quién operó, y es el que permite mirar el libro por trader.'
+            : 'La operación tal como sale de FMS: general, y sin nombre de trader. FMS no dice quién operó.'}
+        </p>
       </div>
 
-      {seccion === 'archivo' && <PorArchivo alCargar={cargarEstado} />}
-      {seccion === 'manual' && <AMano alCargar={cargarEstado} estado={estado} />}
-      {seccion === 'posiciones' && <DesdePosiciones alCargar={cargarEstado} />}
+      {via === 'traders' ? (
+        <>
+          <AMano alCargar={cargarEstado} traders={estado?.traders || []} />
+          <PorArchivo alCargar={cargarEstado} origen="excel"
+            traders={estado?.traders || []} />
+        </>
+      ) : (
+        <PorArchivo alCargar={cargarEstado} origen="fms" traders={[]} />
+      )}
 
       <Libro estado={estado} alCambiar={cargarEstado} />
     </div>
@@ -71,20 +90,22 @@ export default function TradebookCarga() {
 }
 
 
-// ---- 1. Carga por archivo --------------------------------------------------
+// ---- Carga por archivo (sirve a las dos vías) ------------------------------
 
-function PorArchivo({ alCargar }) {
+function PorArchivo({ alCargar, origen, traders }) {
+  const deTraders = origen !== 'fms';
   const [archivo, setArchivo] = useState(null);
   const [hoja, setHoja] = useState('');
+  const [trader, setTrader] = useState('');
   const [informe, setInforme] = useState(null);
   const [eco, setEco] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const input = useRef(null);
 
-  // Cambiar de archivo invalida la revisión anterior: confirmar una carga
-  // con el informe de OTRO archivo delante es exactamente el error que el
-  // paso de revisión existe para evitar.
-  const elegir = (f) => { setArchivo(f); setInforme(null); setEco(''); };
+  // Cambiar de archivo o de trader invalida la revisión anterior: confirmar
+  // una carga con el informe de OTRO archivo delante es exactamente el error
+  // que el paso de revisión existe para evitar.
+  const invalidar = () => { setInforme(null); setEco(''); };
 
   const enviar = async (soloRevisar) => {
     if (!archivo) return;
@@ -93,14 +114,16 @@ function PorArchivo({ alCargar }) {
     fd.append('archivo', archivo);
     fd.append('revisar', soloRevisar ? '1' : '');
     fd.append('hoja', hoja);
+    fd.append('origen', origen);
+    fd.append('trader', deTraders ? trader : '');
     const r = await apiSend('/api/tradebook/archivo', 'POST', fd, true);
     setOcupado(false);
     if (!r.ok) { setEco({ ok: false, texto: r.data.motivo }); return; }
     setInforme(r.data.informe);
     if (soloRevisar) {
-      setEco({ ok: true, texto: `Revisado: ${r.data.informe.leidas} operación(es) `
-        + `legibles, ${r.data.informe.descartadas.length} descartada(s). `
-        + 'Nada se ha guardado todavía.' });
+      const i = r.data.informe;
+      setEco({ ok: true, texto: `Revisado: ${i.leidas} operación(es) legibles, `
+        + `${i.descartadas.length} descartada(s). Nada se ha guardado todavía.` });
     } else {
       const i = r.data.informe;
       setEco({ ok: true, texto: `Cargadas ${i.guardadas} operación(es): `
@@ -116,20 +139,43 @@ function PorArchivo({ alCargar }) {
 
   return (
     <div className="panel">
-      <div className="panel-title">Carga por archivo</div>
+      <div className="panel-title">
+        {deTraders ? 'Carga por archivo · registro del trader' : 'Carga del reporte de FMS'}
+      </div>
       <p className="page-sub">
         Excel o CSV. Se reconoce por el contenido, no por la extensión, y las
         columnas por su nombre en varios idiomas. Obligatorias: fecha, fondo,
-        lado, instrumento, cantidad, y monto o precio.
+        lado, instrumento, cantidad, y monto o precio
+        {deTraders ? ', más el trader de cada fila.' : '.'}
       </p>
 
       <div className="controls" style={{ marginTop: 10 }}>
-        <a className="btn" href={apiUrl('/api/tradebook/plantilla')}>↓ Plantilla · XLSX</a>
+        <a className="btn" href={apiUrl(`/api/tradebook/plantilla?origen=${origen}`)}>
+          ↓ Plantilla · XLSX</a>
         <input ref={input} type="file" accept=".xlsx,.xls,.csv,.txt"
-          onChange={(e) => elegir(e.target.files?.[0] || null)} />
+          onChange={(e) => { setArchivo(e.target.files?.[0] || null); invalidar(); }} />
         <input className="text-input" placeholder="Hoja (opcional)"
-          value={hoja} onChange={(e) => setHoja(e.target.value)} style={{ width: 160 }} />
+          value={hoja} onChange={(e) => setHoja(e.target.value)} style={{ width: 150 }} />
       </div>
+
+      {deTraders && (
+        <div className="controls" style={{ marginTop: 10 }}>
+          <div className="field"><label>Trader del archivo</label>
+            <input className="text-input" list="traders-conocidos" style={{ width: 220 }}
+              placeholder="si el archivo no lo trae por fila"
+              value={trader} onChange={(e) => { setTrader(e.target.value); invalidar(); }} />
+            <datalist id="traders-conocidos">
+              {traders.map((t) => <option key={t} value={t} />)}
+            </datalist>
+          </div>
+          {/* Es un valor POR DEFECTO, no una sobreescritura: un archivo que sí
+              nombra a cada trader sigue diciendo lo que dice. */}
+          <p className="page-sub dim" style={{ alignSelf: 'end', marginBottom: 6 }}>
+            Solo rellena las filas que no traigan columna de trader.
+          </p>
+        </div>
+      )}
+
       <div className="controls" style={{ marginTop: 10 }}>
         <button className="btn" disabled={!archivo || ocupado}
           onClick={() => enviar(true)}>Revisar</button>
@@ -143,7 +189,8 @@ function PorArchivo({ alCargar }) {
           <table className="spp-informe">
             <tbody>
               <tr><td>Archivo</td><td className="num">{informe.archivo}</td></tr>
-              <tr><td>Formato</td><td className="num">{informe.formato}{informe.hoja ? ` · hoja ${informe.hoja}` : ''}</td></tr>
+              <tr><td>Va al libro de</td><td className="num">
+                {informe.origen === 'fms' ? 'FMS' : 'los traders'}</td></tr>
               <tr><td>Operaciones legibles</td><td className="num">{nEnt(informe.leidas)}</td></tr>
               <tr><td>Descartadas</td><td className="num">{nEnt(informe.descartadas?.length || 0)}</td></tr>
               {informe.resumen?.desde && (
@@ -156,6 +203,10 @@ function PorArchivo({ alCargar }) {
                     {nEnt(informe.resumen.compras)} / {nEnt(informe.resumen.ventas)}</td></tr>
                   <tr><td>Fondos</td><td className="num">{informe.resumen.fondos.join(', ') || '—'}</td></tr>
                   <tr><td>Monedas</td><td className="num">{informe.resumen.monedas.join(', ') || '—'}</td></tr>
+                  {deTraders && (
+                    <tr><td>Traders</td><td className="num">
+                      {informe.resumen.traders?.join(', ') || '—'}</td></tr>
+                  )}
                   {/* Sin referencia no hay forma de distinguir una recarga del
                       mismo archivo de dos operaciones idénticas de verdad. */}
                   <tr><td>Con referencia propia</td><td className="num">
@@ -205,7 +256,8 @@ function PorArchivo({ alCargar }) {
                   <thead><tr>
                     <th>Fecha</th><th className="num">Fondo</th><th>Lado</th>
                     <th>Instrumento</th><th className="num">Cantidad</th>
-                    <th className="num">Monto</th><th>Moneda</th><th>Contraparte</th>
+                    <th className="num">Monto</th><th>Moneda</th>
+                    {deTraders && <th>Trader</th>}<th>Contraparte</th>
                   </tr></thead>
                   <tbody>{muestra.map((o, i) => (
                     <tr key={i}>
@@ -216,6 +268,7 @@ function PorArchivo({ alCargar }) {
                       <td className="num">{nEnt(Math.round(o.cantidad))}</td>
                       <td className="num">{nEnt(Math.round(o.monto))}</td>
                       <td>{o.moneda}</td>
+                      {deTraders && <td>{o.trader || '—'}</td>}
                       <td>{o.contraparte || '—'}</td>
                     </tr>
                   ))}</tbody>
@@ -231,9 +284,9 @@ function PorArchivo({ alCargar }) {
 }
 
 
-// ---- 2. Captura a mano -----------------------------------------------------
+// ---- Captura a mano (solo la vía de traders) -------------------------------
 
-function AMano({ alCargar, estado }) {
+function AMano({ alCargar, traders }) {
   const [form, setForm] = useState(VACIO);
   const [eco, setEco] = useState('');
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -244,17 +297,18 @@ function AMano({ alCargar, estado }) {
     if (r.ok) {
       const o = r.data.operacion;
       setEco({ ok: true, texto: `Registrada: ${o.lado} de ${nEnt(Math.round(o.cantidad))} `
-        + `${o.instrumento} el ${fFecha(o.fecha)}.` });
-      // La fecha, el fondo y la moneda se conservan: quien captura a mano
-      // suele cargar varias del mismo día y la misma cartera.
+        + `${o.instrumento} el ${fFecha(o.fecha)}, por ${o.trader}.` });
+      // La fecha, el fondo, la moneda, la contraparte y el TRADER se
+      // conservan: quien captura a mano suele cargar varias seguidas suyas
+      // del mismo día.
       setForm((f) => ({ ...VACIO, fecha: f.fecha, fondo: f.fondo, moneda: f.moneda,
-                        contraparte: f.contraparte }));
+                        contraparte: f.contraparte, trader: f.trader }));
       alCargar();
     } else setEco({ ok: false, texto: r.data.motivo });
   };
 
   const listo = form.fecha && form.instrumento && form.cantidad
-    && (form.monto || form.precio);
+    && (form.monto || form.precio) && form.trader.trim();
 
   return (
     <div className="panel">
@@ -264,6 +318,12 @@ function AMano({ alCargar, estado }) {
         calcula de cantidad × precio si no lo escribes.
       </p>
       <div className="controls spp-controls" style={{ marginTop: 10 }}>
+        <div className="field"><label>Trader</label>
+          <input className="text-input" list="traders-conocidos" style={{ width: 170 }}
+            value={form.trader} onChange={set('trader')} />
+          <datalist id="traders-conocidos">
+            {traders.map((t) => <option key={t} value={t} />)}
+          </datalist></div>
         <div className="field"><label>Fecha</label>
           <input className="date-input" type="date" value={form.fecha} onChange={set('fecha')} /></div>
         <div className="field"><label>Fondo</label>
@@ -309,150 +369,21 @@ function AMano({ alCargar, estado }) {
 }
 
 
-// ---- 3. Derivadas de posiciones -------------------------------------------
-
-function DesdePosiciones({ alCargar }) {
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
-  const [fondo, setFondo] = useState('');
-  const [prop, setProp] = useState(null);
-  const [elegidas, setElegidas] = useState({});
-  const [eco, setEco] = useState('');
-  const [ocupado, setOcupado] = useState(false);
-
-  const buscar = async () => {
-    setOcupado(true); setEco(''); setElegidas({});
-    const q = new URLSearchParams();
-    if (desde) q.set('desde', desde);
-    if (hasta) q.set('hasta', hasta);
-    if (fondo) q.set('fondo', fondo);
-    try {
-      const d = await apiGet(`/api/tradebook/derivadas?${q}`);
-      setProp(d);
-      // Las sospechosas arrancan SIN marcar. Marcarlas por defecto sería
-      // convertir la advertencia en un trámite que se acepta sin leer.
-      setElegidas(Object.fromEntries(
-        d.propuestas.map((p, i) => [i, !p.sospechosa])));
-      setEco({ ok: true, texto: `${d.total} movimiento(s) encontrados, `
-        + `${d.sospechosas} con un flujo el mismo día. Nada se ha guardado.` });
-    } catch (e) {
-      setEco({ ok: false, texto: e.message });
-    }
-    setOcupado(false);
-  };
-
-  const guardar = async () => {
-    const lista = (prop?.propuestas || []).filter((_, i) => elegidas[i]);
-    if (!lista.length) return;
-    if (!window.confirm(`Se guardarán ${lista.length} operación(es) derivadas de `
-      + 'posiciones. Quedan marcadas como derivadas, no como observadas. ¿Continuar?')) return;
-    setOcupado(true);
-    const r = await apiSend('/api/tradebook/derivadas', 'POST', { propuestas: lista });
-    setOcupado(false);
-    if (r.ok) {
-      const res = r.data.resultado;
-      setEco({ ok: true, texto: `Guardadas ${res.guardadas}. `
-        + (res.rechazadas.length ? `${res.rechazadas.length} rechazadas.` : '') });
-      setProp(null); alCargar();
-    } else setEco({ ok: false, texto: r.data.motivo });
-  };
-
-  const [filas, VerFilas] = useVerTodo(prop?.propuestas || [], 15);
-  const marcadas = Object.values(elegidas).filter(Boolean).length;
-
-  return (
-    <div className="panel">
-      <div className="panel-title">Derivar de posiciones</div>
-      {/* Esto va arriba y no en una nota al pie: es la diferencia entre un
-          dato observado y uno inferido, y quien lo use tiene que saberlo
-          antes de pulsar, no después. */}
-      <p className="page-sub">
-        Propone operaciones a partir de la <b>variación diaria de tenencias</b> que
-        ya carga el pipeline de posiciones. Una variación de cantidad no es una
-        operación: un split, un vencimiento, un rescate o una acción liberada
-        producen la misma diferencia. Las filas donde ese día hubo uno de esos
-        flujos vienen marcadas y <b>sin seleccionar</b>. El precio es el de
-        valorización del día, no el negociado.
-      </p>
-
-      <div className="controls spp-controls" style={{ marginTop: 10 }}>
-        <div className="field"><label>Desde</label>
-          <input className="date-input" type="date" value={desde}
-            onChange={(e) => setDesde(e.target.value)} /></div>
-        <div className="field"><label>Hasta</label>
-          <input className="date-input" type="date" value={hasta}
-            onChange={(e) => setHasta(e.target.value)} /></div>
-        <div className="field"><label>Fondo</label>
-          <input className="text-input" style={{ width: 70 }} placeholder="todos"
-            value={fondo} onChange={(e) => setFondo(e.target.value)} /></div>
-        <button className="btn" disabled={ocupado} onClick={buscar}>Buscar movimientos</button>
-      </div>
-      <Eco eco={eco} />
-
-      {prop && (
-        <>
-          <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn principal" disabled={!marcadas || ocupado} onClick={guardar}>
-              Guardar {marcadas} seleccionada(s)</button>
-            <button className="btn" onClick={() => setElegidas(
-              Object.fromEntries(prop.propuestas.map((_, i) => [i, true])))}>
-              Marcar todas</button>
-            <button className="btn" onClick={() => setElegidas({})}>Desmarcar todas</button>
-          </div>
-          <div className="table-wrap" style={{ marginTop: 10 }}>
-            <table>
-              <thead><tr>
-                <th></th><th>Fecha</th><th>Cartera</th><th>Lado</th>
-                <th>Instrumento</th><th className="num">Cantidad</th>
-                <th className="num">Monto</th><th>Aviso</th>
-              </tr></thead>
-              <tbody>
-                {filas.map((p, i) => (
-                  <tr key={`${p.fecha}-${p.instrumento}-${i}`}>
-                    <td><input type="checkbox" checked={!!elegidas[i]}
-                      onChange={(e) => setElegidas((s) => ({ ...s, [i]: e.target.checked }))} /></td>
-                    <td>{fFecha(p.fecha)}</td>
-                    <td>{p.cartera}</td>
-                    <td><span className={`tb-lado ${p.lado}`}>{p.lado}</span></td>
-                    <td>{p.instrumento}</td>
-                    <td className="num">{nEnt(Math.round(p.cantidad))}</td>
-                    <td className="num">{p.monto == null ? '—' : nEnt(Math.round(p.monto))}</td>
-                    <td className={p.sospechosa ? 'neg' : 'dim'}>
-                      {p.motivos?.join(', ') || '—'}</td>
-                  </tr>
-                ))}
-                {!filas.length && (
-                  <tr><td colSpan={8} className="dim">
-                    No hay variaciones de tenencia en ese rango. Si el pipeline de
-                    posiciones no ha corrido en esta base, no hay de dónde derivar.
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <VerFilas etiqueta="movimientos" />
-        </>
-      )}
-    </div>
-  );
-}
-
-
 // ---- El libro cargado ------------------------------------------------------
 
 function Libro({ estado, alCambiar }) {
   const [ops, setOps] = useState(null);
-  const [filtro, setFiltro] = useState({ instrumento: '', contraparte: '' });
+  const [filtro, setFiltro] = useState({ instrumento: '', contraparte: '', trader: '', origen: '' });
   const [eco, setEco] = useState('');
 
   const cargar = () => {
     const q = new URLSearchParams({ limite: '300' });
-    if (filtro.instrumento) q.set('instrumento', filtro.instrumento);
-    if (filtro.contraparte) q.set('contraparte', filtro.contraparte);
+    Object.entries(filtro).forEach(([k, v]) => { if (v) q.set(k, v); });
     apiGet(`/api/tradebook/operaciones?${q}`).then((d) => setOps(d.operaciones))
       .catch(() => setOps([]));
   };
-  useEffect(cargar, [filtro.instrumento, filtro.contraparte, estado?.filas]);
+  useEffect(cargar, [filtro.instrumento, filtro.contraparte, filtro.trader,
+                     filtro.origen, estado?.filas]);
 
   const borrar = async (o) => {
     if (!window.confirm(`¿Anular la ${o.lado} de ${o.instrumento} del ${fFecha(o.fecha)}?`)) return;
@@ -464,18 +395,28 @@ function Libro({ estado, alCambiar }) {
   };
 
   const [filas, VerFilas] = useVerTodo(ops || [], 20);
+  const exportar = new URLSearchParams();
+  Object.entries(filtro).forEach(([k, v]) => { if (v) exportar.set(k, v); });
 
   return (
     <div className="panel">
       <div className="panel-title">Lo cargado</div>
-      <div className="controls" style={{ marginBottom: 10 }}>
+      <div className="controls spp-controls" style={{ marginBottom: 10 }}>
+        <div className="field"><label>Libro</label>
+          <SppSeg items={[['Ambos', ''], ['De traders', 'traders'], ['De FMS', 'fms']]}
+            value={filtro.origen}
+            onChange={(v) => setFiltro((f) => ({ ...f, origen: v }))} /></div>
+        <div className="field"><label>Trader</label>
+          <input className="text-input" style={{ width: 150 }} value={filtro.trader}
+            onChange={(e) => setFiltro((f) => ({ ...f, trader: e.target.value }))} /></div>
         <div className="field"><label>Instrumento</label>
           <input className="text-input" value={filtro.instrumento}
             onChange={(e) => setFiltro((f) => ({ ...f, instrumento: e.target.value }))} /></div>
         <div className="field"><label>Contraparte</label>
           <input className="text-input" value={filtro.contraparte}
             onChange={(e) => setFiltro((f) => ({ ...f, contraparte: e.target.value }))} /></div>
-        <a className="btn" href={apiUrl('/api/tradebook/exportar')}>↓ Exportar · XLSX</a>
+        <a className="btn" style={{ alignSelf: 'end' }}
+          href={apiUrl(`/api/tradebook/exportar?${exportar}`)}>↓ Exportar · XLSX</a>
       </div>
       <Eco eco={eco} />
       <div className="table-wrap">
@@ -484,7 +425,7 @@ function Libro({ estado, alCambiar }) {
             <th>Fecha</th><th className="num">Fondo</th><th>Lado</th><th>Instrumento</th>
             <th className="num">Cantidad</th><th className="num">Precio</th>
             <th className="num">Monto</th><th>Moneda</th><th>Contraparte</th>
-            <th>Origen</th><th></th>
+            <th>Trader</th><th>Origen</th><th></th>
           </tr></thead>
           <tbody>
             {filas.length ? filas.map((o) => (
@@ -499,11 +440,12 @@ function Libro({ estado, alCambiar }) {
                 <td className="num">{nEnt(Math.round(o.monto))}</td>
                 <td>{o.moneda}</td>
                 <td>{o.contraparte || '—'}</td>
+                <td>{o.trader || <span className="dim">—</span>}</td>
                 <td><span className={`tb-origen ${o.origen}`}>{o.origen}</span></td>
                 <td><button className="btn peligro" onClick={() => borrar(o)}>Anular</button></td>
               </tr>
             )) : (
-              <tr><td colSpan={11} className="dim">
+              <tr><td colSpan={12} className="dim">
                 {ops == null ? 'Cargando…' : 'Sin operaciones.'}</td></tr>
             )}
           </tbody>

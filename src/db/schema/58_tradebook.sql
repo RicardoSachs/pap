@@ -2,6 +2,13 @@
 -- ---------------------------------------------------------------
 -- tradebook: the desk's own operations, one row per trade.
 --
+-- The book is fed from TWO places with different grain, and `origen`
+-- is what tells them apart. FMS gives the operation as the system
+-- records it: general, and with nobody's name on it. The traders'
+-- own registration - typed in or loaded from a spreadsheet - carries
+-- the detail, and above all carries WHO traded, which is the whole
+-- reason it exists alongside the other one.
+--
 -- Grain is the TRADE, not the position: two identical buys of the
 -- same bond on the same day at the same price are two rows, because
 -- they are two trades. That is why the key is a surrogate id and not
@@ -62,12 +69,26 @@ CREATE TABLE IF NOT EXISTS tradebook (
     contraparte       TEXT,
     fecha_liquidacion DATE,
 
-    -- Where the row came from. 'posiciones' means it was DERIVED from
-    -- a change in holdings rather than observed as a trade, which is
-    -- weaker evidence and has to stay visible in the row itself.
+    -- Quien lo registro, y por tanto cuanto detalle trae la fila.
+    --
+    -- Son dos libros con distinto grano viviendo en una tabla, y `origen`
+    -- es lo que los distingue. 'fms' es la operacion tal como sale del
+    -- sistema, general y sin dueño. 'manual' y 'excel' son el registro del
+    -- trader, que trae el detalle y responde a la pregunta de quien opero.
     origen            TEXT NOT NULL DEFAULT 'manual'
         CONSTRAINT ck_tradebook_origen
-        CHECK (origen IN ('excel', 'manual', 'posiciones')),
+        CHECK (origen IN ('fms', 'excel', 'manual')),
+
+    -- El trader es obligatorio en el registro propio y no existe en FMS.
+    -- La regla vive en el CHECK y no solo en el codigo porque es lo que
+    -- hace que la vista por trader no tenga agujeros: sin ella una carga
+    -- descuidada dejaria filas de trader sin dueño y el reparto mentiria
+    -- sin que nada fallara.
+    trader            TEXT
+        CONSTRAINT ck_tradebook_trader
+        CHECK ((origen = 'fms' AND trader IS NULL)
+               OR (origen <> 'fms' AND length(trim(trader)) > 0)),
+
     nota              TEXT,
 
     creado_en         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -91,3 +112,10 @@ CREATE INDEX IF NOT EXISTS ix_tradebook_contraparte
     ON tradebook (contraparte);
 CREATE INDEX IF NOT EXISTS ix_tradebook_entity
     ON tradebook (entity_id);
+
+-- Los indices de trader y origen viven en 59_tradebook_migraciones.sql, no
+-- aqui. Este archivo es CREATE TABLE IF NOT EXISTS, o sea que en una base
+-- que ya tiene la tabla el CREATE no hace nada... pero los CREATE INDEX de
+-- despues SI se ejecutan, y uno sobre una columna que esa base todavia no
+-- tiene falla. Como create_schema corta en el primer archivo que falla, eso
+-- se llevaba por delante la migracion que precisamente iba a agregarla.

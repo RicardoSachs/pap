@@ -1,7 +1,12 @@
 # web/api/services/tradebook.py
 # ---------------------------------------------------------------------------
 # Lo que el Panel del Tradebook necesita: el volumen operado agregado por
-# periodo, y su composicion por fondo, moneda, contraparte y lado.
+# periodo, y su composicion por fondo, moneda, contraparte, trader y lado.
+#
+# El libro trae dos origenes con distinto grano - FMS, general y sin dueño, y
+# el registro de los traders, detallado y con nombre - asi que casi todo lo
+# de aqui se puede mirar por origen. Mezclarlos sin decirlo contaria dos veces
+# la misma operacion cuando las dos vias cubran el mismo dia.
 #
 # La agregacion vive aqui y no en el modulo de dominio porque es una lectura
 # de pantalla: que se agrupe por mes o por semana, o cuantas contrapartes
@@ -34,7 +39,14 @@ POR_DEFECTO = "mes"
 TOPE_CONTRAPARTES = 8
 
 
-def _filtros(desde, hasta, fondo, moneda, lado) -> tuple[str, list]:
+# Los origenes que llevan dueño. 'traders' es como el operador piensa el
+# libro; en la base son dos valores, y traducirlo en un sitio evita que cada
+# consulta rearme la lista.
+ORIGENES_TRADER = ("excel", "manual")
+
+
+def _filtros(desde, hasta, fondo, moneda, lado, trader=None,
+             origen=None) -> tuple[str, list]:
     donde, args = ["1 = 1"], []
     if desde:
         donde.append("fecha >= %s"); args.append(desde)
@@ -46,11 +58,17 @@ def _filtros(desde, hasta, fondo, moneda, lado) -> tuple[str, list]:
         donde.append("moneda = %s"); args.append(str(moneda).upper())
     if lado:
         donde.append("lado = %s"); args.append(str(lado).lower())
+    if trader:
+        donde.append("trader = %s"); args.append(trader)
+    if origen == "traders":
+        donde.append("origen = ANY(%s)"); args.append(list(ORIGENES_TRADER))
+    elif origen:
+        donde.append("origen = %s"); args.append(origen)
     return " AND ".join(donde), args
 
 
 def resumen(desde=None, hasta=None, fondo=None, moneda=None, lado=None,
-            periodo: str = POR_DEFECTO) -> dict:
+            trader=None, origen=None, periodo: str = POR_DEFECTO) -> dict:
     """
     Traded volume over time plus its composition, all under the same
     filters, so every panel on the screen is talking about the same set
@@ -64,9 +82,10 @@ def resumen(desde=None, hasta=None, fondo=None, moneda=None, lado=None,
     """
     periodo = periodo if periodo in PERIODOS else POR_DEFECTO
     trunc, _fmt = PERIODOS[periodo]
-    donde, args = _filtros(desde, hasta, fondo, moneda, lado)
+    donde, args = _filtros(desde, hasta, fondo, moneda, lado, trader, origen)
     vacio = {"periodo": periodo, "series": [], "por_fondo": [],
              "por_moneda": [], "por_contraparte": [], "por_instrumento": [],
+             "por_trader": [], "por_origen": [],
              "total": {"operaciones": 0, "compras": 0, "ventas": 0,
                        "monedas": []}}
 
@@ -99,13 +118,21 @@ def resumen(desde=None, hasta=None, fondo=None, moneda=None, lado=None,
         por_moneda = agrupado("moneda")
         por_contraparte = agrupado("contraparte", TOPE_CONTRAPARTES)
         por_instrumento = agrupado("instrumento", TOPE_CONTRAPARTES)
+        # Sin tope: los traders son pocos y conocidos, y esconder uno en un
+        # 'Otras' seria esconder justo a quien se quiere mirar. Las filas
+        # 'sin dato' son las de FMS, que no llevan nombre.
+        por_trader = agrupado("trader")
+        por_origen = agrupado("origen")
 
         total = conn.execute(f"""
             SELECT COUNT(*) AS operaciones,
                    COUNT(*) FILTER (WHERE lado = 'compra') AS compras,
                    COUNT(*) FILTER (WHERE lado = 'venta') AS ventas,
+                   COUNT(*) FILTER (WHERE origen = 'fms') AS de_fms,
+                   COUNT(*) FILTER (WHERE origen <> 'fms') AS de_traders,
                    COUNT(DISTINCT contraparte) AS contrapartes,
                    COUNT(DISTINCT instrumento) AS instrumentos,
+                   COUNT(DISTINCT trader) AS traders,
                    MIN(fecha) AS desde, MAX(fecha) AS hasta
             FROM tradebook WHERE {donde}""", tuple(args)).fetchone()
         montos = conn.execute(f"""
@@ -128,6 +155,8 @@ def resumen(desde=None, hasta=None, fondo=None, moneda=None, lado=None,
         "por_moneda": por_moneda,
         "por_contraparte": por_contraparte,
         "por_instrumento": por_instrumento,
+        "por_trader": por_trader,
+        "por_origen": por_origen,
         "total": t,
     }
 

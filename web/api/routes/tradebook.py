@@ -3,8 +3,9 @@
 # /api/tradebook : las operaciones de la mesa.
 #
 #   Panel            GET  /resumen, /estado
-#   Registro y carga GET/POST/PUT/DELETE /operaciones, carga por archivo,
-#                    plantilla, exportacion y la derivacion desde posiciones.
+#   Registro y carga GET/POST/PUT/DELETE /operaciones, carga por archivo
+#                    (las dos vias, FMS y el registro del trader), plantilla
+#                    y exportacion.
 #
 # Mismo contrato de errores que el resto del tablero: nunca se lanza una
 # excepcion a la interfaz, se devuelve {ok, motivo} con el codigo que
@@ -45,14 +46,15 @@ def get_estado() -> dict:
 @router.get("/resumen")
 def get_resumen(desde: str | None = Query(None), hasta: str | None = Query(None),
                 fondo: str | None = Query(None), moneda: str | None = Query(None),
-                lado: str | None = Query(None),
+                lado: str | None = Query(None), trader: str | None = Query(None),
+                origen: str | None = Query(None),
                 periodo: str = Query(svc.POR_DEFECTO)) -> JSONResponse:
     """Aggregated activity under the filters the panel is showing."""
     try:
         return JSONResponse(svc.resumen(
             desde=fecha_iso(desde), hasta=fecha_iso(hasta),
             fondo=_entero(fondo), moneda=moneda or None, lado=lado or None,
-            periodo=periodo))
+            trader=trader or None, origen=origen or None, periodo=periodo))
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
@@ -69,12 +71,15 @@ def get_operaciones(desde: str | None = Query(None),
                     lado: str | None = Query(None),
                     contraparte: str | None = Query(None),
                     instrumento: str | None = Query(None),
+                    trader: str | None = Query(None),
+                    origen: str | None = Query(None),
                     limite: int = Query(500)) -> JSONResponse:
     try:
         return JSONResponse({"operaciones": tb.leer(
             desde=fecha_iso(desde), hasta=fecha_iso(hasta), fondo=_entero(fondo),
             lado=lado or None, contraparte=contraparte or None,
-            instrumento=instrumento or None, limite=limite)})
+            instrumento=instrumento or None, trader=trader or None,
+            origen=origen or None, limite=limite)})
     except ValueError as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
@@ -121,10 +126,18 @@ def delete_operacion(operacion_id: int) -> JSONResponse:
 @router.post("/archivo")
 async def post_archivo(archivo: UploadFile = File(...),
                        revisar: str = Form(""),
-                       hoja: str = Form("")) -> JSONResponse:
+                       hoja: str = Form(""),
+                       origen: str = Form("excel"),
+                       trader: str = Form("")) -> JSONResponse:
     """
-    Bulk load from Excel/CSV. With revisar=1 it only reports what it
-    read - nothing is stored without having been shown first.
+    Bulk load from Excel/CSV, for either book. With revisar=1 it only
+    reports what it read - nothing is stored without having been shown
+    first.
+
+    `origen` picks the book ('excel' for the traders' own registration,
+    'fms' for the system's); `trader` is the default for rows that do
+    not name one, which is the usual shape of a file that is all one
+    person's.
     """
     crudo, error = await leer_archivo(archivo)
     if error:
@@ -132,13 +145,15 @@ async def post_archivo(archivo: UploadFile = File(...),
     solo_revisar = es_si(revisar)
     try:
         if solo_revisar:
-            informe = tb.leer_archivo(crudo, hoja=hoja.strip() or None)
+            informe = tb.leer_archivo(crudo, hoja=hoja.strip() or None,
+                                      origen=origen, trader=trader.strip() or None)
             # La lista completa solo sirve para contarla; mandarla entera
             # son megabytes por una pantalla que muestra quince filas.
             informe["muestra"] = informe.get("operaciones", [])[:15]
             informe.pop("operaciones", None)
         else:
-            informe = tb.importar(crudo, hoja=hoja.strip() or None)
+            informe = tb.importar(crudo, hoja=hoja.strip() or None,
+                                  origen=origen, trader=trader.strip() or None)
         informe["archivo"] = archivo.filename
         return JSONResponse({"ok": True, "revisado": solo_revisar,
                              "informe": informe})
@@ -150,46 +165,27 @@ async def post_archivo(archivo: UploadFile = File(...),
 
 
 @router.get("/plantilla")
-def get_plantilla() -> Response:
-    return Response(tb.plantilla(), media_type=XLSX,
+def get_plantilla(origen: str = Query("excel")) -> Response:
+    """The template for one book or the other - they differ by `trader`."""
+    nombre = ("plantilla_tradebook_fms.xlsx" if origen == "fms"
+              else "plantilla_tradebook_traders.xlsx")
+    return Response(tb.plantilla(origen=origen), media_type=XLSX,
                     headers={"Content-Disposition":
-                             "attachment; filename=plantilla_tradebook.xlsx"})
+                             f"attachment; filename={nombre}"})
 
 
 @router.get("/exportar")
 def get_exportar(desde: str | None = Query(None), hasta: str | None = Query(None),
                  fondo: str | None = Query(None), lado: str | None = Query(None),
                  contraparte: str | None = Query(None),
-                 instrumento: str | None = Query(None)) -> Response:
+                 instrumento: str | None = Query(None),
+                 trader: str | None = Query(None),
+                 origen: str | None = Query(None)) -> Response:
     datos = tb.exportar(desde=fecha_iso(desde), hasta=fecha_iso(hasta),
                         fondo=_entero(fondo), lado=lado or None,
                         contraparte=contraparte or None,
-                        instrumento=instrumento or None)
+                        instrumento=instrumento or None,
+                        trader=trader or None, origen=origen or None)
     return Response(datos, media_type=XLSX,
                     headers={"Content-Disposition":
                              "attachment; filename=tradebook.xlsx"})
-
-
-@router.get("/derivadas")
-def get_derivadas(desde: str | None = Query(None), hasta: str | None = Query(None),
-                  fondo: str | None = Query(None)) -> JSONResponse:
-    """Proposals from changes in holdings. Stores nothing."""
-    try:
-        return JSONResponse(tb.derivar_de_posiciones(
-            desde=fecha_iso(desde), hasta=fecha_iso(hasta), fondo=_entero(fondo)))
-    except Exception as exc:
-        logger.exception("derivacion desde posiciones")
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
-
-
-@router.post("/derivadas")
-def post_derivadas(datos: dict) -> JSONResponse:
-    """Stores the proposals the operator confirmed."""
-    try:
-        return JSONResponse({"ok": True,
-                             "resultado": tb.guardar_derivadas(datos.get("propuestas"))})
-    except (ValueError, TypeError) as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
-    except Exception as exc:
-        logger.exception("guardado de derivadas")
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)

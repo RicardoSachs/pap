@@ -56,7 +56,7 @@ def test_normalizacion_de_moneda(crudo, esperado):
 
 BASE = {"fecha": "2026-09-10", "fondo": 2, "lado": "compra",
         "instrumento": "PERU 3.55 03/31", "cantidad": 1000, "precio": 98.45,
-        "moneda": "USD"}
+        "moneda": "USD", "trader": "J. PEREZ"}
 
 
 def test_el_monto_se_deduce_de_cantidad_por_precio():
@@ -138,3 +138,50 @@ def test_la_referencia_vacia_queda_en_nulo_y_no_en_cadena():
     assert _validar({**BASE, "referencia": ""})["referencia"] is None
     assert _validar({**BASE, "referencia": "   "})["referencia"] is None
     assert _validar({**BASE, "referencia": "OP1"})["referencia"] == "OP1"
+
+
+# ---- Los dos libros: quien registro la operacion ---------------------------
+
+SIN_TRADER = {k: v for k, v in BASE.items() if k != "trader"}
+
+
+@pytest.mark.parametrize("origen", ["manual", "excel"])
+def test_el_registro_propio_exige_trader(origen):
+    """
+    Es la razon de ser de este libro al lado del de FMS. Sin el, la vista
+    por trader queda con agujeros y reparte mal sin que nada falle.
+    """
+    with pytest.raises(ValueError, match="trader"):
+        _validar({**SIN_TRADER, "origen": origen})
+
+
+@pytest.mark.parametrize("vacio", ["", "   ", None])
+def test_un_trader_en_blanco_no_cuenta_como_trader(vacio):
+    with pytest.raises(ValueError, match="trader"):
+        _validar({**BASE, "trader": vacio, "origen": "manual"})
+
+
+def test_fms_no_lleva_trader():
+    op = _validar({**SIN_TRADER, "origen": "fms"})
+    assert op["origen"] == "fms"
+    assert op["trader"] is None
+
+
+def test_una_fila_de_fms_con_trader_se_rechaza():
+    """
+    FMS no dice quien opero. Escribirlo ahi seria una atribucion
+    inventada, y bastaria una para que el reparto por trader dejara de
+    poder creerse.
+    """
+    with pytest.raises(ValueError, match="FMS"):
+        _validar({**BASE, "origen": "fms"})
+
+
+def test_el_trader_se_guarda_limpio_de_espacios():
+    assert _validar({**BASE, "trader": "  J. PEREZ  "})["trader"] == "J. PEREZ"
+
+
+def test_posiciones_ya_no_es_un_origen():
+    """La derivacion desde tenencias se retiro; el valor no debe volver."""
+    with pytest.raises(ValueError, match="Origen"):
+        _validar({**BASE, "origen": "posiciones"})

@@ -31,6 +31,10 @@ const PERIODOS = [
   ['Trimestre', 'trimestre'], ['Año', 'anio'],
 ];
 const LADOS = [['Ambos', ''], ['Compras', 'compra'], ['Ventas', 'venta']];
+// Las dos vias con que se llena el libro. Poder aislarlas no es un lujo:
+// cuando las dos cubran el mismo dia, mirarlas juntas cuenta dos veces la
+// misma operacion, y el total del panel seria el doble de lo real.
+const LIBROS = [['Ambos', ''], ['De traders', 'traders'], ['De FMS', 'fms']];
 
 // Moneda de la casa: es la que se mira por defecto cuando el libro trae
 // varias, para que el panel abra diciendo algo y no una suma imposible.
@@ -53,6 +57,8 @@ export default function TradebookPanel() {
   const [fondo, setFondo] = useState('');
   const [lado, setLado] = useState('');
   const [moneda, setMoneda] = useState('');
+  const [libro, setLibro] = useState('');
+  const [trader, setTrader] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
 
@@ -76,8 +82,10 @@ export default function TradebookPanel() {
     if (fondo !== '') q.set('fondo', String(fondo));
     if (lado) q.set('lado', lado);
     if (moneda) q.set('moneda', moneda);
+    if (libro) q.set('origen', libro);
+    if (trader) q.set('trader', trader);
     apiGet(`/api/tradebook/resumen?${q}`).then(setResumen).catch((e) => setError(e.message));
-  }, [desde, hasta, periodo, fondo, lado, moneda]);
+  }, [desde, hasta, periodo, fondo, lado, moneda, libro, trader]);
 
   // El color va resuelto, no como var(--x): Plotly no lee variables CSS y se
   // queda con su paleta. `version` lo recalcula al cambiar de tema.
@@ -162,12 +170,29 @@ export default function TradebookPanel() {
                   <SppSeg items={(estado.monedas || []).map((m) => [m, m])}
                     value={moneda} onChange={setMoneda} /></div>
               )}
+              <div className="field"><label>Libro</label>
+                <SppSeg items={LIBROS} value={libro} onChange={(v) => {
+                  setLibro(v);
+                  // FMS no tiene traders: dejar el filtro puesto al cambiar
+                  // de libro dejaria el panel vacio sin decir por que.
+                  if (v === 'fms') setTrader('');
+                }} /></div>
+              {libro !== 'fms' && (estado?.traders || []).length > 0 && (
+                <div className="field"><label>Trader</label>
+                  <SppSeg items={[['Todos', ''], ...(estado.traders || []).map((t) => [t, t])]}
+                    value={trader} onChange={setTrader} /></div>
+              )}
             </div>
             {/* Decir la moneda aquí no es decorativo: sin ella las cifras de
                 abajo son ambiguas, y con varias cargadas serían engañosas. */}
             <p className="page-sub dim" style={{ marginTop: 4 }}>
               Cifras en {moneda || 'todas las monedas'}. Los montos no se
               convierten entre monedas.
+              {!libro && (total.de_fms > 0 && total.de_traders > 0) && (
+                <> · <b>Estás viendo las dos vías juntas</b>, y {nEnt(total.de_fms)} operaciones
+                de FMS pueden ser las mismas que {nEnt(total.de_traders)} del registro de
+                traders. Elige un libro para no contarlas dos veces.</>
+              )}
             </p>
           </div>
 
@@ -197,6 +222,12 @@ export default function TradebookPanel() {
               <div className="cifra">{nEnt(total.contrapartes || 0)}</div>
               <div className="pie">{nEnt(total.instrumentos || 0)} instrumentos</div>
             </div>
+            <div className="tb-total">
+              <div className="rotulo">Traders</div>
+              <div className="cifra">{nEnt(total.traders || 0)}</div>
+              <div className="pie">
+                {nEnt(total.de_traders || 0)} de registro · {nEnt(total.de_fms || 0)} de FMS</div>
+            </div>
           </div>
 
           <div className="panel">
@@ -222,6 +253,18 @@ export default function TradebookPanel() {
               Ver={VerContrapartes} etiqueta="contrapartes" moneda={moneda} />
             <Composicion titulo="Por instrumento" filas={instrumentos}
               Ver={VerInstrumentos} etiqueta="instrumentos" moneda={moneda} />
+          </div>
+
+          <div className="spp-dos">
+            {/* Sin tope y sin 'Otras': los traders son pocos y el sentido de
+                esta tabla es justamente poder ver a cada uno. La fila 'sin
+                dato' son las de FMS, que no llevan nombre. */}
+            <Composicion titulo="Por trader" moneda={moneda}
+              filas={(resumen?.por_trader || []).filter((f) => !moneda || f.moneda === moneda)} />
+            <Composicion titulo="Por libro" moneda={moneda}
+              filas={(resumen?.por_origen || [])
+                .filter((f) => !moneda || f.moneda === moneda)
+                .map((f) => ({ ...f, clave: f.clave === 'fms' ? 'FMS' : `Registro · ${f.clave}` }))} />
           </div>
 
           <div className="spp-dos">

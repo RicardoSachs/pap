@@ -1,16 +1,20 @@
 # src/pipelines/tradebook/operaciones.py
 # ---------------------------------------------------------------------------
-# El tradebook: alta, lectura y baja de las operaciones de la mesa, y las
-# tres maneras en que entran.
+# El tradebook: alta, lectura y baja de las operaciones de la mesa.
 #
-#   - a mano, una operacion suelta desde el formulario;
-#   - por archivo, un Excel o CSV que se revisa antes de guardarse;
-#   - derivadas de las posiciones, que es la mas delicada y se explica en
-#     derivar_de_posiciones().
+# El libro se alimenta de DOS sitios, con distinto grano:
 #
-# El lector de archivos sigue el mismo contrato que el de series manuales:
-# leer primero sin tocar la base, devolver lo leido Y lo descartado, y
-# guardar solo despues de que el operador haya visto ambas cosas.
+#   - FMS, la operacion tal como la registra el sistema: general, y sin
+#     nombre de quien la hizo;
+#   - el registro del trader, a mano o por Excel, que trae el detalle y
+#     sobre todo trae QUIEN opero, que es para lo que existe al lado del
+#     otro.
+#
+# `origen` es lo unico que los distingue, y de el depende si `trader` es
+# obligatorio. Las dos vias comparten el mismo lector de archivos, que sigue
+# el contrato del de series manuales: leer primero sin tocar la base,
+# devolver lo leido Y lo descartado, y guardar solo despues de que el
+# operador haya visto ambas cosas.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -27,7 +31,11 @@ from src.shared import tabular
 logger = logging.getLogger(__name__)
 
 LADOS = ("compra", "venta")
-ORIGENES = ("excel", "manual", "posiciones")
+ORIGENES = ("fms", "excel", "manual")
+# Los que son registro de alguien. La diferencia no es de donde salio el
+# archivo sino de si la fila tiene dueño: de eso depende que la vista por
+# trader signifique algo.
+ORIGENES_TRADER = ("excel", "manual")
 
 # Como puede venir llamada cada columna. La clave es el nombre normalizado
 # por tabular.clave_col (sin tildes, minusculas, sin separadores).
@@ -51,6 +59,8 @@ _ALIAS = {
                           "settle", "fechavalor"),
     "referencia": ("referencia", "id", "idoperacion", "numerooperacion",
                    "folio", "tradeid", "operacion_id"),
+    "trader": ("trader", "operador", "responsable", "ejecutivo", "gestor",
+               "portfoliomanager", "pm"),
     "nota": ("nota", "notas", "observacion", "observaciones", "comentario"),
 }
 # Sin estas no hay operacion que registrar.
@@ -61,7 +71,7 @@ _VENTA = ("venta", "ventas", "v", "s", "sell", "sold", "sale")
 
 _CAMPOS = ("referencia", "fecha", "fondo", "lado", "instrumento", "entity_id",
            "cantidad", "precio", "monto", "moneda", "contraparte",
-           "fecha_liquidacion", "origen", "nota")
+           "fecha_liquidacion", "origen", "trader", "nota")
 
 
 # ---- Normalizacion de un valor suelto -------------------------------------
@@ -169,6 +179,20 @@ def _validar(op: dict) -> dict:
     if origen not in ORIGENES:
         raise ValueError(f"Origen '{origen}' desconocido.")
 
+    # El trader es lo que separa los dos libros. Se exige donde la fila es
+    # el registro de alguien, y se rechaza donde no lo es: una fila de FMS
+    # con un trader escrito seria una atribucion inventada, y el reparto por
+    # trader dejaria de poder creerse.
+    trader = _texto(op.get("trader"))
+    if origen in ORIGENES_TRADER and not trader:
+        raise ValueError(
+            "Falta el trader. El registro propio lleva siempre quien opero; "
+            "sin eso la vista por trader queda con agujeros.")
+    if origen == "fms" and trader:
+        raise ValueError(
+            f"Una operacion de FMS no lleva trader (venia '{trader}'). FMS no "
+            "dice quien opero, y ponerlo aqui seria inventarlo.")
+
     return {
         "referencia": _texto(op.get("referencia")),
         "fecha": fecha,
@@ -183,6 +207,7 @@ def _validar(op: dict) -> dict:
         "contraparte": _texto(op.get("contraparte")),
         "fecha_liquidacion": liquidacion,
         "origen": origen,
+        "trader": trader,
         "nota": _texto(op.get("nota")),
     }
 
@@ -192,10 +217,11 @@ def _validar(op: dict) -> dict:
 _INSERTA = """
 INSERT INTO tradebook (referencia, fecha, fondo, lado, instrumento, entity_id,
                        cantidad, precio, monto, moneda, contraparte,
-                       fecha_liquidacion, origen, nota)
+                       fecha_liquidacion, origen, trader, nota)
 VALUES (%(referencia)s, %(fecha)s, %(fondo)s, %(lado)s, %(instrumento)s,
         %(entity_id)s, %(cantidad)s, %(precio)s, %(monto)s, %(moneda)s,
-        %(contraparte)s, %(fecha_liquidacion)s, %(origen)s, %(nota)s)
+        %(contraparte)s, %(fecha_liquidacion)s, %(origen)s, %(trader)s,
+        %(nota)s)
 """
 # Solo alcanza a las filas que traen referencia; el indice unico es parcial.
 _UPSERT = _INSERTA + """
@@ -206,7 +232,8 @@ ON CONFLICT (referencia) WHERE referencia IS NOT NULL DO UPDATE SET
     monto = EXCLUDED.monto, moneda = EXCLUDED.moneda,
     contraparte = EXCLUDED.contraparte,
     fecha_liquidacion = EXCLUDED.fecha_liquidacion,
-    origen = EXCLUDED.origen, nota = EXCLUDED.nota,
+    origen = EXCLUDED.origen, trader = EXCLUDED.trader,
+    nota = EXCLUDED.nota,
     actualizado_en = CURRENT_TIMESTAMP
 """
 
@@ -241,7 +268,8 @@ def actualizar(operacion_id: int, op: dict) -> dict:
                 entity_id = %(entity_id)s, cantidad = %(cantidad)s,
                 precio = %(precio)s, monto = %(monto)s, moneda = %(moneda)s,
                 contraparte = %(contraparte)s,
-                fecha_liquidacion = %(fecha_liquidacion)s, nota = %(nota)s,
+                fecha_liquidacion = %(fecha_liquidacion)s,
+                origen = %(origen)s, trader = %(trader)s, nota = %(nota)s,
                 actualizado_en = CURRENT_TIMESTAMP
             WHERE operacion_id = %(operacion_id)s""", fila)
         return _a_dict(conn.execute(
@@ -275,7 +303,8 @@ def _a_dict(fila) -> dict:
 
 
 def leer(desde=None, hasta=None, fondo=None, lado=None, contraparte=None,
-         instrumento=None, limite: int | None = 500) -> list[dict]:
+         instrumento=None, trader=None, origen=None,
+         limite: int | None = 500) -> list[dict]:
     """Operations matching the filters, newest first."""
     donde, args = [], []
     if desde:
@@ -290,6 +319,16 @@ def leer(desde=None, hasta=None, fondo=None, lado=None, contraparte=None,
         donde.append("contraparte ILIKE %s"); args.append(f"%{contraparte}%")
     if instrumento:
         donde.append("instrumento ILIKE %s"); args.append(f"%{instrumento}%")
+    if trader:
+        donde.append("trader ILIKE %s"); args.append(f"%{trader}%")
+    if origen:
+        # 'traders' no es un origen almacenado sino la union de los dos que
+        # llevan dueño: es como el operador piensa el libro, y traducirlo
+        # aqui evita que cada pantalla arme la misma lista.
+        if origen == "traders":
+            donde.append("origen = ANY(%s)"); args.append(list(ORIGENES_TRADER))
+        else:
+            donde.append("origen = %s"); args.append(origen)
     sql = "SELECT * FROM tradebook"
     if donde:
         sql += " WHERE " + " AND ".join(donde)
@@ -314,23 +353,35 @@ def estado() -> dict:
             "SELECT DISTINCT moneda FROM tradebook ORDER BY moneda").fetchall()]
         origenes = {f["origen"]: f["n"] for f in conn.execute(
             "SELECT origen, COUNT(*) AS n FROM tradebook GROUP BY origen").fetchall()}
+        traders = [f["trader"] for f in conn.execute(
+            "SELECT DISTINCT trader FROM tradebook "
+            "WHERE trader IS NOT NULL ORDER BY trader").fetchall()]
     d = dict(base)
     d["desde"] = str(d["desde"]) if d["desde"] else None
     d["hasta"] = str(d["hasta"]) if d["hasta"] else None
-    d.update(fondos=fondos, monedas=monedas, origenes=origenes)
+    d.update(fondos=fondos, monedas=monedas, origenes=origenes, traders=traders)
     return d
 
 
 # ---- Carga por archivo -----------------------------------------------------
 
-def leer_archivo(datos, hoja=None) -> dict:
+def leer_archivo(datos, hoja=None, origen: str = "excel",
+                 trader: str | None = None) -> dict:
     """
     Excel or CSV -> the operations it holds, WITHOUT touching the DB.
 
     Returns what was read and what was discarded, row by row, so the
     operator decides with both in front of them. Format is recognized by
     content, not by extension.
+
+    The same reader serves both books; `origen` says which one, and with
+    it whether a trader is required. `trader` fills in the rows that do
+    not name one, for the usual case of a file that is all one person's:
+    it is a DEFAULT and never an override, so a file that does name them
+    keeps saying what it says.
     """
+    if origen not in ORIGENES:
+        raise ValueError(f"Origen '{origen}' desconocido.")
     if tabular.es_excel(datos):
         filas, nombre_hoja, hojas = tabular.filas_de_excel(datos, hoja)
         origen_fmt = "excel"
@@ -393,7 +444,9 @@ def leer_archivo(datos, hoja=None) -> dict:
             for campo in ("cantidad", "precio", "monto"):
                 crudo[campo] = _numero(crudo[campo], campo, coma_decimal,
                                        obligatorio=(campo == "cantidad"))
-            op = _validar({**crudo, "origen": "excel"})
+            if origen in ORIGENES_TRADER and not _texto(crudo.get("trader")):
+                crudo["trader"] = trader
+            op = _validar({**crudo, "origen": origen})
             op["_fila"] = n
             operaciones.append(op)
         except ValueError as exc:
@@ -404,6 +457,7 @@ def leer_archivo(datos, hoja=None) -> dict:
         "formato": origen_fmt, "hoja": nombre_hoja, "hojas": hojas,
         "columnas": {k: (cabecera[i] if i is not None else None)
                      for k, i in icol.items()},
+        "origen": origen,
         "leidas": len(operaciones), "descartadas": descartadas,
         "avisos": avisos,
         "operaciones": [{k: (str(v) if isinstance(v, dt.date) else v)
@@ -425,23 +479,25 @@ def _resumen_lote(operaciones: list[dict]) -> dict:
         "compras": sum(1 for o in operaciones if o["lado"] == "compra"),
         "ventas": sum(1 for o in operaciones if o["lado"] == "venta"),
         "con_referencia": sum(1 for o in operaciones if o["referencia"]),
+        "traders": sorted({o["trader"] for o in operaciones if o["trader"]}),
     }
 
 
-def importar(datos, hoja=None) -> dict:
+def importar(datos, hoja=None, origen: str = "excel",
+             trader: str | None = None) -> dict:
     """
     Reads the file and SAVES it. The rows that carry a reference upsert
     on it; the ones that do not are inserted, because there is no way to
     tell a genuine repeat trade from a re-upload of the same one.
     """
-    informe = leer_archivo(datos, hoja)
+    informe = leer_archivo(datos, hoja, origen=origen, trader=trader)
     if not informe["leidas"]:
         informe.update(guardadas=0, actualizadas=0, insertadas=0)
         return informe
 
     # Se revalida contra el diccionario, no contra lo serializado, para no
     # depender de como quedaron las fechas al convertirlas a texto.
-    filas = [_validar({**o, "origen": "excel"}) for o in informe["operaciones"]]
+    filas = [_validar({**o, "origen": origen}) for o in informe["operaciones"]]
     con_ref = [f["referencia"] for f in filas if f["referencia"]]
     with get_connection() as conn:
         ya_estaban = set()
@@ -460,8 +516,14 @@ def importar(datos, hoja=None) -> dict:
     return informe
 
 
-def plantilla(filas: int = 8) -> bytes:
-    """The template, with the column names the reader recognizes."""
+def plantilla(filas: int = 8, origen: str = "excel") -> bytes:
+    """
+    The template, with the column names the reader recognizes.
+
+    The trader column is there for the traders' own registration and
+    absent from the FMS one, so the spreadsheet itself says which of the
+    two books it feeds instead of leaving it to whoever fills it in.
+    """
     hoy = dt.date.today()
     ejemplo = pd.DataFrame({
         "referencia": [""] * filas,
@@ -477,6 +539,9 @@ def plantilla(filas: int = 8) -> bytes:
         "fecha_liquidacion": [hoy] + [""] * (filas - 1),
         "nota": [""] * filas,
     })
+    if origen in ORIGENES_TRADER:
+        ejemplo.insert(len(ejemplo.columns) - 1, "trader",
+                       ["NOMBRE DEL TRADER"] + [""] * (filas - 1))
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         ejemplo.to_excel(w, index=False, sheet_name="operaciones")
@@ -493,117 +558,3 @@ def exportar(**filtros) -> bytes:
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.to_excel(w, index=False, sheet_name="tradebook")
     return buf.getvalue()
-
-
-# ---- Derivadas de las posiciones ------------------------------------------
-
-# Flujos que mueven la cantidad SIN que haya habido una operacion. Si en
-# ese dia y ese papel hay alguno, la variacion deja de ser evidencia de una
-# compra o una venta.
-_FLUJOS_SIN_OPERACION = (
-    ("monto_acciones_liberadas", "acciones liberadas"),
-    ("monto_rescates", "rescate o vencimiento"),
-    ("monto_intereses_vencimiento_cupon", "cupon o vencimiento"),
-)
-
-
-def derivar_de_posiciones(desde=None, hasta=None, fondo=None) -> dict:
-    """
-    PROPOSES operations from day-to-day changes in holdings. It saves
-    nothing: what it returns is meant to be reviewed first.
-
-    A change in quantity is not a trade. The same delta is produced by a
-    split, a maturity, a redemption or a corporate action, and the
-    holdings feed carries those as separate cash flows on the same row.
-    So every proposal says whether one of those flows was present that
-    day, and those come back flagged: they are the ones the operator has
-    to look at, not the ones to wave through.
-
-    The price is the day's valuation price, not a traded price. It is
-    offered because it is the best estimate available, and marked as an
-    estimate because it is not what the desk paid.
-    """
-    donde = ["p.cantidad IS NOT NULL", "p.cantidad_anterior IS NOT NULL",
-             "p.cantidad <> p.cantidad_anterior"]
-    args: list = []
-    if desde:
-        donde.append("p.date >= %s"); args.append(desde)
-    if hasta:
-        donde.append("p.date <= %s"); args.append(hasta)
-    if fondo is not None:
-        donde.append("f.procode LIKE %s"); args.append(f"%{int(fondo)}%")
-
-    columnas_flujo = ", ".join(f"p.{c}" for c, _ in _FLUJOS_SIN_OPERACION)
-    sql = f"""
-        SELECT p.date, p.portfolio_id, f.procode, f.display_name,
-               p.security_entity_id, e.name AS instrumento,
-               p.codigo_iso_moneda, p.cantidad, p.cantidad_anterior,
-               p.precio_pen, {columnas_flujo}
-        FROM fact_positions_securities p
-        JOIN dim_portfolio f ON f.portfolio_id = p.portfolio_id
-        LEFT JOIN dim_entity e ON e.entity_id = p.security_entity_id
-        WHERE {' AND '.join(donde)}
-        ORDER BY p.date DESC, e.name
-        LIMIT 2000
-    """
-    with get_connection() as conn:
-        filas = conn.execute(sql, tuple(args)).fetchall()
-
-    propuestas, dudosas = [], 0
-    for f in filas:
-        delta = float(f["cantidad"]) - float(f["cantidad_anterior"])
-        motivos = [etiqueta for col, etiqueta in _FLUJOS_SIN_OPERACION
-                   if f.get(col) not in (None, 0)]
-        precio = float(f["precio_pen"]) if f["precio_pen"] is not None else None
-        propuestas.append({
-            "fecha": str(f["date"]),
-            "fondo": _fondo_de_procode(f["procode"]),
-            "cartera": f["display_name"] or f["procode"],
-            "lado": "compra" if delta > 0 else "venta",
-            "instrumento": f["instrumento"] or f"entity {f['security_entity_id']}",
-            "entity_id": f["security_entity_id"],
-            "cantidad": abs(delta),
-            "precio": precio,
-            "precio_estimado": True,
-            "monto": abs(delta) * precio if precio is not None else None,
-            "moneda": f["codigo_iso_moneda"] or "PEN",
-            "origen": "posiciones",
-            "sospechosa": bool(motivos),
-            "motivos": motivos,
-        })
-        dudosas += bool(motivos)
-
-    return {
-        "propuestas": propuestas,
-        "total": len(propuestas),
-        "sospechosas": dudosas,
-        "nota": ("Son movimientos de tenencia, no operaciones observadas. "
-                 "Las marcadas traen ademas un flujo (cupon, rescate o "
-                 "acciones liberadas) ese mismo dia, asi que la variacion "
-                 "puede no ser una compra ni una venta."),
-    }
-
-
-def _fondo_de_procode(procode: str) -> int | None:
-    """El numero de fondo que lleve el codigo de cartera, si lo lleva."""
-    m = re.search(r"(\d)", str(procode or ""))
-    return int(m.group(1)) if m else None
-
-
-def guardar_derivadas(propuestas: list[dict]) -> dict:
-    """
-    Stores reviewed proposals, marked origen='posiciones' so the row
-    keeps saying it was inferred rather than observed.
-    """
-    guardadas, rechazadas = 0, []
-    with get_connection() as conn:
-        for p in propuestas or []:
-            try:
-                fila = _validar({**p, "origen": "posiciones"})
-            except ValueError as exc:
-                rechazadas.append({"instrumento": p.get("instrumento"),
-                                   "motivo": str(exc)})
-                continue
-            conn.execute(_INSERTA, fila)
-            guardadas += 1
-    return {"guardadas": guardadas, "rechazadas": rechazadas}

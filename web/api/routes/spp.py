@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query, Response
 
 from web.api.routes._spp_comun import fecha_iso as _fecha
 from web.api.services import spp as svc
+from src.pipelines.prices.sbs.valor_cuota import afps as reg
 
 router = APIRouter(prefix="/api/spp", tags=["spp"])
 
@@ -80,12 +81,17 @@ def get_tabla(limite: str = Query("60"),
     return svc.tabla(lim, metrica.strip(), fondo.strip().lower())
 
 
-@router.get("/benchmark-tabla")
-def get_benchmark_tabla(limite: str = Query("60")) -> dict:
-    """El benchmark dia a dia, sobre la rejilla de fechas del libro."""
+@router.get("/indice/{tipo}/tabla")
+def get_indice_tabla(tipo: str, limite: str = Query("60")):
+    """Un indice compuesto (target o benchmark) dia a dia, sobre la rejilla
+    de fechas del libro."""
+    try:
+        t = reg.tipo_indice(tipo)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=404)
     crudo = limite.strip().lower()
     lim = None if crudo in ("todas", "todos") else _entero(crudo, 60, 1, 5000)
-    return svc.tabla_benchmark(lim)
+    return svc.tabla_indice(t, lim)
 
 
 @router.get("/exportar")

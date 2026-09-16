@@ -45,7 +45,7 @@ from src.shared.paths import DATA_DIR
 # carried the SPP work, not just the upstream pipelines.
 TABLAS_SPP = ("fact_prices", "series_registry", "dim_entity",
               "bloomberg_serie", "bloomberg_dato",
-              "serie_manual", "serie_manual_dato", "benchmark_composicion")
+              "serie_manual", "serie_manual_dato", "benchmark", "benchmark_composicion")
 
 
 def _herramienta(nombre: str) -> str:

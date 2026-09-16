@@ -17,9 +17,11 @@
 #   procode  SPP_{CLAVE}_F{fondo}          entity_type 'fund'
 #   fields   PX_LAST (valor cuota), CUOTAS, FONDO_SOLES
 #   source   'sbs'
-# Benchmark (one per fund type, common to all AFPs):
-#   procode  SPP_BENCH_F{fondo}            entity_type 'index'
-#   field    PX_LAST                       source 'benchmark'
+# Composite indices (two per fund type, common to all AFPs):
+#   procode  SPP_TARGET_F{fondo}  (tipo 'target')     entity_type 'index'
+#            SPP_BENCH_F{fondo}   (tipo 'benchmark')  entity_type 'index'
+#   field    PX_LAST                       source 'benchmark' (both: it
+#            means "calculated index"; the tipo is in the procode)
 # PX_LAST for the NAV is deliberate: the existing Price Viewer
 # charts PX_LAST across sources, so the funds show up there for free.
 # ---------------------------------------------------------------
@@ -39,6 +41,26 @@ AFPS_CONFIG = CONFIG_DIR / "afps.yaml"
 
 SOURCE_SBS = "sbs"
 SOURCE_BENCH = "benchmark"
+
+# Los dos indices compuestos de cada fondo. El target es contra lo que se
+# GESTIONA el fondo; el benchmark, contra lo que se MIDE. Misma maquinaria,
+# distinta fila; el tipo va en el procode.
+TIPOS_INDICE = ("target", "benchmark")
+ETIQUETA_INDICE = {"target": "Target", "benchmark": "Benchmark"}
+_PREFIJO_INDICE = {"target": "SPP_TARGET", "benchmark": "SPP_BENCH"}
+
+
+def tipo_indice(tipo) -> str:
+    """El tipo, validado. Todo lo que recibe un tipo pasa por aqui."""
+    t = str(tipo or "").strip().lower()
+    if t not in TIPOS_INDICE:
+        raise ValueError(f"Tipo de indice desconocido: '{tipo}'. "
+                         "Usa target o benchmark.")
+    return t
+
+
+def prefijo_indice(tipo) -> str:
+    return _PREFIJO_INDICE[tipo_indice(tipo)]
 
 # metric name (business, as the SBS publishes them) -> series_registry field
 METRICA_FIELD = {
@@ -96,42 +118,45 @@ def fondos() -> list[int]:
     return [int(f) for f in registro().get("fondos", [0, 1, 2, 3])]
 
 
-def fondos_benchmark(conn=None) -> list[int]:
+def fondos_indice(tipo, conn=None) -> list[int]:
     """
-    Fund types that carry a benchmark.
+    Fund types that carry an index of this tipo.
 
-    Es la UNION de los que declara config/afps.yaml y los que alguien
-    declaro en la tabla: nombrar el benchmark de un fondo AGREGA ese
-    fondo, nunca apaga los demas - lo contrario haria que ponerle
-    nombre a uno dejara a los otros sin benchmark.
+    Es la UNION de los que declara config/afps.yaml (la misma lista sirve
+    a los dos tipos) y los que alguien declaro en la tabla: nombrar el
+    indice de un fondo AGREGA ese fondo, nunca apaga los demas - lo
+    contrario haria que ponerle nombre a uno dejara a los otros sin
+    indice.
     """
+    tipo = tipo_indice(tipo)
     base = [int(f) for f in registro().get("fondos_benchmark", [1, 2, 3])
             if int(f) in fondos()]
+    sql = "SELECT fondo FROM benchmark WHERE tipo = %s"
     try:
         if conn is not None:
-            filas = conn.execute("SELECT fondo FROM benchmark").fetchall()
+            filas = conn.execute(sql, (tipo,)).fetchall()
         else:
             from src.db.connection import get_connection
             with get_connection() as c:
-                filas = c.execute("SELECT fondo FROM benchmark").fetchall()
+                filas = c.execute(sql, (tipo,)).fetchall()
     except Exception:
         return base                # sin tabla todavia (base recien creada)
     declarados = [int(f["fondo"]) for f in filas if int(f["fondo"]) in fondos()]
     return sorted(set(base) | set(declarados))
 
 
-def nombre_benchmark(fondo: int, conn=None) -> str:
+def nombre_indice(tipo, fondo: int, conn=None) -> str:
     """El nombre que el operador le puso, o uno por defecto."""
-    porDefecto = f"Benchmark Fondo {int(fondo)}"
+    tipo = tipo_indice(tipo)
+    porDefecto = f"{ETIQUETA_INDICE[tipo]} Fondo {int(fondo)}"
+    sql = "SELECT nombre FROM benchmark WHERE tipo = %s AND fondo = %s"
     try:
         if conn is not None:
-            fila = conn.execute("SELECT nombre FROM benchmark WHERE fondo = %s",
-                                (int(fondo),)).fetchone()
+            fila = conn.execute(sql, (tipo, int(fondo))).fetchone()
         else:
             from src.db.connection import get_connection
             with get_connection() as c:
-                fila = c.execute("SELECT nombre FROM benchmark WHERE fondo = %s",
-                                 (int(fondo),)).fetchone()
+                fila = c.execute(sql, (tipo, int(fondo))).fetchone()
     except Exception:
         return porDefecto
     return (fila["nombre"] if fila and fila["nombre"] else porDefecto)
@@ -219,8 +244,22 @@ def procode(afp, fondo: int) -> str:
     return f"SPP_{c.upper()}_F{int(fondo)}"
 
 
+def procode_indice(tipo, fondo: int) -> str:
+    return f"{prefijo_indice(tipo)}_F{int(fondo)}"
+
+
 def procode_bench(fondo: int) -> str:
-    return f"SPP_BENCH_F{int(fondo)}"
+    """El benchmark, por su nombre corto. scripts/migrate_spp_history.py
+    lo importa; conservarlo cuesta dos lineas."""
+    return procode_indice("benchmark", fondo)
+
+
+def tipo_de_procode(code: str) -> str | None:
+    """'SPP_TARGET_F2' -> 'target'; None si no es un indice compuesto."""
+    for tipo, prefijo in _PREFIJO_INDICE.items():
+        if str(code or "").startswith(prefijo + "_F"):
+            return tipo
+    return None
 
 
 def parse_procode(code: str) -> tuple[str, int] | None:
@@ -229,7 +268,8 @@ def parse_procode(code: str) -> tuple[str, int] | None:
     if len(parts) < 3 or parts[0] != "SPP" or not parts[-1].startswith("F"):
         return None
     clave = "_".join(parts[1:-1]).lower()
-    if clave == "bench":
+    # Los indices compuestos no son fondos de una AFP.
+    if clave in ("bench", "target"):
         return None
     try:
         return clave, int(parts[-1][1:])
@@ -242,7 +282,8 @@ def parse_procode(code: str) -> tuple[str, int] | None:
 def register_series(conn) -> int:
     """
     Idempotently registers every AFP x fund entity and its three series,
-    plus the benchmark entities, directly as status='active'.
+    plus the composite-index entities (target and benchmark per fund),
+    directly as status='active'.
 
     Unlike the discovered SBS universe, this is a small closed set that
     afps.yaml declares in full, so there is no backfill-pending dance:
@@ -286,14 +327,15 @@ def register_series(conn) -> int:
             for field in METRICA_FIELD.values():
                 inserted += _serie(entity_id, field, SOURCE_SBS)
 
-    for f in fondos_benchmark(conn):
-        entity_id = get_or_create_entity_id(
-            conn,
-            procode=procode_bench(f),
-            entity_type="index",
-            name=nombre_benchmark(f, conn),
-        )
-        inserted += _serie(entity_id, "PX_LAST", SOURCE_BENCH)
+    for tipo in TIPOS_INDICE:
+        for f in fondos_indice(tipo, conn):
+            entity_id = get_or_create_entity_id(
+                conn,
+                procode=procode_indice(tipo, f),
+                entity_type="index",
+                name=nombre_indice(tipo, f, conn),
+            )
+            inserted += _serie(entity_id, "PX_LAST", SOURCE_BENCH)
 
     if inserted:
         logger.info(f"afps registry: {inserted} new series registered.")
@@ -302,7 +344,7 @@ def register_series(conn) -> int:
 
 def series_map(conn) -> dict[tuple[str, str], dict]:
     """
-    (procode, field) -> series row for every SPP series (funds + bench).
+    (procode, field) -> series row for every SPP series (funds + indices).
     The runtime lookup transform and the web services share.
     """
     cur = conn.execute(

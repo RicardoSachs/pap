@@ -184,7 +184,12 @@ def config() -> dict:
     """The AFP registry the interface consumes - it never names an AFP."""
     return {
         "fondos": reg.fondos(),
-        "fondos_benchmark": reg.fondos_benchmark(),
+        # Dos indices compuestos por fondo, con los fondos que lleva cada uno
+        # y como se llaman. El tablero no escribe "Target" ni "Benchmark"
+        # por su cuenta: lo lee de aqui.
+        "tipos_indice": [{"clave": t, "etiqueta": reg.ETIQUETA_INDICE[t]}
+                         for t in reg.TIPOS_INDICE],
+        "fondos_indice": {t: reg.fondos_indice(t) for t in reg.TIPOS_INDICE},
         "casa": reg.afp_casa(),
         "metricas": [{"clave": k, "etiqueta": reg.ETIQUETA_METRICA[k]}
                      for k in METRICAS_TABLERO],
@@ -670,21 +675,21 @@ def tabla(limite, metrica: str, fondo_arg: str) -> dict:
             "fondo": fondo_arg, "filas": filas}
 
 
-def tabla_benchmark(limite) -> dict:
+def tabla_indice(tipo: str, limite) -> dict:
     """
-    El benchmark sobre la MISMA rejilla de fechas del libro.
+    Un indice compuesto sobre la MISMA rejilla de fechas del libro.
 
-    La pregunta que responde esta tabla es "que dias falta el
-    benchmark", asi que las filas son los dias con valor cuota - no los
-    dias que el benchmark tiene. Si se listaran solo estos ultimos, un
-    dia sin benchmark simplemente no apareceria, que es justo lo que
-    hay que ver.
+    La pregunta que responde esta tabla es "que dias falta el indice",
+    asi que las filas son los dias con valor cuota - no los dias que el
+    indice tiene. Si se listaran solo estos ultimos, un dia sin indice
+    simplemente no apareceria, que es justo lo que hay que ver.
     """
-    from src.pipelines.prices.sbs.valor_cuota.benchmark import (columna_bench,
-                                                                leer_bench)
-    fondos_b = reg.fondos_benchmark()
-    columnas_sel = [{"col": columna_bench(f), "fondo": f, "afp": f"Fondo {f}",
-                     "metrica": "benchmark"} for f in fondos_b]
+    from src.pipelines.prices.sbs.valor_cuota.benchmark import (columna_indice,
+                                                                leer_indice)
+    tipo = reg.tipo_indice(tipo)
+    fondos_b = reg.fondos_indice(tipo)
+    columnas_sel = [{"col": columna_indice(tipo, f), "fondo": f, "afp": f"Fondo {f}",
+                     "metrica": tipo} for f in fondos_b]
 
     desde = _corte_reciente(["valor_cuota"], limite) if limite else None
     libro = leer(["valor_cuota"], desde=desde)
@@ -693,7 +698,7 @@ def tabla_benchmark(limite) -> dict:
                 "fechas": 0}
 
     rejilla = (libro if limite is None else libro.tail(int(limite)))["fecha"]
-    bench = leer_bench(desde=rejilla.min(), hasta=rejilla.max())
+    bench = leer_indice(tipo, desde=rejilla.min(), hasta=rejilla.max())
     por_fecha = {}
     if not bench.empty:
         for _, fila in bench.iterrows():

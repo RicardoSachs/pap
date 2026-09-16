@@ -45,3 +45,33 @@ def test_exactly_one_house_afp():
 def test_metric_field_map_is_total():
     assert set(afps.METRICA_FIELD) == {"valor_cuota", "cuotas", "fondo"}
     assert set(afps.FIELD_METRICA) == {"PX_LAST", "CUOTAS", "FONDO_SOLES"}
+
+
+# ---- Los dos indices compuestos ---------------------------------------------
+
+def test_hay_exactamente_dos_tipos_de_indice():
+    assert afps.TIPOS_INDICE == ("target", "benchmark")
+
+
+def test_cada_tipo_tiene_su_procode_y_no_es_un_fondo():
+    assert afps.procode_indice("target", 2) == "SPP_TARGET_F2"
+    assert afps.procode_indice("benchmark", 2) == "SPP_BENCH_F2"
+    for tipo in afps.TIPOS_INDICE:
+        assert afps.parse_procode(afps.procode_indice(tipo, 1)) is None
+
+
+def test_el_procode_dice_de_que_tipo_es():
+    assert afps.tipo_de_procode("SPP_TARGET_F3") == "target"
+    assert afps.tipo_de_procode("SPP_BENCH_F3") == "benchmark"
+    assert afps.tipo_de_procode("SPP_HABITAT_F3") is None
+
+
+def test_un_tipo_desconocido_se_rechaza_con_los_validos():
+    import pytest
+    with pytest.raises(ValueError, match="target o benchmark"):
+        afps.tipo_indice("indice")
+
+
+def test_procode_bench_sigue_siendo_el_benchmark():
+    """scripts/migrate_spp_history.py lo importa por ese nombre."""
+    assert afps.procode_bench(2) == afps.procode_indice("benchmark", 2)

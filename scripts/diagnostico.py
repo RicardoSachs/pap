@@ -164,6 +164,7 @@ def main() -> int:
                                     ("fact_prices", "observaciones del libro"),
                                     ("bloomberg_serie", "series Bloomberg"),
                                     ("serie_manual", "series manuales"),
+                                    ("benchmark", "indices declarados (target/benchmark)"),
                                     ("benchmark_composicion", "filas de composicion")):
                 n = intentar(lambda t=tabla: conn.execute(
                     f"SELECT count(*) AS n FROM {t}").fetchone()["n"], "-")

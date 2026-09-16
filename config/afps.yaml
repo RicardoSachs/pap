@@ -19,7 +19,9 @@
 #   fondos   Optional. If an AFP only operates some fund types,
 #            list them; omitted means all of `fondos` below.
 #
-# fondos_benchmark: fund types that carry a benchmark index.
+# fondos_benchmark: fund types that carry the composite indices (the
+# TARGET and the BENCHMARK share this default list; declaring an index
+# for another fund in the tablero adds that fund without editing this).
 # Fund 0 is capital-protected and has no market comparable.
 # ---------------------------------------------------------------
 

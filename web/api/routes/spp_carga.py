@@ -22,6 +22,7 @@ from fastapi.responses import JSONResponse
 
 from src.configs.machine_config import machine_id, scraper_enabled
 from src.pipelines.prices.manual import series as man
+from src.pipelines.prices.sbs.valor_cuota import afps as reg
 from src.pipelines.prices.sbs.valor_cuota import benchmark as bench
 from src.pipelines.prices.sbs.valor_cuota import benchmark_composicion as bcomp
 from src.pipelines.prices.sbs.valor_cuota.registro import registrar_valores
@@ -294,110 +295,147 @@ def get_serie_manual_exportar(serie_id: int,
                              f"attachment; filename=serie_manual_{serie_id}.xlsx"})
 
 
-# ---- Benchmark (solo lectura: los niveles se calculan) ---------------------
+# ---- Indices compuestos: target y benchmark -------------------------------
+# Un solo juego de rutas para los dos, con el tipo en el camino. Lo que no
+# sea target ni benchmark se responde 404 antes de tocar nada.
 
-@router.get("/benchmark")
-def get_benchmark() -> dict:
-    return {"estado": bench.estado_benchmark()}
-
-
-# ---- Benchmark: definicion (uno por fondo, con nombre) --------------------
-
-@router.get("/benchmark/definiciones")
-def get_definiciones() -> dict:
-    return {"benchmarks": bcomp.leer_definiciones()}
+def _tipo_o_404(tipo: str):
+    try:
+        return reg.tipo_indice(tipo), None
+    except ValueError as exc:
+        return None, JSONResponse({"ok": False, "motivo": str(exc)}, status_code=404)
 
 
-@router.post("/benchmark/definicion")
-def post_definicion(datos: dict) -> JSONResponse:
-    """Crea o renombra el benchmark de un fondo; declararlo habilita ese
-    fondo y registra su serie."""
+@router.get("/indice/{tipo}")
+def get_indice(tipo: str):
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
+    return {"estado": bench.estado_indice(t)}
+
+
+@router.get("/indice/{tipo}/definiciones")
+def get_definiciones(tipo: str):
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
+    return {"indices": bcomp.leer_definiciones(t)}
+
+
+@router.post("/indice/{tipo}/definicion")
+def post_definicion(tipo: str, datos: dict) -> JSONResponse:
+    """Crea o renombra el indice de un fondo; declararlo habilita ese fondo
+    y registra su serie."""
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     try:
         return JSONResponse({"ok": True, "resultado": bcomp.guardar_definicion(
-            datos.get("fondo"), datos.get("nombre"), datos.get("descripcion"))})
+            t, datos.get("fondo"), datos.get("nombre"), datos.get("descripcion"))})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
-        logger.exception("definicion de benchmark")
+        logger.exception("definicion de indice")
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
 
 
-@router.delete("/benchmark/definicion")
-def delete_definicion(fondo: str) -> JSONResponse:
+@router.delete("/indice/{tipo}/definicion")
+def delete_definicion(tipo: str, fondo: str) -> JSONResponse:
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     try:
         return JSONResponse({"ok": True,
-                             "resultado": bcomp.borrar_definicion(fondo)})
+                             "resultado": bcomp.borrar_definicion(t, fondo)})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
 
 
-# ---- Benchmark: composicion (canasta versionada) --------------------------
-
-@router.get("/benchmark/composicion")
-def get_composicion(fondo: str | None = None) -> dict:
+@router.get("/indice/{tipo}/composicion")
+def get_composicion(tipo: str, fondo: str | None = None):
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     f = int(fondo) if fondo and fondo.strip().isdigit() else None
-    return {"composiciones": bcomp.leer_composiciones(f)}
+    return {"composiciones": bcomp.leer_composiciones(t, f)}
 
 
-@router.get("/benchmark/series-disponibles")
-def get_series_disponibles(q: str = "") -> dict:
+@router.get("/indice/{tipo}/series-disponibles")
+def get_series_disponibles(tipo: str, q: str = ""):
+    # El catalogo es el mismo para los dos tipos; el tipo esta en la ruta
+    # solo para que el editor use una unica base de URL.
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     return bcomp.series_disponibles(q)
 
 
-@router.post("/benchmark/composicion")
-def post_composicion(datos: dict) -> JSONResponse:
+@router.post("/indice/{tipo}/composicion")
+def post_composicion(tipo: str, datos: dict) -> JSONResponse:
     """
     Saves one basket effective from a date. Re-posting the same
-    (fondo, fecha) replaces that basket; other dates are history and
-    stay untouched.
+    (tipo, fondo, fecha) replaces that basket; other dates are history
+    and stay untouched.
     """
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     try:
         resultado = bcomp.guardar_composicion(
-            datos.get("fondo"), datos.get("vigente_desde"),
+            t, datos.get("fondo"), datos.get("vigente_desde"),
             datos.get("componentes") or [])
         return JSONResponse({"ok": True, "resultado": resultado})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
-        logger.exception("guardar composicion de benchmark")
+        logger.exception("guardar composicion de indice")
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
 
 
-@router.delete("/benchmark/composicion")
-def delete_composicion(fondo: str, vigente_desde: str) -> JSONResponse:
+@router.delete("/indice/{tipo}/composicion")
+def delete_composicion(tipo: str, fondo: str, vigente_desde: str) -> JSONResponse:
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     try:
         return JSONResponse({"ok": True,
-                             "resultado": bcomp.borrar_composicion(fondo, vigente_desde)})
+                             "resultado": bcomp.borrar_composicion(t, fondo, vigente_desde)})
     except (ValueError, TypeError) as exc:
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
     except Exception as exc:
-        logger.exception("borrar composicion de benchmark")
+        logger.exception("borrar composicion de indice")
         return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
 
 
-@router.post("/benchmark/recalcular")
-def post_recalcular(datos: dict) -> JSONResponse:
+@router.post("/indice/{tipo}/recalcular")
+def post_recalcular(tipo: str, datos: dict) -> JSONResponse:
     """
-    Regenerates the benchmark level series from the compositions, in
+    Regenerates the level series of one index from its compositions, in
     the background task (the UI follows /api/spp/tarea). Replaces the
     stored series for that fund - the composition is the source of
     truth.
     """
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
     try:
         fondo = int(datos.get("fondo"))
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "motivo": "Fondo no valido."},
                             status_code=400)
-    ok, motivo = lanzar(f"recalculo del benchmark F{fondo}",
-                        bcomp.recalcular, fondo=fondo)
+    ok, motivo = lanzar(f"recalculo del {t} F{fondo}",
+                        bcomp.recalcular, tipo=t, fondo=fondo)
     return JSONResponse({"ok": ok, "motivo": motivo},
                         status_code=200 if ok else 409)
 
 
-@router.get("/benchmark/exportar")
-def get_benchmark_exportar(desde: str | None = None,
-                           hasta: str | None = None) -> Response:
-    return Response(bench.exportar_benchmark_datos(fecha_iso(desde), fecha_iso(hasta)),
+@router.get("/indice/{tipo}/exportar")
+def get_indice_exportar(tipo: str, desde: str | None = None,
+                        hasta: str | None = None):
+    t, err = _tipo_o_404(tipo)
+    if err:
+        return err
+    return Response(bench.exportar_indice_datos(t, fecha_iso(desde), fecha_iso(hasta)),
                     media_type=XLSX,
                     headers={"Content-Disposition":
-                             "attachment; filename=benchmark_diario.xlsx"})
+                             f"attachment; filename={t}_diario.xlsx"})

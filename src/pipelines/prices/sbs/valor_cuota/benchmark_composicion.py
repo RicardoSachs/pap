@@ -1,8 +1,16 @@
 # src/pipelines/prices/sbs/valor_cuota/benchmark_composicion.py
 # ---------------------------------------------------------------
-# Composite benchmark: a versioned basket of priced series per fund
-# type, and the calculation that turns it into the SPP_BENCH_F{n}
-# level series in fact_prices.
+# Composite indices: a versioned basket of priced series per fund
+# type, and the calculation that turns it into a level series in
+# fact_prices.
+#
+# There are TWO such indices per fund, told apart by `tipo`:
+#   'target'     what the fund is steered against  -> SPP_TARGET_F{n}
+#   'benchmark'  what it is measured against       -> SPP_BENCH_F{n}
+# Every function here takes the tipo first. Same machinery, same
+# tables, different rows; the module and the tables keep the name
+# they were born with, when there was only one and it was called the
+# benchmark (see 53_benchmark_composicion.sql).
 #
 # Semantics (the user's choices, deliberately):
 #   - weights DRIFT between rebalances (buy-and-hold): the stored
@@ -11,9 +19,9 @@
 #   - components price from any store ('bloomberg' registry, 'fact'
 #     spine or 'manual' keyed-in series), optionally multiplied by
 #     an FX series.
-#   - recalcular() REGENERATES the whole benchmark series from the
-#     first composition (base 100), replacing whatever was loaded
-#     by hand - the composition is the source of truth.
+#   - recalcular() REGENERATES the whole series from the first
+#     composition (base 100), replacing whatever was stored - the
+#     composition is the source of truth.
 #
 # The chaining math lives in encadenar(), a pure function over
 # plain dicts, so the arithmetic is testable without a database.
@@ -34,31 +42,45 @@ BASE_INDICE = 100.0
 FUENTES = ("bloomberg", "fact", "manual")
 
 
-# ---- Definicion: un benchmark por fondo, con nombre ------------------
+def _tipo(tipo) -> str:
+    """The tipo, validated; every entry point goes through here."""
+    return reg.tipo_indice(tipo)
 
-def leer_definiciones() -> list[dict]:
-    """Los benchmarks declarados, con su cobertura y cuantos rebalanceos
-    tienen. Incluye los fondos que todavia no tienen nombre propio."""
+
+def _nombre_tipo(tipo: str) -> str:
+    """Como se dice en una frase: 'el target', 'el benchmark'."""
+    return reg.ETIQUETA_INDICE[tipo].lower()
+
+
+# ---- Definicion: un indice por (tipo, fondo), con nombre ----------------
+
+def leer_definiciones(tipo: str) -> list[dict]:
+    """Los indices de ese tipo declarados, con su cobertura y cuantos
+    rebalanceos tienen. Incluye los fondos que todavia no tienen nombre
+    propio."""
+    tipo = _tipo(tipo)
     with get_connection() as conn:
         declarados = {f["fondo"]: f for f in conn.execute(
-            "SELECT fondo, nombre, descripcion FROM benchmark ORDER BY fondo"
-        ).fetchall()}
+            "SELECT fondo, nombre, descripcion FROM benchmark "
+            "WHERE tipo = %s ORDER BY fondo", (tipo,)).fetchall()}
         composiciones = {f["fondo"]: f["n"] for f in conn.execute(
             "SELECT fondo, COUNT(DISTINCT vigente_desde) AS n "
-            "FROM benchmark_composicion GROUP BY fondo").fetchall()}
-        fondos = reg.fondos_benchmark(conn)
+            "FROM benchmark_composicion WHERE tipo = %s GROUP BY fondo",
+            (tipo,)).fetchall()}
+        fondos = reg.fondos_indice(tipo, conn)
         salida = []
         for f in fondos:
             d = declarados.get(f)
-            serie = reg.series_map(conn).get((reg.procode_bench(f), "PX_LAST"))
+            serie = reg.series_map(conn).get((reg.procode_indice(tipo, f), "PX_LAST"))
             puntos = 0
             if serie:
                 puntos = conn.execute(
                     "SELECT COUNT(*) AS n FROM fact_prices WHERE series_id = %s",
                     (serie["series_id"],)).fetchone()["n"]
             salida.append({
+                "tipo": tipo,
                 "fondo": f,
-                "nombre": (d["nombre"] if d else reg.nombre_benchmark(f, conn)),
+                "nombre": (d["nombre"] if d else reg.nombre_indice(tipo, f, conn)),
                 "descripcion": (d["descripcion"] if d else None),
                 "declarado": d is not None,
                 "rebalanceos": composiciones.get(f, 0),
@@ -67,15 +89,16 @@ def leer_definiciones() -> list[dict]:
     return salida
 
 
-def guardar_definicion(fondo: int, nombre: str, descripcion=None) -> dict:
+def guardar_definicion(tipo: str, fondo: int, nombre: str, descripcion=None) -> dict:
     """
-    Crea o renombra el benchmark de un fondo.
+    Crea o renombra el indice de un fondo.
 
     Declararlo es tambien lo que HABILITA a ese fondo a tener uno: la
     serie de niveles se registra aqui mismo, sin tocar
     config/afps.yaml. El nombre viaja a dim_entity.name, que es de
     donde lo leen el grafico y el libro.
     """
+    tipo = _tipo(tipo)
     fondo = int(fondo)
     if fondo not in reg.fondos():
         raise ValueError(
@@ -83,54 +106,57 @@ def guardar_definicion(fondo: int, nombre: str, descripcion=None) -> dict:
             + ", ".join(str(x) for x in reg.fondos()) + ".")
     nombre = str(nombre or "").strip()
     if not nombre:
-        raise ValueError("El benchmark necesita un nombre.")
+        raise ValueError(f"El {_nombre_tipo(tipo)} necesita un nombre.")
     descripcion = str(descripcion).strip() or None if descripcion else None
 
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO benchmark (fondo, nombre, descripcion)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (fondo) DO UPDATE
+            INSERT INTO benchmark (tipo, fondo, nombre, descripcion)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (tipo, fondo) DO UPDATE
                 SET nombre = EXCLUDED.nombre,
                     descripcion = COALESCE(EXCLUDED.descripcion,
                                            benchmark.descripcion),
                     actualizado_en = CURRENT_TIMESTAMP
-            """, (fondo, nombre, descripcion))
+            """, (tipo, fondo, nombre, descripcion))
         # Registra la serie del fondo recien habilitado y pone el nombre
         # en la entidad, para que el resto del tablero lo vea.
         reg.register_series(conn)
         conn.execute(
             "UPDATE dim_entity SET name = %s WHERE procode = %s AND entity_type = 'index'",
-            (nombre, reg.procode_bench(fondo)))
-    logger.info(f"benchmark Fondo {fondo}: '{nombre}'.")
-    return {"fondo": fondo, "nombre": nombre}
+            (nombre, reg.procode_indice(tipo, fondo)))
+    logger.info(f"{tipo} Fondo {fondo}: '{nombre}'.")
+    return {"tipo": tipo, "fondo": fondo, "nombre": nombre}
 
 
-def borrar_definicion(fondo: int) -> dict:
+def borrar_definicion(tipo: str, fondo: int) -> dict:
     """
-    Quita el NOMBRE del benchmark de un fondo; no toca sus composiciones
+    Quita el NOMBRE del indice de un fondo; no toca sus composiciones
     ni la serie calculada, que siguen ahi si vuelve a declararse.
     """
+    tipo = _tipo(tipo)
     fondo = int(fondo)
     with get_connection() as conn:
-        n = conn.execute("DELETE FROM benchmark WHERE fondo = %s",
-                         (fondo,)).rowcount
-    return {"fondo": fondo, "borrados": n}
+        n = conn.execute("DELETE FROM benchmark WHERE tipo = %s AND fondo = %s",
+                         (tipo, fondo)).rowcount
+    return {"tipo": tipo, "fondo": fondo, "borrados": n}
 
 
 # ---- Composiciones (CRUD versionado) --------------------------------
 
-def leer_composiciones(fondo: int | None = None) -> list[dict]:
-    """Baskets grouped by (fondo, vigente_desde), newest first."""
+def leer_composiciones(tipo: str, fondo: int | None = None) -> list[dict]:
+    """Baskets of one tipo grouped by (fondo, vigente_desde), newest first."""
+    tipo = _tipo(tipo)
     sql = """
-        SELECT fondo, vigente_desde, etiqueta, fuente, ref_id, peso,
+        SELECT tipo, fondo, vigente_desde, etiqueta, fuente, ref_id, peso,
                fx_fuente, fx_ref_id
         FROM benchmark_composicion
+        WHERE tipo = %s
     """
-    params: list = []
+    params: list = [tipo]
     if fondo is not None:
-        sql += " WHERE fondo = %s"
+        sql += " AND fondo = %s"
         params.append(int(fondo))
     sql += " ORDER BY fondo, vigente_desde DESC, etiqueta"
     with get_connection() as conn:
@@ -140,8 +166,8 @@ def leer_composiciones(fondo: int | None = None) -> list[dict]:
     for f in filas:
         clave = (f["fondo"], f["vigente_desde"])
         g = grupos.setdefault(clave, {
-            "fondo": f["fondo"], "vigente_desde": str(f["vigente_desde"]),
-            "componentes": []})
+            "tipo": tipo, "fondo": f["fondo"],
+            "vigente_desde": str(f["vigente_desde"]), "componentes": []})
         g["componentes"].append({
             "etiqueta": f["etiqueta"], "fuente": f["fuente"],
             "ref_id": f["ref_id"], "peso": float(f["peso"]),
@@ -149,20 +175,23 @@ def leer_composiciones(fondo: int | None = None) -> list[dict]:
     return list(grupos.values())
 
 
-def guardar_composicion(fondo: int, vigente_desde, componentes: list[dict]) -> dict:
+def guardar_composicion(tipo: str, fondo: int, vigente_desde,
+                        componentes: list[dict]) -> dict:
     """
     Saves ONE basket (all its components) effective from a date.
-    Re-saving the same (fondo, fecha) replaces that basket atomically;
-    other effective dates are untouched - history is never edited.
+    Re-saving the same (tipo, fondo, fecha) replaces that basket
+    atomically; other effective dates are untouched - history is never
+    edited.
 
     Weights are validated (>0, no duplicate refs) and NORMALIZED to
     sum 1, accepting 100-based input (60/30/10 == 0.6/0.3/0.1).
     """
+    tipo = _tipo(tipo)
     fondo = int(fondo)
-    if fondo not in reg.fondos_benchmark():
+    if fondo not in reg.fondos_indice(tipo):
         raise ValueError(
-            f"El Fondo {fondo} no lleva benchmark. Solo "
-            + ", ".join(f"Fondo {x}" for x in reg.fondos_benchmark()) + ".")
+            f"El Fondo {fondo} no lleva {_nombre_tipo(tipo)}. Solo "
+            + ", ".join(f"Fondo {x}" for x in reg.fondos_indice(tipo)) + ".")
     fecha = pd.to_datetime(vigente_desde).date()
     if fecha > dt.date.today():
         raise ValueError("La fecha de vigencia no puede ser futura.")
@@ -211,52 +240,55 @@ def guardar_composicion(fondo: int, vigente_desde, componentes: list[dict]) -> d
         c["peso"] = c["peso"] / total
 
     with get_connection() as conn:
-        _validar_referencias(conn, limpios, fondo)
+        _validar_referencias(conn, limpios, tipo, fondo)
         conn.execute(
-            "DELETE FROM benchmark_composicion WHERE fondo = %s AND vigente_desde = %s",
-            (fondo, fecha))
+            "DELETE FROM benchmark_composicion "
+            "WHERE tipo = %s AND fondo = %s AND vigente_desde = %s",
+            (tipo, fondo, fecha))
         for c in limpios:
             conn.execute(
                 """
                 INSERT INTO benchmark_composicion (
-                    fondo, vigente_desde, etiqueta, fuente, ref_id, peso,
+                    tipo, fondo, vigente_desde, etiqueta, fuente, ref_id, peso,
                     fx_fuente, fx_ref_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (fondo, fecha, c["etiqueta"], c["fuente"], c["ref_id"],
+                (tipo, fondo, fecha, c["etiqueta"], c["fuente"], c["ref_id"],
                  round(c["peso"], 6), c["fx_fuente"], c["fx_ref_id"]))
 
-    logger.info(f"benchmark composicion: Fondo {fondo} desde {fecha} - "
+    logger.info(f"{tipo} composicion: Fondo {fondo} desde {fecha} - "
                 f"{len(limpios)} componente(s) guardados.")
-    return {"fondo": fondo, "vigente_desde": str(fecha),
+    return {"tipo": tipo, "fondo": fondo, "vigente_desde": str(fecha),
             "componentes": len(limpios)}
 
 
-def borrar_composicion(fondo: int, vigente_desde) -> dict:
+def borrar_composicion(tipo: str, fondo: int, vigente_desde) -> dict:
+    tipo = _tipo(tipo)
     fecha = pd.to_datetime(vigente_desde).date()
     with get_connection() as conn:
         cur = conn.execute(
-            "DELETE FROM benchmark_composicion WHERE fondo = %s AND vigente_desde = %s",
-            (int(fondo), fecha))
-    return {"fondo": int(fondo), "vigente_desde": str(fecha),
+            "DELETE FROM benchmark_composicion "
+            "WHERE tipo = %s AND fondo = %s AND vigente_desde = %s",
+            (tipo, int(fondo), fecha))
+    return {"tipo": tipo, "fondo": int(fondo), "vigente_desde": str(fecha),
             "borrados": cur.rowcount}
 
 
-def _validar_referencias(conn, componentes: list[dict], fondo: int) -> None:
+def _validar_referencias(conn, componentes: list[dict], tipo: str, fondo: int) -> None:
     """Every referenced series (price and FX legs) must exist, and none of
-    them may be the benchmark this composition defines."""
-    propia = reg.series_map(conn).get((reg.procode_bench(fondo), "PX_LAST"))
+    them may be the index this composition defines."""
+    propia = reg.series_map(conn).get((reg.procode_indice(tipo, fondo), "PX_LAST"))
     sid_propia = propia["series_id"] if propia else None
     for c in componentes:
-        # A benchmark that holds itself recomposes on every recalculation:
+        # An index that holds itself recomposes on every recalculation:
         # _armar_periodos reads the levels written by the previous run
         # (before the DELETE), so the index drifts a little further each
         # time, with no error and nothing to notice.
         if (sid_propia is not None and c["fuente"] == "fact"
                 and c["ref_id"] == sid_propia):
             raise ValueError(
-                f"El benchmark del Fondo {fondo} no puede ser componente de "
-                "si mismo.")
+                f"El {_nombre_tipo(tipo)} del Fondo {fondo} no puede ser "
+                "componente de si mismo.")
         pares = [(c["fuente"], c["ref_id"], c["etiqueta"])]
         if c["fx_ref_id"] is not None:
             pares.append((c["fx_fuente"], c["fx_ref_id"], f"FX de {c['etiqueta']}"))
@@ -279,47 +311,53 @@ def _validar_referencias(conn, componentes: list[dict], fondo: int) -> None:
                     "no existe.")
 
 
-# ---- Precios --------------------------------------------------------
+# ---- Usos: quien referencia una serie ------------------------------
 
 def usos_de(conn, fuente: str, ref_id: int) -> tuple[list[dict], list[dict]]:
     """
-    Where a priced series is used by the benchmark, split into the
-    baskets in force and the superseded ones.
+    Where a priced series is used by ANY composite index, split into
+    the baskets in force and the superseded ones.
 
     The split is the whole point. This table is VERSIONED: a rebalance
     inserts a new basket instead of editing rows, so a component dropped
     years ago still has rows here forever. Counting all of them together
     and telling the operator to "take it out of the basket" names
     something they cannot find - it is not in the current basket. What
-    they can act on is the fund and the date of the version that still
-    holds it.
+    they can act on is the index, the fund and the date of the version
+    that still holds it.
 
-    Returns (vigentes, historicos), each row with fondo and vigente_desde.
+    "In force" is per (tipo, fondo): the target of fund 2 and the
+    benchmark of fund 2 each have their own current basket.
+
+    Returns (vigentes, historicos), each row with tipo, fondo and
+    vigente_desde.
     """
     filas = conn.execute(
         """
-        SELECT c.fondo, c.vigente_desde,
+        SELECT c.tipo, c.fondo, c.vigente_desde,
                c.vigente_desde = (SELECT MAX(v.vigente_desde)
                                   FROM benchmark_composicion v
-                                  WHERE v.fondo = c.fondo) AS vigente
+                                  WHERE v.tipo = c.tipo AND v.fondo = c.fondo) AS vigente
         FROM benchmark_composicion c
         WHERE (c.fuente = %s AND c.ref_id = %s)
            OR (c.fx_fuente = %s AND c.fx_ref_id = %s)
-        ORDER BY c.fondo, c.vigente_desde
+        ORDER BY c.tipo, c.fondo, c.vigente_desde
         """, (fuente, ref_id, fuente, ref_id)).fetchall()
     return ([f for f in filas if f["vigente"]],
             [f for f in filas if not f["vigente"]])
 
 
 def motivo_en_uso(nombre: str, vigentes: list[dict], historicos: list[dict]) -> str:
-    """The refusal, written so the next step is obvious."""
+    """The refusal, written so the next step is obvious: which index, which
+    fund, which version."""
     def lista(filas):
-        return ", ".join(f"fondo {f['fondo']} (desde {f['vigente_desde']})"
-                         for f in filas)
+        return ", ".join(
+            f"{_nombre_tipo(f.get('tipo', 'target'))} del fondo {f['fondo']} "
+            f"(desde {f['vigente_desde']})" for f in filas)
 
     if vigentes:
-        aviso = (f"'{nombre}' esta en la canasta vigente del benchmark: "
-                 f"{lista(vigentes)}. Quitala de esa canasta antes de borrarla.")
+        aviso = (f"'{nombre}' esta en una canasta vigente: {lista(vigentes)}. "
+                 "Quitala de esa canasta antes de borrarla.")
         if historicos:
             aviso += (f" Tambien aparece en {len(historicos)} version(es) "
                       "anterior(es).")
@@ -327,11 +365,13 @@ def motivo_en_uso(nombre: str, vigentes: list[dict], historicos: list[dict]) -> 
     # Solo en versiones superadas: decirle "quitala de la canasta" seria
     # mandarlo a buscar algo que ya no esta ahi.
     return (f"'{nombre}' ya no esta en ninguna canasta vigente, pero si en "
-            f"{len(historicos)} version(es) anterior(es) del benchmark: "
-            f"{lista(historicos)}. Borrarla dejaria esos tramos sin poder "
-            "recalcularse. Si ya no necesitas reproducirlos, borra primero "
-            "esas versiones de la composicion.")
+            f"{len(historicos)} version(es) anterior(es): {lista(historicos)}. "
+            "Borrarla dejaria esos tramos sin poder recalcularse. Si ya no "
+            "necesitas reproducirlos, borra primero esas versiones de la "
+            "composicion.")
 
+
+# ---- Precios --------------------------------------------------------
 
 def _precios(conn, fuente: str, ref_id: int) -> dict:
     """{date: price} of one series, whole history."""
@@ -438,13 +478,15 @@ def encadenar(periodos: list[dict], base: float = BASE_INDICE) -> list[tuple]:
     return sorted(unicos.items())
 
 
-def _armar_periodos(conn, fondo: int) -> list[dict]:
+def _armar_periodos(conn, tipo: str, fondo: int) -> list[dict]:
     """DB compositions -> the plain structures encadenar() consumes,
     with the FX leg folded into each component's prices."""
-    grupos = [g for g in leer_composiciones(fondo)]
+    grupos = [g for g in leer_composiciones(tipo, fondo)]
     grupos.sort(key=lambda g: g["vigente_desde"])
     if not grupos:
-        raise ValueError(f"El Fondo {fondo} no tiene ninguna composicion declarada.")
+        raise ValueError(
+            f"El {_nombre_tipo(tipo)} del Fondo {fondo} no tiene ninguna "
+            "composicion declarada.")
 
     cache: dict[tuple, dict] = {}
 
@@ -461,7 +503,7 @@ def _armar_periodos(conn, fondo: int) -> list[dict]:
             px = precios_de(c["fuente"], c["ref_id"])
             if c["fx_ref_id"] is not None:
                 fx = precios_de(c["fx_fuente"], c["fx_ref_id"])
-                # Component priced in benchmark currency: px * fx,
+                # Component priced in index currency: px * fx,
                 # forward-filling the FX leg onto the price dates.
                 fx_fechas = sorted(fx)
                 convertidos, i = {}, 0
@@ -482,29 +524,32 @@ def _armar_periodos(conn, fondo: int) -> list[dict]:
 
 # ---- Regeneracion ---------------------------------------------------
 
-def recalcular(fondo: int, log=logger.info) -> dict:
+def recalcular(tipo: str, fondo: int, log=logger.info) -> dict:
     """
-    Regenerates the SPP_BENCH_F{fondo} level series in fact_prices
-    from the declared compositions: base 100 at the first rebalance,
-    drifting holdings between rebalances, chained across them.
+    Regenerates the level series of one index (SPP_TARGET_F{fondo} or
+    SPP_BENCH_F{fondo}) in fact_prices from the declared compositions:
+    base 100 at the first rebalance, drifting holdings between
+    rebalances, chained across them.
 
     REPLACES the whole stored series (the composition is the source
     of truth - the user chose full regeneration over anchoring to the
     hand-loaded history). Runs in one transaction: a failed recalc
     leaves the previous series untouched.
     """
+    tipo = _tipo(tipo)
     fondo = int(fondo)
     with get_connection() as conn:
-        serie = reg.series_map(conn).get((reg.procode_bench(fondo), "PX_LAST"))
+        serie = reg.series_map(conn).get((reg.procode_indice(tipo, fondo), "PX_LAST"))
         if serie is None:
             raise ValueError(
-                f"No hay serie de benchmark registrada para el Fondo {fondo}. "
-                "Corre scripts/run_sbs_valor_cuota.py --solo-registro.")
+                f"No hay serie de {_nombre_tipo(tipo)} registrada para el "
+                f"Fondo {fondo}. Declaralo primero (le pone nombre y registra "
+                "la serie).")
         sid = serie["series_id"]
 
-        periodos = _armar_periodos(conn, fondo)
-        log(f"Fondo {fondo}: {len(periodos)} composicion(es), desde "
-            f"{periodos[0]['desde']}.")
+        periodos = _armar_periodos(conn, tipo, fondo)
+        log(f"{reg.ETIQUETA_INDICE[tipo]} Fondo {fondo}: {len(periodos)} "
+            f"composicion(es), desde {periodos[0]['desde']}.")
         niveles = encadenar(periodos)
         log(f"Indice calculado: {len(niveles)} fechas "
             f"({niveles[0][0]} a {niveles[-1][0]}), nivel final "
@@ -513,11 +558,14 @@ def recalcular(fondo: int, log=logger.info) -> dict:
         borrados = conn.execute(
             "DELETE FROM fact_prices WHERE series_id = %s", (sid,)).rowcount
         cur = conn.cursor()
+        # El source almacenado sigue siendo 'benchmark' para los dos tipos:
+        # significa "indice calculado", y cambiarlo dejaria huerfanas las
+        # series ya registradas. El tipo lo dice el procode.
         cur.executemany(UPSERT_CORRIGE,
-                        [(sid, d, v, "benchmark") for d, v in niveles])
+                        [(sid, d, v, reg.SOURCE_BENCH) for d, v in niveles])
     log(f"Serie reemplazada: {borrados} niveles previos fuera, "
         f"{len(niveles)} nuevos.")
-    return {"fondo": fondo, "fechas": len(niveles),
+    return {"tipo": tipo, "fondo": fondo, "fechas": len(niveles),
             "desde": str(niveles[0][0]), "hasta": str(niveles[-1][0]),
             "nivel_final": round(niveles[-1][1], 6),
             "reemplazados": borrados}
@@ -526,7 +574,9 @@ def recalcular(fondo: int, log=logger.info) -> dict:
 # ---- Catalogo para la UI --------------------------------------------
 
 def series_disponibles(q: str = "") -> dict:
-    """Pickable series for the composition editor, all three stores."""
+    """Pickable series for the composition editor, all three stores.
+    The calculated indices themselves are left out: an index built from
+    another index is a loop waiting to happen."""
     q = f"%{q.strip()}%" if q.strip() else "%"
     with get_connection() as conn:
         man = conn.execute(

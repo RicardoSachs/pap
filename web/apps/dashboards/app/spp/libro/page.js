@@ -2,14 +2,18 @@
 // ---------------------------------------------------------------------------
 // SPP tablero · Libro: the stored series, day by day.
 //
-// Two books, one on screen at a time: the AFPs' valor cuota (filtered by
+// Three books, one on screen at a time: the AFPs' valor cuota (filtered by
 // metric / fund / row count, with a CSV of exactly what is shown), and the
-// benchmark. They are separate tables on purpose - side by side they would
-// be one wide grid where neither reads well.
+// two composite indices - the TARGET and the BENCHMARK. They are separate
+// tables on purpose: side by side they would be one wide grid where nothing
+// reads well.
 //
-// The benchmark table is laid over the SAME date grid as the book, because
-// the question it answers is "which days is the benchmark missing": listing
-// only the days it has would hide exactly what one is looking for.
+// An index table is laid over the SAME date grid as the book, because the
+// question it answers is "which days is the index missing": listing only the
+// days it has would hide exactly what one is looking for.
+//
+// The index books are not written here: the list comes from the config
+// (tipos_indice), so adding a third index would not touch this file.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -20,7 +24,7 @@ import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
 
 const LIMITES = [['60', '60'], ['250', '250'], ['1000', '1000'], ['Todas', 'todas']];
-const LIBROS = [['Valor cuota', 'vc'], ['Benchmark', 'benchmark']];
+const RESPALDO_INDICES = [['Target', 'target'], ['Benchmark', 'benchmark']];
 
 export default function SppLibroPage() {
   const [cfg, setCfg] = useState(null);
@@ -29,13 +33,21 @@ export default function SppLibroPage() {
   const [fondo, setFondo] = useState('todos');
   const [limite, setLimite] = useState('60');
   const [data, setData] = useState(null);
-  const [bench, setBench] = useState(null);
+  const [indice, setIndice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     apiGet('/api/spp/config').then(setCfg).catch((e) => setError(e.message));
   }, []);
+
+  const indices = cfg?.tipos_indice?.length
+    ? cfg.tipos_indice.map((t) => [t.etiqueta, t.clave])
+    : RESPALDO_INDICES;
+  const LIBROS = [['Valor cuota', 'vc'], ...indices];
+  const esIndice = libro !== 'vc';
+  const etiquetaIndice = (indices.find(([, v]) => v === libro) || [libro])[0];
+  const nombreIndice = etiquetaIndice.toLowerCase();
 
   useEffect(() => {
     setLoading(true); setError(null);
@@ -44,37 +56,37 @@ export default function SppLibroPage() {
     // could land on top of the current one - thousands of rows under a
     // segment that says 60, with nothing to signal the mismatch.
     let vigente = true;
-    const ruta = libro === 'benchmark'
-      ? `/api/spp/benchmark-tabla?${new URLSearchParams({ limite })}`
+    const ruta = esIndice
+      ? `/api/spp/indice/${libro}/tabla?${new URLSearchParams({ limite })}`
       : `/api/spp/tabla?${new URLSearchParams({ limite, metrica, fondo })}`;
     apiGet(ruta)
-      .then((d) => { if (vigente) (libro === 'benchmark' ? setBench : setData)(d); })
+      .then((d) => { if (vigente) (esIndice ? setIndice : setData)(d); })
       .catch((e) => { if (vigente) setError(e.message); })
       .finally(() => { if (vigente) setLoading(false); });
     return () => { vigente = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, metrica, fondo, limite]);
 
-  const esBench = libro === 'benchmark';
-  const actual = esBench ? bench : data;
+  const actual = esIndice ? indice : data;
   const columnas = actual?.columnas || [];
   const filas = actual?.filas || [];
 
-  const urlDescarga = esBench
-    ? apiUrl('/api/spp/benchmark/exportar')
+  const urlDescarga = esIndice
+    ? apiUrl(`/api/spp/indice/${libro}/exportar`)
     : apiUrl(`/api/spp/exportar?${new URLSearchParams({ metrica, fondo, limite })}`);
 
   const cab = (c) => {
-    if (esBench) return `Fondo ${c.fondo}`;
+    if (esIndice) return `Fondo ${c.fondo}`;
     const base = `${c.afp} F${c.fondo}`;
     return metrica === 'todas' ? `${base} · ${nombreMetrica(cfg, c.metrica)}` : base;
   };
 
   const resumen = () => {
     if (!filas.length) return '—';
-    if (!esBench) return `${nEnt(filas.length)} filas en pantalla`;
-    const faltan = bench?.faltantes || 0;
+    if (!esIndice) return `${nEnt(filas.length)} filas en pantalla`;
+    const faltan = indice?.faltantes || 0;
     return faltan
-      ? `${nEnt(filas.length)} fechas · ${nEnt(faltan)} sin benchmark completo`
+      ? `${nEnt(filas.length)} fechas · ${nEnt(faltan)} sin ${nombreIndice} completo`
       : `${nEnt(filas.length)} fechas · sin huecos`;
   };
 
@@ -82,7 +94,7 @@ export default function SppLibroPage() {
     <div>
       <h1 className="page-title">Valor Cuota SPP</h1>
       <p className="page-sub">
-        Libro {esBench ? 'del benchmark' : 'de valores cuota'} · {resumen()}
+        Libro {esIndice ? `del ${nombreIndice}` : 'de valores cuota'} · {resumen()}
       </p>
       <SppTabs />
 
@@ -90,7 +102,7 @@ export default function SppLibroPage() {
         <div className="controls spp-controls">
           <div className="field"><label>Libro</label>
             <SppSeg items={LIBROS} value={libro} onChange={setLibro} /></div>
-          {!esBench && (
+          {!esIndice && (
             <>
               <div className="field"><label>Métrica</label>
                 <SppSeg items={[...metricasDe(cfg), ['Todas', 'todas']]}
@@ -105,13 +117,13 @@ export default function SppLibroPage() {
             <SppSeg items={LIMITES} value={limite} onChange={setLimite} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>
             <a className="btn" href={urlDescarga}>
-              {esBench ? '↓ Bajar el benchmark · XLSX' : '↓ Bajar lo que veo · CSV'}</a></div>
+              {esIndice ? `↓ Bajar el ${nombreIndice} · XLSX` : '↓ Bajar lo que veo · CSV'}</a></div>
         </div>
-        {esBench && (
+        {esIndice && (
           <p className="page-sub dim" style={{ marginTop: 10, marginBottom: 0 }}>
-            Las fechas son las del libro de valor cuota: así un día sin benchmark
-            se ve como un hueco en vez de desaparecer de la lista. El benchmark lo
-            produce el recálculo de la canasta, en <b>Registro y carga → Benchmark</b>.
+            Las fechas son las del libro de valor cuota: así un día sin {nombreIndice}
+            se ve como un hueco en vez de desaparecer de la lista. El {nombreIndice} lo
+            produce el recálculo de la canasta, en <b>Registro y carga → {etiquetaIndice}</b>.
           </p>
         )}
       </div>
@@ -132,9 +144,9 @@ export default function SppLibroPage() {
                     {f.valores.map((v, i) => (
                       <td key={columnas[i]?.col || i} className={`num ${v == null ? 'dim' : ''}`}>
                         {v == null ? '—'
-                          : esBench
-                            // Niveles de indice: nunca abreviados. fmtMetrica en
-                            // modo compacto convertiria 1.500 puntos en "1,50 M".
+                          : esIndice
+                            // Niveles de índice: nunca abreviados. fmtMetrica en
+                            // modo compacto convertiría 1.500 puntos en "1,50 M".
                             ? Number(v).toLocaleString('es-PE',
                               { minimumFractionDigits: 2, maximumFractionDigits: 4 })
                             : fmtMetrica(v, columnas[i]?.metrica || metrica, true)}
@@ -144,7 +156,7 @@ export default function SppLibroPage() {
                 ))}
                 {!filas.length && (
                   <tr><td colSpan={columnas.length + 1} className="dim">
-                    {esBench
+                    {esIndice
                       ? 'No hay fechas en el libro todavía.'
                       : 'El libro está vacío.'}</td></tr>
                 )}

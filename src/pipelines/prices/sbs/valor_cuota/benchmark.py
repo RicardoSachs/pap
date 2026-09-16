@@ -1,20 +1,21 @@
 # src/pipelines/prices/sbs/valor_cuota/benchmark.py
 # ---------------------------------------------------------------
-# Benchmark per fund type: READ side only.
+# Composite indices per fund type: READ side only.
 #
-# There is ONE benchmark per fund type, common to all AFPs, and only
-# for the funds config/afps.yaml declares (Fund 0 is capital-
-# protected and has no market comparable). Its levels live as series
-# SPP_BENCH_F{n} / PX_LAST / source 'benchmark' in fact_prices, and
-# since the 2026-09 redesign they are written by exactly ONE hand:
-# the recalculation in benchmark_composicion.py (composition of
-# priced components -> chained index). The manual and file loaders
-# that used to live here are gone on purpose - levels are calculated,
-# never keyed in; what IS keyed in is component prices, in
-# src/pipelines/prices/manual/series.py.
+# Two indices per fund, told apart by tipo ('target' / 'benchmark'),
+# common to all AFPs, only for the funds each one is declared for
+# (Fund 0 is capital-protected and has no market comparable). Their
+# levels live as series SPP_TARGET_F{n} / SPP_BENCH_F{n}, PX_LAST,
+# source 'benchmark' in fact_prices, and they are written by exactly
+# ONE hand: the recalculation in benchmark_composicion.py
+# (composition of priced components -> chained index). Levels are
+# calculated, never keyed in; what IS keyed in is component prices,
+# in src/pipelines/prices/manual/series.py.
 #
-# This module keeps the reading: the wide frame the tablero charts,
-# the coverage summary, and the Excel export of the stored series.
+# The module keeps the name it had when there was one index. What it
+# offers is the reading: the wide frame the tablero charts, the
+# coverage summary, and the Excel export of the stored series - each
+# for one tipo at a time.
 # ---------------------------------------------------------------
 
 import io
@@ -28,34 +29,24 @@ from src.pipelines.prices.sbs.valor_cuota import afps as reg
 logger = logging.getLogger(__name__)
 
 
-def columna_bench(fondo: int) -> str:
-    return f"bench_f{int(fondo)}"
-
-
-def _series_bench(conn) -> dict[int, int]:
-    """fondo -> series_id for the benchmark series."""
-    out = {}
-    for (procode, field), s in reg.series_map(conn).items():
-        if field == "PX_LAST" and s["source"] == reg.SOURCE_BENCH:
-            try:
-                out[int(procode.rsplit("_F", 1)[1])] = s["series_id"]
-            except (IndexError, ValueError):
-                continue
-    return out
+def columna_indice(tipo: str, fondo: int) -> str:
+    return f"{reg.tipo_indice(tipo)}_f{int(fondo)}"
 
 
 # ---- Lectura --------------------------------------------------------
 
-def leer_bench(desde=None, hasta=None) -> pd.DataFrame:
-    """Wide DataFrame: fecha x bench_f{n}, ascending by date."""
+def leer_indice(tipo: str, desde=None, hasta=None) -> pd.DataFrame:
+    """Wide DataFrame: fecha x {tipo}_f{n}, ascending by date."""
+    tipo = reg.tipo_indice(tipo)
+    prefijo = reg.prefijo_indice(tipo).replace("_", r"\_") + r"\_F%"
     sql = """
         SELECT e.procode, fp.date, fp.price
         FROM fact_prices fp
         JOIN series_registry sr ON sr.series_id = fp.series_id
         JOIN dim_entity e ON e.entity_id = sr.entity_id
-        WHERE e.procode LIKE 'SPP\\_BENCH\\_%%' AND sr.source = %s
+        WHERE e.procode LIKE %s AND sr.source = %s
     """
-    params: list = [reg.SOURCE_BENCH]
+    params: list = [prefijo, reg.SOURCE_BENCH]
     if desde:
         sql += " AND fp.date >= %s::date"
         params.append(str(pd.to_datetime(desde).date()))
@@ -68,7 +59,7 @@ def leer_bench(desde=None, hasta=None) -> pd.DataFrame:
         return pd.DataFrame(columns=["fecha"])
     df = pd.DataFrame([
         {"fecha": r["date"],
-         "col": columna_bench(int(r["procode"].rsplit("_F", 1)[1])),
+         "col": columna_indice(tipo, int(r["procode"].rsplit("_F", 1)[1])),
          "valor": r["price"]}
         for r in rows
     ])
@@ -79,17 +70,18 @@ def leer_bench(desde=None, hasta=None) -> pd.DataFrame:
     return df
 
 
-def estado_benchmark() -> dict:
+def estado_indice(tipo: str) -> dict:
     """Coverage summary, in the same language as the rest of the tablero."""
-    df = leer_bench()
-    fondos_b = reg.fondos_benchmark()
-    base = {"tabla": "fact_prices", "fondos": fondos_b,
+    tipo = reg.tipo_indice(tipo)
+    df = leer_indice(tipo)
+    fondos_i = reg.fondos_indice(tipo)
+    base = {"tipo": tipo, "tabla": "fact_prices", "fondos": fondos_i,
             "filas": len(df), "desde": None, "hasta": None, "series": []}
     if df.empty:
         return base
     base.update(desde=str(df["fecha"].min()), hasta=str(df["fecha"].max()))
-    for f in fondos_b:
-        col = columna_bench(f)
+    for f in fondos_i:
+        col = columna_indice(tipo, f)
         if col not in df.columns:
             base["series"].append({"fondo": f, "puntos": 0, "valor": None,
                                    "fecha": None, "inicio": None, "var_bps": None})
@@ -110,19 +102,20 @@ def estado_benchmark() -> dict:
 
 # ---- Export ---------------------------------------------------------
 
-def exportar_benchmark_datos(desde=None, hasta=None) -> bytes:
-    """The calculated benchmark as an in-memory Excel, one column per
+def exportar_indice_datos(tipo: str, desde=None, hasta=None) -> bytes:
+    """The calculated index as an in-memory Excel, one column per
     fund, most recent first."""
-    df = leer_bench(desde, hasta)
-    fondos_b = reg.fondos_benchmark()
-    cols = [columna_bench(f) for f in fondos_b if columna_bench(f) in df.columns]
+    tipo = reg.tipo_indice(tipo)
+    df = leer_indice(tipo, desde, hasta)
+    fondos_i = reg.fondos_indice(tipo)
+    cols = [columna_indice(tipo, f) for f in fondos_i if columna_indice(tipo, f) in df.columns]
     if df.empty:
-        df = pd.DataFrame(columns=["fecha"] + [columna_bench(f) for f in fondos_b])
-        cols = [columna_bench(f) for f in fondos_b]
+        df = pd.DataFrame(columns=["fecha"] + [columna_indice(tipo, f) for f in fondos_i])
+        cols = [columna_indice(tipo, f) for f in fondos_i]
     df = df[["fecha"] + cols].rename(
-        columns={columna_bench(f): f"fondo{f}" for f in fondos_b})
+        columns={columna_indice(tipo, f): f"fondo{f}" for f in fondos_i})
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         df.sort_values("fecha", ascending=False).to_excel(
-            w, sheet_name="Benchmark", index=False)
+            w, sheet_name=reg.ETIQUETA_INDICE[tipo], index=False)
     return buf.getvalue()

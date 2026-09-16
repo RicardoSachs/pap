@@ -109,7 +109,7 @@ BLOOMBERG_ENABLED=true
 ```
 
 y la pestaña *Series Bloomberg* podrá descargar de verdad los
-componentes del benchmark. Déjalo fuera en las máquinas sin terminal:
+componentes del target y del benchmark. Déjalo fuera en las máquinas sin terminal:
 el tablero sigue funcionando igual, solo que esa descarga responde que
 no hay terminal aquí.
 
@@ -156,7 +156,7 @@ del resto.
 
 > Lo que no viaja por esta vía es lo que solo existe en la otra
 > computadora: las correcciones hechas a mano, el registro de series
-> Bloomberg, las series manuales y las composiciones del benchmark. Son
+> Bloomberg, las series manuales y las composiciones del target y del benchmark. Son
 > pocas y se vuelven a declarar desde el tablero en minutos. Si algún
 > día quieres moverlas tal cual y tienes cómo pasar un archivo, está
 > `scripts\respaldo_spp.py --exportar` / `--importar`.
@@ -215,7 +215,7 @@ Prueba opcional de que el código está sano en esta máquina (necesita
 .venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook -q
 ```
 
-Deben pasar los 119.
+Deben pasar los 125.
 
 ---
 

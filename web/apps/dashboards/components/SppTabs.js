@@ -9,7 +9,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// El benchmark se arma desde DOS bases de componentes: la de Bloomberg
+// El target y el benchmark se arman desde DOS bases de componentes: la de Bloomberg
 // (esta pestaña) y la de series manuales (un área de «Registro y carga»).
 // Se nombran como pares para que se lean como lo que son, aunque vivan en
 // niveles distintos de la navegación.

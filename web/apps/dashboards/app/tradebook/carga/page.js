@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import Eco from '../../../components/Eco';
+import FormatoArchivo from '../../../components/FormatoArchivo';
 import SppSeg from '../../../components/SppSeg';
 import TradebookTabs from '../../../components/TradebookTabs';
 import useVerTodo from '../../../components/useVerTodo';
@@ -28,10 +29,13 @@ const VIAS = [
   ['Desde FMS', 'fms'],
 ];
 const LADOS = [['Compra', 'compra'], ['Venta', 'venta']];
+// Sin `referencia`: es el id del sistema ORIGEN, y quien captura a mano no
+// viene de ningun sistema. El campo sigue existiendo en la carga por archivo,
+// que es donde ese id existe y donde sirve para no duplicar al recargar.
 const VACIO = {
   fecha: '', fondo: '2', lado: 'compra', instrumento: '', cantidad: '',
   precio: '', monto: '', moneda: 'PEN', contraparte: '', fecha_liquidacion: '',
-  referencia: '', trader: '', nota: '',
+  trader: '', nota: '',
 };
 
 export default function TradebookCarga() {
@@ -150,6 +154,7 @@ function PorArchivo({ alCargar, origen, traders }) {
       </p>
 
       <div className="controls" style={{ marginTop: 10 }}>
+        <FormatoArchivo clave={deTraders ? 'tradebook_traders' : 'tradebook_fms'} />
         <a className="btn" href={apiUrl(`/api/tradebook/plantilla?origen=${origen}`)}>
           ↓ Plantilla · XLSX</a>
         <input ref={input} type="file" accept=".xlsx,.xls,.csv,.txt"
@@ -352,9 +357,6 @@ function AMano({ alCargar, traders }) {
         <div className="field"><label>Liquidación</label>
           <input className="date-input" type="date" value={form.fecha_liquidacion}
             onChange={set('fecha_liquidacion')} /></div>
-        <div className="field"><label>Referencia</label>
-          <input className="text-input" style={{ width: 140 }} placeholder="id del sistema"
-            value={form.referencia} onChange={set('referencia')} /></div>
         <div className="field"><label>Nota</label>
           <input className="text-input" style={{ width: 200 }} value={form.nota} onChange={set('nota')} /></div>
       </div>

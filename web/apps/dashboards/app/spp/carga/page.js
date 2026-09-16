@@ -19,6 +19,7 @@ import {
 } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
+import FormatoArchivo from '../../../components/FormatoArchivo';
 import useVerTodo from '../../../components/useVerTodo';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
@@ -765,6 +766,7 @@ export default function SppCargaPage() {
             cuota desde Agosto 1993», hoja «Valor cuota diario»). Trae solo valor cuota, y
             una celda vacía se deja como está: el Excel nunca borra.</p>
           <div className="controls">
+            <FormatoArchivo clave="valor_cuota_historico" />
             <input ref={hRef} type="file" accept=".xls,.xlsx" className="date-input"
               onChange={revisarHistorico} />
             <span className="page-sub" style={{ margin: 0 }}>{hNombre}</span>
@@ -892,6 +894,7 @@ export default function SppCargaPage() {
             </div>
           )}
           <div className="controls" style={{ marginTop: 12 }}>
+            <FormatoArchivo clave="series_manuales" />
             <a className="btn" href={apiUrl('/api/spp/series-manuales/plantilla')}>↓ Plantilla · XLSX</a>
             {smSerie && (
               <a className="btn" href={apiUrl(`/api/spp/series-manuales/${smSerie.serie_id}/exportar`)}>

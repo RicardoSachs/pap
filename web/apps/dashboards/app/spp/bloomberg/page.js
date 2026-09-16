@@ -16,6 +16,7 @@ import { apiGet } from '../../../lib/api';
 import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
+import FormatoArchivo from '../../../components/FormatoArchivo';
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 
@@ -146,6 +147,7 @@ export default function SppBloombergPage() {
           <button className="btn" onClick={() => subirArchivo(true)}>Revisar archivo</button>
           <button className="btn principal" disabled={ocupado}
             onClick={() => subirArchivo(false)}>Registrar las series</button>
+          <FormatoArchivo clave="bloomberg" />
           <a className="btn" href={apiUrl('/api/spp/bloomberg/plantilla')}>↓ Plantilla · XLSX</a>
           <a className="btn" href={apiUrl('/api/spp/bloomberg/exportar')}>↓ Bajar lo cargado · XLSX</a>
         </div>

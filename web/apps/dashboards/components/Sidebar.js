@@ -25,6 +25,8 @@ const ITEMS = [
   // un 404 al precargarla.
   // NUESTRO: el tablero de valor cuota SPP, que no existe aguas arriba.
   { href: '/spp/', label: 'Valor Cuota SPP', icon: '◷' },
+  // NUESTRO: el Tradebook, tampoco.
+  { href: '/tradebook/', label: 'Tradebook', icon: '⇄' },
 ];
 const SOON = [
   { label: 'Attribution', icon: '⊞' },

@@ -8,7 +8,11 @@
 // versión nueva de la interfaz. Next los inyecta igual para todas las rutas,
 // pero la SEPARACIÓN es la que importa: base.css se reemplaza entero y esto
 // sobrevive.
+//
+// Son dos hojas: la de widgets, que este tablero comparte con el Tradebook,
+// y la suya propia.
 // ---------------------------------------------------------------------------
+import '../estilos/tablero.css';
 import './spp.css';
 
 export default function SppLayout({ children }) {

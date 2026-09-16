@@ -8,6 +8,8 @@ const CARDS = [
   { href: '/contribution/', title: 'Contribution', desc: 'Per-holding contribution to portfolio return.' },
   // NUESTRO: el tablero de valor cuota SPP, que no existe aguas arriba.
   { href: '/spp/', title: 'Valor Cuota SPP', desc: 'Valor cuota diario de las AFP, su benchmark y la carga de datos.' },
+  // NUESTRO: el Tradebook.
+  { href: '/tradebook/', title: 'Tradebook', desc: 'Operaciones de la mesa: actividad agregada, registro y carga.' },
 ];
 
 export default function Home() {

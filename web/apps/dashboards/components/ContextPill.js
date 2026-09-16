@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
-import { rutaActiva } from '../lib/rutas';
+import { esTableroNuestro } from '../lib/rutas';
 
 const SOURCES = [['bloomberg', 'Bloomberg'], ['fms', 'FMS']];
 
@@ -36,7 +36,7 @@ export default function ContextPill() {
   // NUESTRO: el monitor SPP no tiene cartera, periodo ni fuente - tiene sus
   // propios controles - asi que la pildora entera sobra ahi. Mostrarla seria
   // ofrecer selectores muertos sobre la vista.
-  if (rutaActiva(path, '/spp/')) return null;
+  if (esTableroNuestro(path)) return null;
   const showFund = !(path === '/comparacion' || path === '/comparacion/');
   const allPeriods = [...d.periods, 'Custom'];
   const fundLabel = d.portfolio?.display_name || (d.portfolios.length ? '—' : 'Loading…');

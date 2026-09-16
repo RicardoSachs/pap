@@ -231,10 +231,10 @@ Prueba opcional de que el código está sano en esta máquina (necesita
 `pytest`, que no viene en el wheelhouse):
 
 ```
-.venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web -q
+.venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook -q
 ```
 
-Deben pasar los 51.
+Deben pasar los 101.
 
 ---
 

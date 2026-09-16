@@ -13,3 +13,17 @@ export const rutaActiva = (path, href) => {
   if (!base) return path === '/' || path === '';
   return path === href || path === base || path.startsWith(`${base}/`);
 };
+
+// NUESTRO. Nuestros tableros, los que no existen aguas arriba.
+//
+// La cromatica adoptada trae dos piezas que dan por hecho que toda pagina es
+// un tablero suyo: la pildora de contexto (cartera, fechas, fuente) y la
+// sincronizacion de esos filtros con la URL. Ninguna de las dos tiene sentido
+// aqui, y la sincronizacion ademas le reescribia la URL a la pagina.
+//
+// Estan listados en UN sitio para que el tercer modulo no vuelva a requerir
+// tocar dos componentes que son de aguas arriba, donde cada parche nuestro
+// hay que volver a aplicarlo en la siguiente actualizacion.
+const NUESTROS = ['/spp/', '/tradebook/'];
+export const esTableroNuestro = (path) =>
+  NUESTROS.some((base) => rutaActiva(path, base));

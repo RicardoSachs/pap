@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from web.api.routes import (contribution, portfolios, positions, prices,
+                            tradebook,
                             securities, spp, spp_bloomberg, spp_carga)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -83,6 +84,7 @@ app.include_router(contribution.router)
 app.include_router(spp.router)
 app.include_router(spp_bloomberg.router)
 app.include_router(spp_carga.router)
+app.include_router(tradebook.router)
 
 
 @app.get("/api/health")

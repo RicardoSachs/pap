@@ -2,8 +2,9 @@
 # web/api/services/portfolios.py
 # ---------------------------------------------------------------------------
 # Portfolios service : portfolio list + available position dates.
-# dim_portfolio uses `procode` (the house internal-code name); fact_positions
-# uses a `date` column.
+# dim_portfolio uses `procode` (the house internal-code name). Position dates
+# come from vw_positions_unified, the consolidation view over the per-type
+# position facts (Architecture B - there is no materialized fact_positions).
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ def get_position_dates(portfolio_id: int) -> list[str]:
         cur = conn.cursor()
         cur.execute(
             """SELECT DISTINCT date
-               FROM fact_positions
+               FROM vw_positions_unified
                WHERE portfolio_id = %s
                ORDER BY date DESC""",
             (portfolio_id,),

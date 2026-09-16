@@ -15,8 +15,7 @@ from src.db.connection import get_connection
 logger = logging.getLogger(__name__)
 
 _ASSET_CLASS = """
-    CASE WHEN e.entity_type = 'cash'    THEN 'cash'
-         WHEN eq.security_id IS NOT NULL THEN 'equity'
+    CASE WHEN eq.security_id IS NOT NULL THEN 'equity'
          WHEN bd.security_id IS NOT NULL THEN 'bond'
          WHEN fnd.security_id IS NOT NULL OR e.entity_type = 'fund' THEN 'fund'
          ELSE 'security' END

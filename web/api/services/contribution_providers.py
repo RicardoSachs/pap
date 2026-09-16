@@ -4,14 +4,20 @@
 # Contribution data-access providers.
 # ---------------------------------------------------------------------------
 # DerivedContributionProvider computes contribution on the fly from
-# fact_positions x fact_prices (the pgetl schema has no fact_contribution table):
+# vw_positions_unified x fact_prices (no fact_contribution table exists):
 #   return_i        = price_i(d1) / price_i(d0) - 1
 #   contribution_i  = weight_i(d0) * return_i
 # Prices are resolved through series_registry (entity_id, field='PX_LAST', source).
 #
+# Only position_type='security' rows are entity-resolved, so only they can be
+# priced. Deposits/cash/net receivables are returned with return=0 and
+# priced=false - their weight is visible but portfolio_return only sums priced
+# contributions (understated, visibly). Forwards (in_nav=FALSE) are excluded
+# entirely: their MTM already sits inside the net_receivable rows.
+#
 # A FactContributionProvider seam remains for a hypothetical precomputed table;
 # get_contribution_provider() falls back to derived whenever that table is absent
-# (it is, in pgetl) or empty. Force via env CONTRIBUTION_PROVIDER=derived|fact.
+# or empty. Force via env CONTRIBUTION_PROVIDER=derived|fact.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -25,12 +31,14 @@ from src.db.connection import get_connection
 
 logger = logging.getLogger(__name__)
 
-# asset_class derived from entity_type + which extension table the security is in.
+# asset_class: position_type for non-security rows; securities split by which
+# extension table they live in.
 _ASSET_CLASS = """
-    CASE WHEN e.entity_type = 'cash'    THEN 'cash'
-         WHEN eq.security_id IS NOT NULL THEN 'equity'
-         WHEN bd.security_id IS NOT NULL THEN 'bond'
-         WHEN fnd.security_id IS NOT NULL OR e.entity_type = 'fund' THEN 'fund'
+    CASE WHEN u.position_type <> 'security' THEN u.position_type
+         WHEN eq.security_id IS NOT NULL    THEN 'equity'
+         WHEN bd.security_id IS NOT NULL    THEN 'bond'
+         WHEN fnd.security_id IS NOT NULL
+              OR e.entity_type = 'fund'     THEN 'fund'
          ELSE 'security' END
 """
 
@@ -107,7 +115,7 @@ def _price_at(cur: psycopg.Cursor, entity_id: int, on_or_before: str, source: st
 
 
 # ---------------------------------------------------------------------------
-# Derived provider (current): fact_positions x fact_prices
+# Derived provider (current): vw_positions_unified x fact_prices
 # ---------------------------------------------------------------------------
 class DerivedContributionProvider:
     def get_contribution(self, portfolio_id, date_from, date_to, source=None) -> dict:
@@ -118,7 +126,7 @@ class DerivedContributionProvider:
                 return {"portfolio": None}
 
             cur.execute(
-                "SELECT MAX(date) AS d FROM fact_positions WHERE portfolio_id = %s AND date <= %s::date",
+                "SELECT MAX(date) AS d FROM vw_positions_unified WHERE portfolio_id = %s AND date <= %s::date",
                 (portfolio_id, date_from),
             )
             snap = cur.fetchone()["d"]
@@ -126,33 +134,40 @@ class DerivedContributionProvider:
                 return _shape(portfolio, date_from, date_to, source, None, [])
 
             cur.execute(
-                f"""SELECT p.security_entity_id AS entity_id,
-                           COALESCE(s.security_name, s.name, e.name) AS display_name,
+                f"""SELECT u.position_type,
+                           u.security_entity_id AS entity_id,
+                           COALESCE(s.security_name, s.name, e.name,
+                                    u.position_type || ' ' || u.position_key) AS display_name,
                            {_ASSET_CLASS} AS asset_class,
                            eq.sector AS sector,
-                           p.weight
-                    FROM fact_positions p
-                    JOIN dim_entity e ON e.entity_id = p.security_entity_id
-                    LEFT JOIN dim_security        s   ON s.entity_id   = e.entity_id
-                    LEFT JOIN dim_security_equity eq  ON eq.security_id = s.security_id
+                           u.weight
+                    FROM vw_positions_unified u
+                    LEFT JOIN dim_entity e ON e.entity_id = u.security_entity_id
+                    LEFT JOIN dim_security        s   ON s.entity_id    = e.entity_id
+                    LEFT JOIN dim_security_equity eq  ON eq.security_id  = s.security_id
                     LEFT JOIN dim_security_fund   fnd ON fnd.security_id = s.security_id
-                    LEFT JOIN dim_security_bond   bd  ON bd.security_id = s.security_id
-                    WHERE p.portfolio_id = %s AND p.date = %s""",
+                    LEFT JOIN dim_security_bond   bd  ON bd.security_id  = s.security_id
+                    WHERE u.portfolio_id = %s AND u.date = %s AND u.in_nav""",
                 (portfolio_id, snap),
             )
             positions = [dict(row) for row in cur.fetchall()]
 
             holdings: list[dict] = []
             for pos in positions:
-                p0 = _price_at(cur, pos["entity_id"], date_from, source)
-                p1 = _price_at(cur, pos["entity_id"], date_to, source)
-                ret = (p1 / p0 - 1.0) if (p0 and p1 and p0 != 0) else 0.0
-                weight = pos["weight"] or 0.0
+                p0 = p1 = None
+                if pos["entity_id"] is not None:
+                    p0 = _price_at(cur, pos["entity_id"], date_from, source)
+                    p1 = _price_at(cur, pos["entity_id"], date_to, source)
+                priced = bool(p0 and p1)
+                ret = (p1 / p0 - 1.0) if priced else 0.0
+                weight = float(pos["weight"]) if pos["weight"] is not None else 0.0
                 holdings.append({
                     "entity_id": pos["entity_id"],
+                    "position_type": pos["position_type"],
                     "display_name": pos["display_name"],
                     "asset_class": pos["asset_class"],
                     "sector": pos["sector"],
+                    "priced": priced,
                     "weight": round(weight, 6),
                     "return": round(ret, 6),
                     "contribution": round(weight * ret, 6),

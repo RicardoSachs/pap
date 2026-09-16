@@ -2,15 +2,15 @@
 // ---------------------------------------------------------------------------
 // Tradebook · Registro y carga.
 //
-// El libro se llena por DOS vías, y la pantalla las separa porque no son el
-// mismo dato:
+// Aquí entra el registro de los traders, a mano o por Excel: el libro con
+// detalle, que sobre todo dice quién operó. Ninguna de las dos formas guarda
+// nada sin haber mostrado antes lo que va a guardar. Debajo, el libro de lo
+// cargado, para mirarlo y anular.
 //
-//   - el registro de los traders, a mano o por Excel, que trae el detalle y
-//     sobre todo trae quién operó;
-//   - FMS, la operación tal como sale del sistema: general, y sin dueño.
-//
-// Ninguna de las dos guarda nada sin haber mostrado antes lo que va a
-// guardar. Debajo, el libro de lo cargado, para mirarlo y anular.
+// La vía de FMS (origen 'fms', general y sin trader) sigue existiendo en la
+// API y en el Panel; se quitó de esta pantalla porque no se usa desde aquí.
+// PorArchivo conserva el parámetro `origen` por eso: volverla a ofrecer es
+// una línea, no una reescritura.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -24,10 +24,6 @@ import useVerTodo from '../../../components/useVerTodo';
 import { apiGet } from '../../../lib/api';
 import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
 
-const VIAS = [
-  ['Registro de traders', 'traders'],
-  ['Desde FMS', 'fms'],
-];
 const LADOS = [['Compra', 'compra'], ['Venta', 'venta']];
 // Sin `referencia`: es el id del sistema ORIGEN, y quien captura a mano no
 // viene de ningun sistema. El campo sigue existiendo en la carga por archivo,
@@ -39,7 +35,6 @@ const VACIO = {
 };
 
 export default function TradebookCarga() {
-  const [via, setVia] = useState('traders');
   const [estado, setEstado] = useState(null);
   const [error, setError] = useState(null);
 
@@ -63,30 +58,9 @@ export default function TradebookCarga() {
 
       {error && <div className="panel error">Error: {error}</div>}
 
-      <div className="panel">
-        <div className="controls">
-          <div className="field"><label>Vía</label>
-            <SppSeg items={VIAS} value={via} onChange={setVia} /></div>
-        </div>
-        {/* La diferencia entre las dos vías no es de dónde sale el archivo
-            sino cuánto dice cada fila. Decirlo aquí evita que alguien cargue
-            el reporte de FMS por la vía del trader y le invente un dueño. */}
-        <p className="page-sub dim" style={{ marginTop: 4 }}>
-          {via === 'traders'
-            ? 'El registro propio: lleva siempre quién operó, y es el que permite mirar el libro por trader.'
-            : 'La operación tal como sale de FMS: general, y sin nombre de trader. FMS no dice quién operó.'}
-        </p>
-      </div>
-
-      {via === 'traders' ? (
-        <>
-          <AMano alCargar={cargarEstado} traders={estado?.traders || []} />
-          <PorArchivo alCargar={cargarEstado} origen="excel"
-            traders={estado?.traders || []} />
-        </>
-      ) : (
-        <PorArchivo alCargar={cargarEstado} origen="fms" traders={[]} />
-      )}
+      <AMano alCargar={cargarEstado} traders={estado?.traders || []} />
+      <PorArchivo alCargar={cargarEstado} origen="excel"
+        traders={estado?.traders || []} />
 
       <Libro estado={estado} alCambiar={cargarEstado} />
     </div>

@@ -173,25 +173,6 @@ abierta con el error.
 Comprueba: el Panel muestra los KPIs y el gráfico, y **Libro** trae
 fechas desde 1993.
 
-## 6b. El logo (opcional)
-
-De fábrica no hay logo y la barra lateral arranca directamente en
-*Home*. Para poner uno, suelta la imagen en:
-
-```
-web\apps\dashboards\public\marca\
-```
-
-Aparece al recargar la página. No hay que recompilar ni tocar código, y
-sirve PNG, SVG, JPG o WEBP con cualquier nombre — esa carpeta tiene un
-`LEEME.txt` con el detalle.
-
-Son dos piezas: el archivo que lleve **`simbolo`** en el nombre se usa
-con la barra plegada (48 px, donde no entra una palabra), y cualquier
-otra imagen con la barra desplegada (180 px). Si solo pones una, la otra
-situación no muestra nada. Conviene fondo transparente: hay tema claro y
-oscuro, y un fondo blanco se vería como un recuadro en el oscuro.
-
 ## 7. Extracción diaria automática
 
 Doble clic en **`scripts\Programar extraccion SPP.bat`**. Registra la

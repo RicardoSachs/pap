@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 
 // Dark fallback used during SSR/prerender (no document) and before hydration.
 const DARK = { surface: '#1C2030', panel: '#141720', border: '#2E3348', text: '#E8EAF0', muted: '#8892A4',
-  positive: '#22A05A', negative: '#D63A30', brand: '#E83224',
+  positive: '#2DD4A0', negative: '#F06580', brand: '#5B8CFF',
 };
 
 export function chartTheme() {
@@ -23,12 +23,12 @@ export function chartTheme() {
     border: v('--s4', DARK.border),
     text: v('--text-primary', DARK.text),
     muted: v('--text-secondary', DARK.muted),
-    // NUESTRO: Plotly no resuelve var(--x) en marker.color ni en line.color;
-    // se queda con su paleta por defecto y el grafico sale en los colores de
-    // otro sistema de diseno. Hay que darle el valor ya resuelto.
-    positive: v('--positive', DARK.positive),
-    negative: v('--negative', DARK.negative),
-    brand: v('--brand', DARK.brand),
+    // NUESTRO: Plotly no resuelve var(--x) en marker.color ni line.color; se
+    // queda con su paleta por defecto. Se le da el valor ya resuelto, leido de
+    // los tokens de esta hoja: teal, rose y blue.
+    positive: v('--teal', DARK.positive),
+    negative: v('--rose', DARK.negative),
+    brand: v('--blue', DARK.brand),
   };
 }
 

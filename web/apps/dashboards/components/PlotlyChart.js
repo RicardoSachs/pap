@@ -1,3 +1,4 @@
+
 // web/apps/dashboards/components/PlotlyChart.js
 // ---------------------------------------------------------------------------
 // Client-only Plotly wrapper. plotly.js touches `window` at module load, so this
@@ -40,7 +41,7 @@ function mergeAxis(themeAxis, page) {
   return { ...themeAxis, ...(page || {}), tickfont: { ...themeAxis.tickfont, ...(page?.tickfont || {}) } };
 }
 
-export default function PlotlyChart({ data, layout = {}, style, config = {}, onHover, onUnhover, onLegendClick, onLegendDoubleClick, onInitialized, onSelected, onClick, onClickAnnotation }) {
+export default function PlotlyChart({ data, layout = {}, style, onHover, onUnhover }) {
   useThemeVersion(); // re-render when the theme toggles so tokens are re-read
   const t = chartTheme();
   const themeAxis = {
@@ -58,16 +59,12 @@ export default function PlotlyChart({ data, layout = {}, style, config = {}, onH
     <Plot
       data={data}
       layout={merged}
-      config={{ displayModeBar: false, responsive: true, ...config }}
+      config={{ displayModeBar: false, responsive: true }}
       style={{ width: '100%', height: '420px', ...style }}
       useResizeHandler
-      onInitialized={onInitialized}
       onHover={onHover}
       onUnhover={onUnhover}
-      onClick={onClick}
-      onLegendClick={onLegendClick}
-      onLegendDoubleClick={onLegendDoubleClick}
-      onSelected={onSelected}
     />
   );
 }
+

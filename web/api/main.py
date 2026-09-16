@@ -117,48 +117,8 @@ class Bundle(StaticFiles):
         return respuesta
 
 
-# The brand mark lives in the source tree, not in the build output, and is
-# served straight from there. That is the whole point: the machines that run
-# this have no Node, so anything that needed a rebuild to appear would in
-# practice need a trip back to a developer. Dropping a file in the folder is
-# something the operator can do alone.
-_MARCA = Path(__file__).resolve().parents[1] / "apps" / "dashboards" / "public" / "marca"
-_IMAGENES = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif"}
-
-
-@app.get("/api/marca")
-def marca():
-    """
-    Whatever image is in public/marca, if any.
-
-    Asking instead of guessing a filename is what lets the sidebar stay
-    clean when there is no logo: a fixed <img src> would have to try and
-    fail, and every page load would leave 404s in this same log - the log
-    the operator reads when something is actually wrong.
-
-    The name decides the slot, because the two are not the same picture at
-    two sizes: collapsed the bar is 48px and only a symbol fits, expanded
-    it is 180px and the full lockup fits. Anything else is the lockup.
-    """
-    if not _MARCA.is_dir():
-        return {"simbolo": None, "lockup": None}
-    archivos = sorted(f for f in _MARCA.iterdir()
-                      if f.is_file() and f.suffix.lower() in _IMAGENES)
-    simbolo = next((f for f in archivos if "simbolo" in f.stem.lower()), None)
-    lockup = next((f for f in archivos if f is not simbolo), None)
-    return {
-        "simbolo": f"/marca/{simbolo.name}" if simbolo else None,
-        "lockup": f"/marca/{lockup.name}" if lockup else None,
-    }
-
-
 # Serve the built Next.js static export from / when it exists (post-build).
 _BUNDLE = Path(__file__).resolve().parents[1] / "apps" / "dashboards" / "out"
-if _MARCA.is_dir():
-    # Registered BEFORE the catch-all "/" so it wins, and so the file the
-    # operator dropped is served even though out/ has a stale copy from the
-    # last build.
-    app.mount("/marca", Bundle(directory=str(_MARCA)), name="marca")
 if _BUNDLE.is_dir():
     app.mount("/", Bundle(directory=str(_BUNDLE), html=True), name="dashboards")
     logger.info(f"serving static bundle from {_BUNDLE}")

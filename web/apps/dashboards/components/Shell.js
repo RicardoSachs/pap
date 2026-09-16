@@ -1,16 +1,15 @@
+
 // web/apps/dashboards/components/Shell.js
 // ---------------------------------------------------------------------------
-// App chrome: fixed header + floating sidebar + full-width main content area.
-// The sidebar floats over the content (it no longer participates in the layout,
-// so the main area is full width). Owns the sidebar expanded/collapsed state
-// (persisted to localStorage); clicking the content collapses an open sidebar.
+// App chrome: fixed header + collapsible sidebar + main content area. Owns the
+// sidebar expanded/collapsed state (persisted to localStorage) so the main
+// content margin tracks it.
 // ---------------------------------------------------------------------------
 'use client';
 
 import { useEffect, useState } from 'react';
+import Header from './Header';
 import Sidebar from './Sidebar';
-import ContextPill from './ContextPill';
-import ThemeToggle from './ThemeToggle';
 
 const LS_KEY = 'profuturo.sidebar';
 
@@ -28,20 +27,12 @@ export default function Shell({ children }) {
       return next;
     });
 
-  // Clicking the content area collapses an expanded (overlaying) sidebar.
-  const collapse = () => {
-    setExpanded(false);
-    try { localStorage.setItem(LS_KEY, '0'); } catch { /* ignore */ }
-  };
-
   return (
     <>
+      <Header />
       <Sidebar expanded={expanded} onToggle={toggle} />
-      <ThemeToggle />
-      <main className={`main ${expanded ? 'exp' : ''}`} onClick={() => { if (expanded) collapse(); }}>
-        <ContextPill />
-        {children}
-      </main>
+      <main className={`main ${expanded ? 'exp' : ''}`}>{children}</main>
     </>
   );
 }
+

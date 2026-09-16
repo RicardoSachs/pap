@@ -31,10 +31,11 @@ const PERIODOS = [
   ['Trimestre', 'trimestre'], ['Año', 'anio'],
 ];
 const LADOS = [['Ambos', ''], ['Compras', 'compra'], ['Ventas', 'venta']];
-// Las dos vias con que se llena el libro. Poder aislarlas no es un lujo:
-// cuando las dos cubran el mismo dia, mirarlas juntas cuenta dos veces la
-// misma operacion, y el total del panel seria el doble de lo real.
-const LIBROS = [['Ambos', ''], ['De traders', 'traders'], ['De FMS', 'fms']];
+// Las dos vias con que se llena el libro. NO hay opcion de verlas juntas, y
+// eso es a proposito: son las mismas operaciones a distinto nivel de
+// agregacion, asi que sumarlas contaria cada una dos veces. Siempre hay una
+// elegida; lo que se elige es el nivel de detalle con que se mira.
+const LIBROS = [['De traders', 'traders'], ['De FMS', 'fms']];
 
 // Moneda de la casa: es la que se mira por defecto cuando el libro trae
 // varias, para que el panel abra diciendo algo y no una suma imposible.
@@ -57,7 +58,10 @@ export default function TradebookPanel() {
   const [fondo, setFondo] = useState('');
   const [lado, setLado] = useState('');
   const [moneda, setMoneda] = useState('');
-  const [libro, setLibro] = useState('');
+  // Arranca en el registro de traders, que es el detallado. Si no hay nada
+  // cargado por esa via, el efecto de abajo lo pasa a FMS: abrir en un libro
+  // vacio teniendo datos en el otro haria pensar que no hay nada.
+  const [libro, setLibro] = useState('traders');
   const [trader, setTrader] = useState('');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
@@ -73,6 +77,8 @@ export default function TradebookPanel() {
       if (e.monedas?.length) {
         setMoneda(e.monedas.includes(MONEDA_CASA) ? MONEDA_CASA : e.monedas[0]);
       }
+      const deTraders = (e.origenes?.excel || 0) + (e.origenes?.manual || 0);
+      if (!deTraders && (e.origenes?.fms || 0) > 0) setLibro('fms');
     }).catch((e) => setError(e.message));
   }, []);
 
@@ -187,12 +193,10 @@ export default function TradebookPanel() {
                 abajo son ambiguas, y con varias cargadas serían engañosas. */}
             <p className="page-sub dim" style={{ marginTop: 4 }}>
               Cifras en {moneda || 'todas las monedas'}. Los montos no se
-              convierten entre monedas.
-              {!libro && (total.de_fms > 0 && total.de_traders > 0) && (
-                <> · <b>Estás viendo las dos vías juntas</b>, y {nEnt(total.de_fms)} operaciones
-                de FMS pueden ser las mismas que {nEnt(total.de_traders)} del registro de
-                traders. Elige un libro para no contarlas dos veces.</>
-              )}
+              convierten entre monedas. Las cifras son del{' '}
+              {libro === 'fms' ? 'reporte de FMS' : 'registro de los traders'}:
+              las dos vías traen las mismas operaciones a distinto nivel de
+              detalle, y por eso no se suman.
             </p>
           </div>
 
@@ -222,12 +226,13 @@ export default function TradebookPanel() {
               <div className="cifra">{nEnt(total.contrapartes || 0)}</div>
               <div className="pie">{nEnt(total.instrumentos || 0)} instrumentos</div>
             </div>
-            <div className="tb-total">
-              <div className="rotulo">Traders</div>
-              <div className="cifra">{nEnt(total.traders || 0)}</div>
-              <div className="pie">
-                {nEnt(total.de_traders || 0)} de registro · {nEnt(total.de_fms || 0)} de FMS</div>
-            </div>
+            {libro !== 'fms' && (
+              <div className="tb-total">
+                <div className="rotulo">Traders</div>
+                <div className="cifra">{nEnt(total.traders || 0)}</div>
+                <div className="pie">con operaciones en el rango</div>
+              </div>
+            )}
           </div>
 
           <div className="panel">
@@ -257,24 +262,27 @@ export default function TradebookPanel() {
 
           <div className="spp-dos">
             {/* Sin tope y sin 'Otras': los traders son pocos y el sentido de
-                esta tabla es justamente poder ver a cada uno. La fila 'sin
-                dato' son las de FMS, que no llevan nombre. */}
-            <Composicion titulo="Por trader" moneda={moneda}
-              filas={(resumen?.por_trader || []).filter((f) => !moneda || f.moneda === moneda)} />
-            <Composicion titulo="Por libro" moneda={moneda}
-              filas={(resumen?.por_origen || [])
-                .filter((f) => !moneda || f.moneda === moneda)
-                .map((f) => ({ ...f, clave: f.clave === 'fms' ? 'FMS' : `Registro · ${f.clave}` }))} />
-          </div>
-
-          <div className="spp-dos">
+                esta tabla es justamente poder ver a cada uno. Con el libro de
+                FMS no se pinta: esas filas no llevan nombre. */}
+            {libro !== 'fms' ? (
+              <Composicion titulo="Por trader" moneda={moneda}
+                filas={(resumen?.por_trader || []).filter((f) => !moneda || f.moneda === moneda)} />
+            ) : (
+              <Composicion titulo="Por moneda" moneda={null}
+                filas={resumen?.por_moneda || []} conMoneda />
+            )}
             <Composicion titulo="Por fondo" moneda={moneda}
               filas={(resumen?.por_fondo || [])
                 .filter((f) => !moneda || f.moneda === moneda)
                 .map((f) => ({ ...f, clave: `Fondo ${f.clave}` }))} />
-            <Composicion titulo="Por moneda" moneda={null}
-              filas={resumen?.por_moneda || []} conMoneda />
           </div>
+
+          {libro !== 'fms' && (
+            <div className="spp-dos">
+              <Composicion titulo="Por moneda" moneda={null}
+                filas={resumen?.por_moneda || []} conMoneda />
+            </div>
+          )}
         </>
       )}
     </div>

@@ -3,11 +3,15 @@
 // NUESTRO. El icono de ayuda que va junto a cada campo de subir archivo, y la
 // ventana que abre con el formato que ese sitio espera.
 //
-// Lo que muestra viene de /api/formatos/{clave}, que lo deriva de las MISMAS
-// constantes que usa el lector para parsear. Escribirlo aquí a mano habría
+// Muestra el CUADRO y nada más: los encabezados y una fila de ejemplo. Eso
+// es el formato; describir además cada columna con un párrafo repetía con
+// palabras lo que la fila ya enseña, y la ventana pedía scroll para decir
+// menos.
+//
+// Las columnas vienen de /api/formatos/{clave}, que las deriva de las MISMAS
+// constantes que usa el lector para parsear. Escribirlas aquí a mano habría
 // sido más corto y habría empezado a mentir el día que alguien agregue un
-// alias de columna — y una ayuda que miente es peor que ninguna, porque el
-// operador la sigue y el archivo se le cae sin entender por qué.
+// alias de columna.
 //
 // Se pide al abrir, no al montar: son cuatro formularios en pantalla y casi
 // nadie abre los cuatro.
@@ -66,10 +70,7 @@ export default function FormatoArchivo({ clave, etiqueta = 'Ver el formato' }) {
           aria-label={datos?.titulo || etiqueta}>
           <div className="fmt-ventana" ref={caja}>
             <div className="fmt-cabecera">
-              <div>
-                <div className="fmt-titulo">{datos?.titulo || 'Formato del archivo'}</div>
-                {datos?.resumen && <p className="fmt-resumen">{datos.resumen}</p>}
-              </div>
+              <div className="fmt-titulo">{datos?.titulo || 'Formato del archivo'}</div>
               <button type="button" className="fmt-cerrar" aria-label="Cerrar"
                 onClick={() => setAbierto(false)}>×</button>
             </div>
@@ -79,11 +80,12 @@ export default function FormatoArchivo({ clave, etiqueta = 'Ver el formato' }) {
 
             {datos && (
               <div className="fmt-cuerpo">
-                {!!datos.columnas.length && (
+                {datos.columnas.length ? (
                   <>
-                    {/* La fila de ejemplo va arriba y a lo ancho: es lo que
-                        el operador copia, y leerla es más rápido que leer la
-                        tabla de definiciones que viene debajo. */}
+                    {/* El cuadro ES la respuesta. Una fila de ejemplo con los
+                        encabezados encima dice el formato entero de un
+                        vistazo, y la lista de definiciones que habia debajo
+                        repetia con parrafos lo que la fila ya mostraba. */}
                     <div className="table-wrap fmt-ejemplo">
                       <table>
                         <thead><tr>
@@ -104,39 +106,18 @@ export default function FormatoArchivo({ clave, etiqueta = 'Ver el formato' }) {
                       <span className="fmt-req">*</span> obligatoria. El orden de
                       las columnas da igual y las que no se reconozcan se ignoran.
                     </p>
-
-                    <table className="fmt-columnas">
-                      <tbody>
-                        {datos.columnas.map((c) => (
-                          <tr key={c.nombre}>
-                            <td className="fmt-nombre">
-                              {c.nombre}
-                              {c.obligatoria && <span className="fmt-req">*</span>}
-                            </td>
-                            <td>
-                              {c.ayuda}
-                              {!!c.alias.length && (
-                                <div className="fmt-alias">
-                                  también se acepta: {c.alias.join(', ')}
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </>
-                )}
-
-                {!!datos.notas.length && (
+                ) : (
+                  /* Sin cuadro que ensenar - es una hoja ajena, la de la SBS -
+                     hay que decirlo con palabras o el icono abriria en vacio. */
                   <ul className="fmt-notas">
-                    {datos.notas.map((n) => <li key={n}>{n}</li>)}
+                    {(datos.notas || []).map((n) => <li key={n}>{n}</li>)}
                   </ul>
                 )}
 
                 {datos.plantilla && (
                   <a className="btn principal" href={apiUrl(datos.plantilla)}
-                    style={{ marginTop: 12, display: 'inline-block' }}>
+                    style={{ marginTop: 4, display: 'inline-block' }}>
                     ↓ Bajar la plantilla · XLSX
                   </a>
                 )}

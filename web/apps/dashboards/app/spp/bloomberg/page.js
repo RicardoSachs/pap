@@ -16,7 +16,7 @@ import { apiGet } from '../../../lib/api';
 import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
-import FormatoArchivo from '../../../components/FormatoArchivo';
+import CargaArchivo from '../../../components/CargaArchivo';
 import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 
@@ -29,6 +29,8 @@ export default function SppBloombergPage() {
   const [form, setForm] = useState({ ticker: '', campo: '', intervalo: 'diario', fecha_inicio: '', descripcion: '' });
   const fileRef = useRef(null);
   const [informe, setInforme] = useState(null);
+  // La carga por archivo vive en su propia fila: su eco tambien.
+  const [ecoArch, setEcoArch] = useState('');
 
   // Shared background-task poller (same hook as the carga tab). `ocupado`
   // gates every write: the download thread is inserting into these same
@@ -81,10 +83,10 @@ export default function SppBloombergPage() {
 
   const subirArchivo = async (soloRevisar) => {
     const f = fileRef.current?.files?.[0];
-    if (!f) { setEco({ ok: false, texto: 'Elige un archivo primero.' }); return; }
+    if (!f) { setEcoArch({ ok: false, texto: 'Elige un archivo primero.' }); return; }
     // Clear the previous attempt first: an error used to leave the old report
     // on screen, reading as if it described the file just chosen.
-    setEco(''); setInforme(null);
+    setEcoArch(''); setInforme(null);
     const fd = new FormData();
     fd.append('archivo', f);
     fd.append('revisar', soloRevisar ? '1' : '');
@@ -92,7 +94,7 @@ export default function SppBloombergPage() {
     if (r.ok) {
       setInforme({ ...r.data.informe, revisado: r.data.revisado });
       if (!r.data.revisado) cargar();
-    } else setEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
+    } else setEcoArch({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
   };
 
   const detalle = estado?.detalle || [];
@@ -141,26 +143,72 @@ export default function SppBloombergPage() {
               onClick={agregar}>Registrar serie</button></div>
         </div>
 
-        <div className="controls" style={{ marginTop: 10 }}>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="date-input"
-            aria-label="Archivo con series para registrar" />
-          <button className="btn" onClick={() => subirArchivo(true)}>Revisar archivo</button>
-          <button className="btn principal" disabled={ocupado}
-            onClick={() => subirArchivo(false)}>Registrar las series</button>
-          <FormatoArchivo clave="bloomberg" />
-          <a className="btn" href={apiUrl('/api/spp/bloomberg/plantilla')}>↓ Plantilla · XLSX</a>
-          <a className="btn" href={apiUrl('/api/spp/bloomberg/exportar')}>↓ Bajar lo cargado · XLSX</a>
-        </div>
-        {informe && (
-          <p className="page-sub">
-            Archivo {informe.archivo}: {informe.total} serie(s) leídas
-            {informe.revisado ? ' (solo revisión, nada registrado)' :
-              ` · ${informe.nuevas} nuevas, ${informe.actualizadas} actualizadas`}
-            {informe.total_omitidas ? ` · ${informe.total_omitidas} omitida(s)` : ''}
-          </p>
-        )}
         <Eco eco={eco} />
       </div>
+
+      <CargaArchivo
+        ref={fileRef}
+        titulo="Registrar series por archivo"
+        descripcion={<>Una fila por serie. Solo el <b>ticker</b> es obligatorio; campo e
+          intervalo toman PX_LAST y diario si faltan. El archivo declara QUÉ descargar,
+          no los datos: los precios los trae Bloomberg después.</>}
+        formato="bloomberg"
+        plantilla="/api/spp/bloomberg/plantilla"
+        onChange={() => { setInforme(null); setEcoArch(''); }}
+        acciones={<>
+          <button className="btn" onClick={() => subirArchivo(true)}>Revisar</button>
+          <button className="btn principal" disabled={ocupado}
+            title={ocupado ? 'Espera a que termine la descarga' : undefined}
+            onClick={() => subirArchivo(false)}>Registrar las series</button>
+        </>}
+        eco={ecoArch}
+        pie={<a className="btn" href={apiUrl('/api/spp/bloomberg/exportar')}>↓ Bajar lo cargado · XLSX</a>}
+        previaEstado={informe && (informe.revisado
+          ? `${informe.archivo} · ${nEnt(informe.total)} serie(s) leídas. Nada se ha registrado todavía.`
+          : `${informe.archivo} · ${nEnt(informe.nuevas)} nuevas, ${nEnt(informe.actualizadas)} actualizadas.`)}
+        previa={informe && (<>
+          <table className="spp-informe"><tbody>
+            {informe.hoja && <tr><td>Hoja</td><td className="num">{informe.hoja}</td></tr>}
+            <tr><td>Series legibles</td><td className="num">{nEnt(informe.total)}</td></tr>
+            <tr><td>Campos</td><td className="num">{(informe.campos || []).join(', ') || '—'}</td></tr>
+            <tr><td>Intervalos</td><td className="num">{(informe.intervalos || []).join(', ') || '—'}</td></tr>
+            <tr><td>Omitidas</td><td className="num">{nEnt(informe.total_omitidas || 0)}</td></tr>
+          </tbody></table>
+          {(informe.avisos || []).map((a, i) => (
+            <p key={i} className="page-sub dim" style={{ marginTop: 6 }}>{a}</p>
+          ))}
+          {informe.total_omitidas > 0 && (
+            <details className="spp-desplegable" open>
+              <summary>Filas omitidas · {nEnt(informe.total_omitidas)}</summary>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th className="num">Línea</th><th>Motivo</th></tr></thead>
+                  <tbody>{(informe.omitidas || []).map((o) => (
+                    <tr key={o.linea}><td className="num">{o.linea}</td><td className="neg">{o.motivo}</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </details>
+          )}
+          {(informe.series || []).length > 0 && (
+            <details className="spp-desplegable" open>
+              <summary>Muestra de lo leído · {nEnt(Math.min(10, informe.series.length))} de {nEnt(informe.series.length)}</summary>
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Ticker</th><th>Campo</th><th>Intervalo</th><th>Desde</th><th>Descripción</th><th>Moneda</th></tr></thead>
+                  <tbody>{informe.series.slice(0, 10).map((x, i) => (
+                    <tr key={i}>
+                      <td>{x.ticker}</td><td>{x.campo}</td><td>{x.intervalo}</td>
+                      <td>{x.fecha_inicio ? fFecha(x.fecha_inicio) : '—'}</td>
+                      <td>{x.descripcion || '—'}</td><td>{x.moneda || '—'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </details>
+          )}
+        </>)}
+      />
 
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between' }}>

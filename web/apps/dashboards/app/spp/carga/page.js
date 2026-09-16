@@ -19,7 +19,7 @@ import {
 } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
-import FormatoArchivo from '../../../components/FormatoArchivo';
+import CargaArchivo from '../../../components/CargaArchivo';
 import useVerTodo from '../../../components/useVerTodo';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
@@ -317,6 +317,8 @@ export default function SppCargaPage() {
   const [smValor, setSmValor] = useState('');
   const [smPuntos, setSmPuntos] = useState([]);
   const [smEco, setSmEco] = useState('');
+  // La carga por archivo vive en su propia fila: su eco tambien.
+  const [smEcoArch, setSmEcoArch] = useState('');
   const smRef = useRef(null);
   const [smArchivo, setSmArchivo] = useState('Ningún archivo seleccionado');
   const [smInforme, setSmInforme] = useState(null);
@@ -403,8 +405,8 @@ export default function SppCargaPage() {
 
   const subirSerie = async (revisar, refrescar) => {
     const a = smRef.current?.files?.[0];
-    if (!a) { setSmEco({ ok: false, texto: 'Elige un archivo primero.' }); return; }
-    if (!smSerie) { setSmEco({ ok: false, texto: 'Elige una serie primero.' }); return; }
+    if (!a) { setSmEcoArch({ ok: false, texto: 'Elige un archivo primero.' }); return; }
+    if (!smSerie) { setSmEcoArch({ ok: false, texto: 'Elige una serie primero.' }); return; }
     if (!revisar && refrescar && !window.confirm(
       'Cargar y corregir: además de agregar lo que falta, reemplaza los valores ya cargados con los del archivo. ¿Continuar?')) return;
     setSmArchivo(`${a.name} · ${revisar ? 'revisando…' : 'cargando…'}`);
@@ -416,7 +418,7 @@ export default function SppCargaPage() {
     if (!r.ok) {
       setSmArchivo(a.name);
       setSmInforme(null);
-      setSmEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
+      setSmEcoArch({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
       return;
     }
     setSmArchivo(`${a.name} · ${revisar ? 'revisado, nada escrito todavía' : 'cargado'}`);
@@ -759,68 +761,54 @@ export default function SppCargaPage() {
       </div>
 
       {/* ===== 3 · Carga histórica por Excel ===== */}
-      <div className="spp-dos">
-        <div className="panel">
-          <div className="panel-title">Valor cuota · carga histórica por Excel</div>
-          <p className="page-sub">El archivo de la SBS <b>tal como se descarga</b> («Valores
-            cuota desde Agosto 1993», hoja «Valor cuota diario»). Trae solo valor cuota, y
-            una celda vacía se deja como está: el Excel nunca borra.</p>
-          <div className="controls">
-            <FormatoArchivo clave="valor_cuota_historico" />
-            <input ref={hRef} type="file" accept=".xls,.xlsx" className="date-input"
-              onChange={revisarHistorico} />
-            <span className="page-sub" style={{ margin: 0 }}>{hNombre}</span>
-          </div>
-          {hInforme && (
-            <>
-              <Informe filas={filasInformeH(hInforme)} />
-              {hInforme.celdas_distintas > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <p className="page-sub"><b>{nEnt(hInforme.celdas_distintas)}</b> celda(s)
-                    tienen hoy un valor distinto al del archivo. Solo cambian con
-                    «Cargar y corregir»:</p>
-                  <Informe filas={hInforme.ejemplos.map((e) =>
-                    [`${fFecha(e.fecha)} · ${e.serie}`, `${e.libro} → ${e.archivo}`])} />
-                </div>
-              )}
-              {hInforme.total_futuras > 0 && (
-                <p className="page-sub">Se descartaron <b>{hInforme.total_futuras}</b> fecha(s)
-                  futuras: {hInforme.futuras.join(', ')}.</p>
-              )}
-              {hInforme.no_registradas?.length > 0 && (
-                <p className="page-sub flag-warn">El archivo trae AFP que no están en el
-                  registro: <b>{hInforme.no_registradas.join(', ')}</b>. Sus datos no se
-                  cargarán hasta darlas de alta en config/afps.yaml.</p>
-              )}
-              {hVale && (
-                <div className="controls" style={{ marginTop: 12 }}>
-                  <button className="btn principal" disabled={ocupado}
-                    onClick={() => cargarHistorico('faltantes')}>Cargar lo que falta</button>
-                  <button className="btn peligro" disabled={ocupado}
-                    onClick={() => cargarHistorico('sobrescribir')}>Cargar y corregir</button>
-                </div>
-              )}
-            </>
+      <CargaArchivo
+        ref={hRef}
+        titulo="Valor cuota · carga histórica por Excel"
+        descripcion={<>El archivo de la SBS <b>tal como se descarga</b> («Valores cuota desde
+          Agosto 1993», hoja «Valor cuota diario»). Trae solo valor cuota, y una celda vacía
+          se deja como está: el Excel nunca borra.</>}
+        formato="valor_cuota_historico"
+        accept=".xls,.xlsx"
+        onChange={revisarHistorico}
+        nombre={hNombre}
+        acciones={hVale && (<>
+          <button className="btn principal" disabled={ocupado}
+            onClick={() => cargarHistorico('faltantes')}>Cargar lo que falta</button>
+          <button className="btn peligro" disabled={ocupado}
+            onClick={() => cargarHistorico('sobrescribir')}>Cargar y corregir</button>
+        </>)}
+        eco={hEco}
+        pie={<>
+          <a className="btn" target="_blank" rel="noreferrer"
+            href="https://www.sbs.gob.pe/app/stats/EstadisticaSistemaFinancieroResultadosHist.asp?c=FP-130706&Y=0">
+            Abrir la página de la SBS</a>
+          <a className="btn" href={apiUrl('/api/spp/exportar')}>↓ Bajar todo el libro · CSV</a>
+        </>}
+        previaEstado={hInforme && `${hInforme.archivo} · ${nEnt(hInforme.filas)} fechas · ${fFecha(hInforme.desde)} a ${fFecha(hInforme.hasta)}. Nada se ha guardado.`}
+        previa={hInforme && (<>
+          <Informe filas={filasInformeH(hInforme)} />
+          {hInforme.celdas_distintas > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <p className="page-sub"><b>{nEnt(hInforme.celdas_distintas)}</b> celda(s)
+                tienen hoy un valor distinto al del archivo. Solo cambian con
+                «Cargar y corregir»:</p>
+              <Informe filas={hInforme.ejemplos.map((e) =>
+                [`${fFecha(e.fecha)} · ${e.serie}`, `${e.libro} → ${e.archivo}`])} />
+            </div>
           )}
-          <Eco eco={hEco} />
-          <div className="controls" style={{ marginTop: 12 }}>
-            <a className="btn" target="_blank" rel="noreferrer"
-              href="https://www.sbs.gob.pe/app/stats/EstadisticaSistemaFinancieroResultadosHist.asp?c=FP-130706&Y=0">
-              Abrir la página de la SBS</a>
-            <a className="btn" href={apiUrl('/api/spp/exportar')}>↓ Bajar todo el libro · CSV</a>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-title">Vista previa del archivo</div>
-          <p className="page-sub">
-            {hInforme
-              ? `${hInforme.archivo} · ${nEnt(hInforme.filas)} fechas · ${fFecha(hInforme.desde)} a ${fFecha(hInforme.hasta)}. Nada se ha guardado.`
-              : 'Elige un Excel y aquí verás lo que trae, antes de que nada toque la base.'}
-          </p>
-          <Muestra muestra={hInforme?.muestra} titulo="Últimas filas del archivo" />
-        </div>
-      </div>
+          {hInforme.total_futuras > 0 && (
+            <p className="page-sub">Se descartaron <b>{hInforme.total_futuras}</b> fecha(s)
+              futuras: {hInforme.futuras.join(', ')}.</p>
+          )}
+          {hInforme.no_registradas?.length > 0 && (
+            <p className="page-sub flag-warn">El archivo trae AFP que no están en el
+              registro: <b>{hInforme.no_registradas.join(', ')}</b>. Sus datos no se
+              cargarán hasta darlas de alta en config/afps.yaml.</p>
+          )}
+          <Muestra muestra={hInforme.muestra} titulo="Últimas filas del archivo" />
+        </>)}
+        previaVacia="Elige el Excel de la SBS y aquí verás lo que trae, antes de que nada toque la base."
+      />
 
       </>)}
 
@@ -831,8 +819,7 @@ export default function SppCargaPage() {
           <div className="panel-title">Series manuales · componentes fuera de Bloomberg</div>
           <p className="page-sub">La segunda base de componentes del benchmark: lo que Bloomberg
             no trae se registra aquí como serie y se le cargan precios a mano o por Excel
-            (columnas <b>fecha</b> y <b>valor</b>). El archivo nunca borra; borrar es siempre
-            un acto manual por fecha.</p>
+            (más abajo). Borrar es siempre un acto manual por fecha.</p>
 
           <div className="controls spp-controls">
             <div className="field"><label htmlFor="sm-nombre">Nueva serie</label>
@@ -877,25 +864,6 @@ export default function SppCargaPage() {
               onClick={() => registrarPunto(true)}>Borrar la fecha</button>
             <button className="btn peligro" disabled={!smSerie || ocupado}
               onClick={borrarSerieManual}>Borrar la serie</button>
-          </div>
-
-          <div className="controls" style={{ marginTop: 12 }}>
-            <input ref={smRef} type="file" accept=".xlsx,.xls,.csv" className="date-input"
-              aria-label="Archivo de valores para la serie"
-              onChange={() => subirSerie(true, false)} />
-            <span className="page-sub" style={{ margin: 0 }}>{smArchivo}</span>
-          </div>
-          {smInforme && !smCargado && (
-            <div className="controls" style={{ marginTop: 12 }}>
-              <button className="btn principal" disabled={ocupado}
-                onClick={() => subirSerie(false, false)}>Cargar lo que falta</button>
-              <button className="btn peligro" disabled={ocupado}
-                onClick={() => subirSerie(false, true)}>Cargar y corregir</button>
-            </div>
-          )}
-          <div className="controls" style={{ marginTop: 12 }}>
-            <FormatoArchivo clave="series_manuales" />
-            <a className="btn" href={apiUrl('/api/spp/series-manuales/plantilla')}>↓ Plantilla · XLSX</a>
             {smSerie && (
               <a className="btn" href={apiUrl(`/api/spp/series-manuales/${smSerie.serie_id}/exportar`)}>
                 ↓ Bajar «{smSerie.nombre}» · XLSX</a>
@@ -917,25 +885,7 @@ export default function SppCargaPage() {
             <p className="page-sub">Todavía no hay ninguna serie manual. Crea una a la
               izquierda y cárgale precios; después podrás sumarla a la canasta del benchmark.</p>
           )}
-
-          {smInforme && (
-            <div style={{ marginTop: 12 }}>
-              <div className="panel-title">Vista previa del archivo</div>
-              <Informe filas={filasInformeSm(smInforme)} />
-              {(smInforme.avisos || []).map((a, i) => (
-                <p key={i} className="page-sub">Aviso: {a}</p>
-              ))}
-              {smInforme.total_omitidas > 0 && (
-                <p className="page-sub flag-warn">Se omitieron <b>{smInforme.total_omitidas}</b> fila(s):{' '}
-                  {smInforme.omitidas.slice(0, 5).map((o) => `línea ${o.linea} (${o.motivo})`).join('; ')}
-                  {smInforme.total_omitidas > 5 ? '; …' : ''}</p>
-              )}
-              <Muestra muestra={smInforme.muestra}
-                titulo={smCargado ? 'Últimas filas cargadas' : 'Últimas filas del archivo'} />
-            </div>
-          )}
-
-          {smSerie && smPuntos.length > 0 && !smInforme && (
+          {smSerie && smPuntos.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <div className="panel-title">Últimos valores de «{smSerie.nombre}»</div>
               <div className="table-wrap">
@@ -956,6 +906,42 @@ export default function SppCargaPage() {
           )}
         </div>
       </div>
+
+      <CargaArchivo
+        ref={smRef}
+        titulo="Series manuales · carga de valores por archivo"
+        descripcion={<>Columnas <b>fecha</b> y <b>valor</b>, para la serie elegida arriba
+          {smSerie ? <>: <b>{smSerie.nombre}</b></> : ' (elige una primero)'}. El archivo
+          nunca borra: agrega lo que falta y, solo si lo pides, corrige lo que difiere.</>}
+        formato="series_manuales"
+        plantilla="/api/spp/series-manuales/plantilla"
+        onChange={() => subirSerie(true, false)}
+        nombre={smArchivo}
+        acciones={smInforme && !smCargado && (<>
+          <button className="btn principal" disabled={ocupado}
+            onClick={() => subirSerie(false, false)}>Cargar lo que falta</button>
+          <button className="btn peligro" disabled={ocupado}
+            onClick={() => subirSerie(false, true)}>Cargar y corregir</button>
+        </>)}
+        eco={smEcoArch}
+        previaEstado={smInforme && (smCargado
+          ? `«${smInforme.serie}»: cargado.`
+          : `«${smInforme.serie}»: revisado, nada escrito todavía.`)}
+        previa={smInforme && (<>
+          <Informe filas={filasInformeSm(smInforme)} />
+          {(smInforme.avisos || []).map((a, i) => (
+            <p key={i} className="page-sub">Aviso: {a}</p>
+          ))}
+          {smInforme.total_omitidas > 0 && (
+            <p className="page-sub flag-warn">Se omitieron <b>{smInforme.total_omitidas}</b> fila(s):{' '}
+              {smInforme.omitidas.slice(0, 5).map((o) => `línea ${o.linea} (${o.motivo})`).join('; ')}
+              {smInforme.total_omitidas > 5 ? '; …' : ''}</p>
+          )}
+          <Muestra muestra={smInforme.muestra}
+            titulo={smCargado ? 'Últimas filas cargadas' : 'Últimas filas del archivo'} />
+        </>)}
+        previaVacia="Elige la serie arriba y luego el archivo; aquí verás lo que trae antes de que nada toque la base."
+      />
 
       </>)}
 

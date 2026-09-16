@@ -17,7 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import Eco from '../../../components/Eco';
-import FormatoArchivo from '../../../components/FormatoArchivo';
+import CargaArchivo from '../../../components/CargaArchivo';
 import SppSeg from '../../../components/SppSeg';
 import TradebookTabs from '../../../components/TradebookTabs';
 import useVerTodo from '../../../components/useVerTodo';
@@ -123,13 +123,12 @@ function PorArchivo({ alCargar, origen, traders }) {
     const r = await apiSend('/api/tradebook/archivo', 'POST', fd, true);
     setOcupado(false);
     if (!r.ok) { setEco({ ok: false, texto: r.data.motivo }); return; }
-    setInforme(r.data.informe);
+    const i = r.data.informe;
+    setInforme(i);
     if (soloRevisar) {
-      const i = r.data.informe;
       setEco({ ok: true, texto: `Revisado: ${i.leidas} operación(es) legibles, `
         + `${i.descartadas.length} descartada(s). Nada se ha guardado todavía.` });
     } else {
-      const i = r.data.informe;
       setEco({ ok: true, texto: `Cargadas ${i.guardadas} operación(es): `
         + `${i.insertadas} nuevas y ${i.actualizadas} que ya estaban y se actualizaron.` });
       setArchivo(null);
@@ -142,28 +141,22 @@ function PorArchivo({ alCargar, origen, traders }) {
   const [muestra, VerMuestra] = useVerTodo(informe?.muestra || [], 10);
 
   return (
-    <div className="panel">
-      <div className="panel-title">
-        {deTraders ? 'Carga por archivo · registro del trader' : 'Carga del reporte de FMS'}
-      </div>
-      <p className="page-sub">
+    <CargaArchivo
+      ref={input}
+      titulo={deTraders ? 'Carga por archivo · registro del trader' : 'Carga del reporte de FMS'}
+      descripcion={<>
         Excel o CSV. Se reconoce por el contenido, no por la extensión, y las
         columnas por su nombre en varios idiomas. Obligatorias: fecha, fondo,
         lado, instrumento, cantidad, y monto o precio
         {deTraders ? ', más el trader de cada fila.' : '.'}
-      </p>
-
-      <div className="controls" style={{ marginTop: 10 }}>
-        <FormatoArchivo clave={deTraders ? 'tradebook_traders' : 'tradebook_fms'} />
-        <a className="btn" href={apiUrl(`/api/tradebook/plantilla?origen=${origen}`)}>
-          ↓ Plantilla · XLSX</a>
-        <input ref={input} type="file" accept=".xlsx,.xls,.csv,.txt"
-          onChange={(e) => { setArchivo(e.target.files?.[0] || null); invalidar(); }} />
-        <input className="text-input" placeholder="Hoja (opcional)"
-          value={hoja} onChange={(e) => setHoja(e.target.value)} style={{ width: 150 }} />
-      </div>
-
-      {deTraders && (
+      </>}
+      formato={deTraders ? 'tradebook_traders' : 'tradebook_fms'}
+      plantilla={`/api/tradebook/plantilla?origen=${origen}`}
+      accept=".xlsx,.xls,.csv,.txt"
+      onChange={(e) => { setArchivo(e.target.files?.[0] || null); invalidar(); }}
+      hoja={hoja}
+      onHoja={(v) => { setHoja(v); invalidar(); }}
+      extra={deTraders && (
         <div className="controls" style={{ marginTop: 10 }}>
           <div className="field"><label>Trader del archivo</label>
             <input className="text-input" list="traders-conocidos" style={{ width: 220 }}
@@ -180,20 +173,20 @@ function PorArchivo({ alCargar, origen, traders }) {
           </p>
         </div>
       )}
-
-      <div className="controls" style={{ marginTop: 10 }}>
+      acciones={<>
         <button className="btn" disabled={!archivo || ocupado}
           onClick={() => enviar(true)}>Revisar</button>
         <button className="btn principal" disabled={!archivo || ocupado || !informe?.leidas}
           onClick={() => enviar(false)}>Cargar lo revisado</button>
-      </div>
-      <Eco eco={eco} />
-
-      {informe && (
+      </>}
+      eco={eco}
+      previaEstado={informe && (informe.guardadas != null
+        ? `${informe.archivo} · ${nEnt(informe.guardadas)} operación(es) cargadas en el libro de ${informe.origen === 'fms' ? 'FMS' : 'los traders'}.`
+        : `${informe.archivo} · ${nEnt(informe.leidas)} operación(es) legibles. Nada se ha guardado todavía.`)}
+      previa={informe && (
         <>
           <table className="spp-informe">
             <tbody>
-              <tr><td>Archivo</td><td className="num">{informe.archivo}</td></tr>
               <tr><td>Va al libro de</td><td className="num">
                 {informe.origen === 'fms' ? 'FMS' : 'los traders'}</td></tr>
               <tr><td>Operaciones legibles</td><td className="num">{nEnt(informe.leidas)}</td></tr>
@@ -229,7 +222,6 @@ function PorArchivo({ alCargar, origen, traders }) {
               operaciones iguales de verdad.
             </p>
           )}
-
           {(informe.avisos || []).map((a) => (
             <p key={a} className="page-sub dim" style={{ marginTop: 6 }}>{a}</p>
           ))}
@@ -254,7 +246,7 @@ function PorArchivo({ alCargar, origen, traders }) {
           )}
 
           {!!muestra.length && (
-            <details className="spp-desplegable">
+            <details className="spp-desplegable" open>
               <summary>Muestra de lo leído</summary>
               <div className="table-wrap">
                 <table>
@@ -284,7 +276,7 @@ function PorArchivo({ alCargar, origen, traders }) {
           )}
         </>
       )}
-    </div>
+    />
   );
 }
 
@@ -317,64 +309,129 @@ function AMano({ alCargar, traders }) {
     } else setEco({ ok: false, texto: r.data.motivo });
   };
 
-  // A mano se piden precio y moneda, que en la carga por archivo son
-  // opcionales: quien escribe una operacion tiene el boleto delante, y la
-  // moneda en blanco se rellenaria sola con PEN sin que nadie lo note.
-  const listo = form.fecha && form.instrumento && form.cantidad
-    && form.precio && form.moneda.trim() && form.trader.trim();
+  // Lo mismo que exige el backend, calculado aquí para poder DECIR qué falta
+  // en vez de solo apagar el botón.
+  const num = (v) => { const n = Number(String(v).replace(/,/g, '')); return Number.isFinite(n) ? n : null; };
+  const faltan = [
+    !form.trader.trim() && 'trader', !form.fecha && 'fecha', !form.fondo && 'fondo',
+    !form.instrumento.trim() && 'instrumento', !(num(form.cantidad) > 0) && 'cantidad',
+    !(num(form.precio) > 0) && 'precio', !form.moneda.trim() && 'moneda',
+  ].filter(Boolean);
+  const listo = faltan.length === 0;
+  const montoCalc = form.monto ? num(form.monto)
+    : (num(form.cantidad) && num(form.precio) ? num(form.cantidad) * num(form.precio) : null);
+  const vacio = <span className="dim">—</span>;
 
   return (
-    <div className="panel">
-      <div className="panel-title">Captura a mano</div>
-      <p className="page-sub">
-        Para la operación suelta que no viene en el archivo. Los campos
-        con <Req /> son obligatorios; el monto se calcula de cantidad × precio
-        si no lo escribes.
-      </p>
-      <div className="controls spp-controls" style={{ marginTop: 10 }}>
-        <div className="field"><label>Trader<Req /></label>
-          <input className="text-input" list="traders-conocidos" style={{ width: 170 }}
-            value={form.trader} onChange={set('trader')} />
-          <datalist id="traders-conocidos">
-            {traders.map((t) => <option key={t} value={t} />)}
-          </datalist></div>
-        <div className="field"><label>Fecha<Req /></label>
-          <input className="date-input" type="date" value={form.fecha} onChange={set('fecha')} /></div>
-        <div className="field"><label>Fondo<Req /></label>
-          <input className="text-input" style={{ width: 70 }} value={form.fondo} onChange={set('fondo')} /></div>
-        <div className="field"><label>Lado</label>
-          <SppSeg items={LADOS} value={form.lado}
-            onChange={(v) => setForm((f) => ({ ...f, lado: v }))} /></div>
-        <div className="field"><label>Instrumento<Req /></label>
-          <input className="text-input" style={{ width: 230 }} placeholder="PERU 3.55 03/31"
-            value={form.instrumento} onChange={set('instrumento')} /></div>
+    <div className="spp-dos">
+      <div className="panel">
+        <div className="panel-title">Captura a mano</div>
+        <p className="page-sub">
+          Para la operación suelta que no viene en el archivo. Los campos
+          con <Req /> son obligatorios.
+        </p>
+
+        <div className="spp-grupo">
+          <div className="spp-grupo-titulo">Quién y cuándo</div>
+          <div className="controls spp-controls">
+            <div className="field"><label>Trader<Req /></label>
+              <input className="text-input" list="traders-conocidos" style={{ width: 170 }}
+                value={form.trader} onChange={set('trader')} />
+              <datalist id="traders-conocidos">
+                {traders.map((t) => <option key={t} value={t} />)}
+              </datalist></div>
+            <div className="field"><label>Fecha<Req /></label>
+              <input className="date-input" type="date" value={form.fecha} onChange={set('fecha')} /></div>
+            <div className="field"><label>Fondo<Req /></label>
+              <input className="text-input" style={{ width: 70 }} value={form.fondo} onChange={set('fondo')} /></div>
+          </div>
+        </div>
+
+        <div className="spp-grupo">
+          <div className="spp-grupo-titulo">Qué</div>
+          <div className="controls spp-controls">
+            <div className="field"><label>Lado</label>
+              <SppSeg items={LADOS} value={form.lado}
+                onChange={(v) => setForm((f) => ({ ...f, lado: v }))} /></div>
+            <div className="field"><label>Instrumento<Req /></label>
+              <input className="text-input" style={{ width: 260 }} placeholder="PERU 3.55 03/31"
+                value={form.instrumento} onChange={set('instrumento')} /></div>
+          </div>
+        </div>
+
+        <div className="spp-grupo">
+          <div className="spp-grupo-titulo">Cuánto</div>
+          <div className="controls spp-controls">
+            <div className="field"><label>Cantidad<Req /></label>
+              <input className="text-input" style={{ width: 130 }} value={form.cantidad} onChange={set('cantidad')} /></div>
+            <div className="field"><label>Precio<Req /></label>
+              <input className="text-input" style={{ width: 110 }} value={form.precio} onChange={set('precio')} /></div>
+            <div className="field"><label>Moneda<Req /></label>
+              <input className="text-input" style={{ width: 80 }} value={form.moneda} onChange={set('moneda')} /></div>
+            {/* El monto va ULTIMO y se presenta como derivado: lo normal es no
+                escribirlo. Solo se escribe cuando el boleto trae comisiones o
+                devengado y cantidad x precio no es lo que se pagó. */}
+            <div className="field"><label>Monto</label>
+              <input className="text-input" style={{ width: 140 }}
+                placeholder={montoCalc != null ? nEnt(Math.round(montoCalc)) : 'cantidad × precio'}
+                value={form.monto} onChange={set('monto')} /></div>
+          </div>
+        </div>
+
+        <div className="spp-grupo">
+          <div className="spp-grupo-titulo">Liquidación y contraparte</div>
+          <div className="controls spp-controls">
+            <div className="field"><label>Contraparte</label>
+              <input className="text-input" style={{ width: 160 }} value={form.contraparte} onChange={set('contraparte')} /></div>
+            <div className="field"><label>Liquidación</label>
+              <input className="date-input" type="date" value={form.fecha_liquidacion}
+                onChange={set('fecha_liquidacion')} /></div>
+            <div className="field"><label>Nota</label>
+              <input className="text-input" style={{ width: 220 }} value={form.nota} onChange={set('nota')} /></div>
+          </div>
+        </div>
+
+        <div className="controls" style={{ marginTop: 14 }}>
+          <button className="btn principal" disabled={!listo} onClick={registrar}>
+            Registrar operación</button>
+          <button className="btn" onClick={() => { setForm(VACIO); setEco(''); }}>Limpiar</button>
+        </div>
+        <Eco eco={eco} />
       </div>
-      <div className="controls spp-controls" style={{ marginTop: 10 }}>
-        <div className="field"><label>Cantidad<Req /></label>
-          <input className="text-input" style={{ width: 130 }} value={form.cantidad} onChange={set('cantidad')} /></div>
-        <div className="field"><label>Precio<Req /></label>
-          <input className="text-input" style={{ width: 110 }} value={form.precio} onChange={set('precio')} /></div>
-        <div className="field"><label>Monto</label>
-          <input className="text-input" style={{ width: 140 }} placeholder="se calcula"
-            value={form.monto} onChange={set('monto')} /></div>
-        <div className="field"><label>Moneda<Req /></label>
-          <input className="text-input" style={{ width: 80 }} value={form.moneda} onChange={set('moneda')} /></div>
+
+      {/* La misma disposición que la carga por archivo: a la derecha, lo que
+          va a entrar. Aquí es una sola fila, con las columnas de «Lo cargado»
+          y el monto ya calculado, que es justo lo que el formulario no
+          muestra hasta que se guarda. */}
+      <div className="panel">
+        <div className="panel-title">Así quedará en el libro</div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Fecha</th><th className="num">Fondo</th><th>Lado</th><th>Instrumento</th>
+              <th className="num">Cantidad</th><th className="num">Precio</th>
+              <th className="num">Monto</th><th>Moneda</th><th>Trader</th>
+            </tr></thead>
+            <tbody><tr>
+              <td>{form.fecha ? fFecha(form.fecha) : vacio}</td>
+              <td className="num">{form.fondo || vacio}</td>
+              <td><span className={`tb-lado ${form.lado}`}>{form.lado}</span></td>
+              <td>{form.instrumento.trim() || vacio}</td>
+              <td className="num">{num(form.cantidad) != null ? nEnt(Math.round(num(form.cantidad))) : vacio}</td>
+              <td className="num">{num(form.precio) != null
+                ? num(form.precio).toLocaleString('es-PE', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : vacio}</td>
+              <td className="num">{montoCalc != null ? nEnt(Math.round(montoCalc)) : vacio}</td>
+              <td>{form.moneda.trim().toUpperCase() || vacio}</td>
+              <td>{form.trader.trim() || vacio}</td>
+            </tr></tbody>
+          </table>
+        </div>
+        <p className="page-sub dim" style={{ marginTop: 10 }}>
+          {listo
+            ? (form.monto ? 'Monto tal como lo escribiste.' : 'Monto calculado de cantidad × precio.')
+            : `Falta: ${faltan.join(', ')}.`}
+        </p>
       </div>
-      <div className="controls spp-controls" style={{ marginTop: 10 }}>
-        <div className="field"><label>Contraparte</label>
-          <input className="text-input" style={{ width: 160 }} value={form.contraparte} onChange={set('contraparte')} /></div>
-        <div className="field"><label>Liquidación</label>
-          <input className="date-input" type="date" value={form.fecha_liquidacion}
-            onChange={set('fecha_liquidacion')} /></div>
-        <div className="field"><label>Nota</label>
-          <input className="text-input" style={{ width: 200 }} value={form.nota} onChange={set('nota')} /></div>
-      </div>
-      <div className="controls" style={{ marginTop: 12 }}>
-        <button className="btn principal" disabled={!listo} onClick={registrar}>
-          Registrar operación</button>
-        <button className="btn" onClick={() => { setForm(VACIO); setEco(''); }}>Limpiar</button>
-      </div>
-      <Eco eco={eco} />
     </div>
   );
 }

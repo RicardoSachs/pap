@@ -67,3 +67,20 @@
 .sidebar:not(:hover):not(.expanded) .side-marca-lockup { display: none; }
 /* desplegada: solo el lockup, que ya trae su propio simbolo */
 .sidebar:hover .side-marca-simbolo, .sidebar.expanded .side-marca-simbolo { display: none; }
+
+/* Dos clases que el sistema de diseño nuevo no trae y las páginas SÍ usan.
+   Estaban en el globals.css anterior y se perdieron al reemplazarlo entero;
+   sin ellas el aviso se pinta como texto normal y deja de avisar, que es un
+   fallo que no rompe nada y por eso nadie nota.
+
+   .flag-warn lo usan la vista de precios de aguas arriba y seis sitios del
+   monitor (archivo con AFP desconocidas, filas omitidas, tarea apuntando a
+   otra copia). .combo-meta, el buscador de valores.
+
+   Van en color SEMÁNTICO de aviso, no en el de marca: aquí el color dice
+   "mira esto", no "esto es de la casa". */
+.flag-warn { color: var(--warning); }
+.combo-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-secondary);
+}

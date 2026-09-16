@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/DataTable.js
 // ---------------------------------------------------------------------------
 // Enhanced table used across all dashboards:
@@ -134,4 +133,3 @@ export default function DataTable({
     </div>
   );
 }
-

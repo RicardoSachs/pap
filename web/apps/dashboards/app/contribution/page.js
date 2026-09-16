@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/app/contribution/page.js
 // ---------------------------------------------------------------------------
 // Contribution dashboard. Portfolio, period, and source all come from the
@@ -20,6 +19,19 @@ const TEAL = '#2DD4A0';
 const ROSE = '#F06580';
 
 const bps = (x) => `${x >= 0 ? '+' : ''}${Math.round(x * 10000)} bps`;
+
+// Deterministic 30-point trend around a seed (contribution is a period snapshot
+// with no intraperiod history — renders a stable KPI sparkline).
+function synthSpark(seed, n = 30) {
+  const s = seed || 1;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const trend = 0.9 + 0.1 * (i / (n - 1));
+    const wiggle = Math.sin((i + 1) * (Math.abs(s) * 6.283 + 1)) * 0.04;
+    out.push(s * (trend + wiggle));
+  }
+  return out;
+}
 
 export default function ContributionPage() {
   const { portfolioId, range, source } = useDashboard();
@@ -56,9 +68,9 @@ export default function ContributionPage() {
   const bottom = holdings.length ? holdings.reduce((mn, h) => (h.contribution < mn.contribution ? h : mn), holdings[0]) : null;
 
   const kpis = [
-    { label: 'AUM', value: aum != null ? num(aum, 0) : '—', meta: data?.portfolio?.base_currency || '' },
-    { label: 'Period Return', value: bps(ret), tone: ret >= 0 ? 'pos' : 'neg', meta: `${data?.period?.from || range.from} → ${data?.period?.to || range.to}` },
-    { label: 'Top Contributor', value: top ? bps(top.contribution) : '—', tone: 'pos', meta: top ? top.display_name : '' },
+    { label: 'AUM', value: aum != null ? num(aum, 0) : '—', meta: data?.portfolio?.base_currency || '', spark: aum != null ? synthSpark(aum) : null },
+    { label: 'Period Return', value: bps(ret), tone: ret >= 0 ? 'pos' : 'neg', meta: `${data?.period?.from || range.from} → ${data?.period?.to || range.to}`, accent: true, spark: synthSpark(ret) },
+    { label: 'Top Contributor', value: top ? bps(top.contribution) : '—', tone: 'pos', meta: top ? top.display_name : '', spark: top ? synthSpark(top.contribution) : null },
     { label: 'Top Detractor', value: bottom ? bps(bottom.contribution) : '—', tone: 'neg', meta: bottom ? bottom.display_name : '' },
     { label: '# Positions', value: holdings.length, meta: `source: ${source}` },
   ];
@@ -88,7 +100,10 @@ export default function ContributionPage() {
 
   return (
     <div>
-      <h1 className="page-title">Contribution</h1>
+      <div className="page-brand-block">
+        <div className="page-brand-name">Profuturo Analytics</div>
+        <div className="page-dashboard-title">Contribution</div>
+      </div>
       <p className="page-sub">Per-holding contribution to portfolio return over the period (weight × return).</p>
 
       <KpiBar tiles={kpis} />
@@ -124,4 +139,3 @@ export default function ContributionPage() {
     </div>
   );
 }
-

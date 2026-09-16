@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/Nav.js
 'use client';
 
@@ -27,4 +26,3 @@ export default function Nav() {
     </nav>
   );
 }
-

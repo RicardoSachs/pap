@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/lib/csv.js
 // ---------------------------------------------------------------------------
 // Client-side CSV download. Builds a CSV string and triggers a browser download
@@ -22,4 +21,3 @@ export function downloadCsv(filename, headers, rows) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-

@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/DashboardProvider.js
 // ---------------------------------------------------------------------------
 // Global dashboard context: portfolio, period, and source — the shared state
@@ -112,4 +111,3 @@ export default function DashboardProvider({ children }) {
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
-

@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/lib/period.js
 // ---------------------------------------------------------------------------
 // Period quick-select -> concrete {from, to} ISO date range. Computed relative
@@ -32,4 +31,3 @@ export function periodToRange(period, asOf = new Date()) {
   }
   return { from: iso(from), to: iso(to) };
 }
-

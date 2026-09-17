@@ -94,16 +94,6 @@ def test_la_cantidad_cero_tampoco():
         _validar({**BASE, "cantidad": 0})
 
 
-def test_la_liquidacion_no_puede_ser_anterior_a_la_operacion():
-    with pytest.raises(ValueError, match="liquidacion"):
-        _validar({**BASE, "fecha_liquidacion": "2026-09-01"})
-
-
-def test_la_liquidacion_el_mismo_dia_es_valida():
-    op = _validar({**BASE, "fecha_liquidacion": "2026-09-10"})
-    assert op["fecha_liquidacion"] == dt.date(2026, 9, 10)
-
-
 def test_las_fechas_llegan_como_fecha_no_como_texto():
     op = _validar(dict(BASE))
     assert isinstance(op["fecha"], dt.date)
@@ -240,3 +230,12 @@ def test_por_archivo_siguen_siendo_opcionales(origen):
     op = _validar({**sin, "monto": 98_450, "origen": origen})
     assert op["precio"] is None
     assert op["moneda"] == "PEN"      # ahi si se rellena sola
+
+
+def test_la_columna_del_trader_se_llama_book_y_acepta_los_dos_nombres():
+    """Lo que el formulario llama Book es la columna `book` del Excel;
+    los archivos que aun digan `trader` siguen entrando."""
+    from src.pipelines.tradebook.operaciones import _ALIAS, encabezado
+    assert encabezado("trader") == "book"
+    assert "book" in _ALIAS["trader"] and "trader" in _ALIAS["trader"]
+    assert "fecha_liquidacion" not in _ALIAS

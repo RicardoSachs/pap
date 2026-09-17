@@ -67,7 +67,6 @@ CREATE TABLE IF NOT EXISTS tradebook (
 
     -- With whom, and when it settles
     contraparte       TEXT,
-    fecha_liquidacion DATE,
 
     -- Quien lo registro, y por tanto cuanto detalle trae la fila.
     --
@@ -92,11 +91,7 @@ CREATE TABLE IF NOT EXISTS tradebook (
     nota              TEXT,
 
     creado_en         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    actualizado_en    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    -- Settlement before trade is a typo, never a trade.
-    CONSTRAINT ck_tradebook_liquidacion
-        CHECK (fecha_liquidacion IS NULL OR fecha_liquidacion >= fecha)
+    actualizado_en    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Partial, so the many rows without a source id do not collide with

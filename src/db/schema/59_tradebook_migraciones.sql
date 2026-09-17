@@ -81,3 +81,13 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS ix_tradebook_trader ON tradebook (trader);
 CREATE INDEX IF NOT EXISTS ix_tradebook_origen ON tradebook (origen);
+
+-- ---------------------------------------------------------------
+-- La fecha de liquidacion sale del libro (2026-09-17). Era el campo
+-- que nadie llenaba: salio del formulario, y con el del formato de
+-- Excel, del lector y del INSERT. Una columna que nada escribe es una
+-- promesa vacia en el esquema; se quita. DROP ... IF EXISTS: en una
+-- base creada despues de este cambio no hay nada que quitar.
+-- ---------------------------------------------------------------
+ALTER TABLE tradebook DROP CONSTRAINT IF EXISTS ck_tradebook_liquidacion;
+ALTER TABLE tradebook DROP COLUMN IF EXISTS fecha_liquidacion;

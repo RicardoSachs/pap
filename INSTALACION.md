@@ -215,7 +215,7 @@ Prueba opcional de que el código está sano en esta máquina (necesita
 .venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook -q
 ```
 
-Deben pasar los 125.
+Deben pasar los 124.
 
 ---
 

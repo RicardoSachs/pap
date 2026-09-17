@@ -66,23 +66,31 @@ _ALIAS = {
     "moneda": ("moneda", "divisa", "currency", "codigoisomoneda"),
     "contraparte": ("contraparte", "counterparty", "broker", "intermediario",
                     "agente"),
-    "fecha_liquidacion": ("fechaliquidacion", "liquidacion", "settlementdate",
-                          "settle", "fechavalor"),
     "referencia": ("referencia", "id", "idoperacion", "numerooperacion",
                    "folio", "tradeid", "operacion_id"),
-    "trader": ("trader", "operador", "responsable", "ejecutivo", "gestor",
-               "portfoliomanager", "pm"),
+    # The field is `trader` inside; the desk calls it the book, and so do
+    # the template and the format window. Old files still say trader.
+    "trader": ("book", "libro", "trader", "operador", "responsable", "ejecutivo",
+               "gestor", "portfoliomanager", "pm"),
     "nota": ("nota", "notas", "observacion", "observaciones", "comentario"),
 }
 # Sin estas no hay operacion que registrar.
 _OBLIGATORIAS = ("fecha", "fondo", "lado", "instrumento", "cantidad")
+
+# What the operator reads as the column's name, where it differs from the
+# field. One place, so the template and the format window cannot disagree.
+_ENCABEZADO = {"trader": "book"}
+
+
+def encabezado(campo: str) -> str:
+    return _ENCABEZADO.get(campo, campo)
 
 _COMPRA = ("compra", "compras", "c", "b", "buy", "bought", "adquisicion")
 _VENTA = ("venta", "ventas", "v", "s", "sell", "sold", "sale")
 
 _CAMPOS = ("referencia", "fecha", "fondo", "lado", "instrumento", "entity_id",
            "cantidad", "precio", "monto", "moneda", "contraparte",
-           "fecha_liquidacion", "origen", "trader", "nota")
+           "origen", "trader", "nota")
 
 
 # ---- Normalizacion de un valor suelto -------------------------------------
@@ -180,12 +188,6 @@ def _validar(op: dict) -> dict:
         raise ValueError("El monto no puede ser negativo: el lado es lo que "
                          "dice si entra o sale dinero.")
 
-    liquidacion = (_fecha(op["fecha_liquidacion"], "fecha de liquidacion")
-                   if _texto(op.get("fecha_liquidacion")) else None)
-    if liquidacion and liquidacion < fecha:
-        raise ValueError(f"La liquidacion ({liquidacion}) no puede ser anterior "
-                         f"a la operacion ({fecha}).")
-
     origen = _texto(op.get("origen")) or "manual"
     if origen not in ORIGENES:
         raise ValueError(f"Origen '{origen}' desconocido.")
@@ -226,7 +228,6 @@ def _validar(op: dict) -> dict:
         "monto": monto,
         "moneda": normalizar_moneda(op.get("moneda")),
         "contraparte": _texto(op.get("contraparte")),
-        "fecha_liquidacion": liquidacion,
         "origen": origen,
         "trader": trader,
         "nota": _texto(op.get("nota")),
@@ -238,10 +239,10 @@ def _validar(op: dict) -> dict:
 _INSERTA = """
 INSERT INTO tradebook (referencia, fecha, fondo, lado, instrumento, entity_id,
                        cantidad, precio, monto, moneda, contraparte,
-                       fecha_liquidacion, origen, trader, nota)
+                       origen, trader, nota)
 VALUES (%(referencia)s, %(fecha)s, %(fondo)s, %(lado)s, %(instrumento)s,
         %(entity_id)s, %(cantidad)s, %(precio)s, %(monto)s, %(moneda)s,
-        %(contraparte)s, %(fecha_liquidacion)s, %(origen)s, %(trader)s,
+        %(contraparte)s, %(origen)s, %(trader)s,
         %(nota)s)
 """
 # Solo alcanza a las filas que traen referencia; el indice unico es parcial.
@@ -252,7 +253,6 @@ ON CONFLICT (referencia) WHERE referencia IS NOT NULL DO UPDATE SET
     cantidad = EXCLUDED.cantidad, precio = EXCLUDED.precio,
     monto = EXCLUDED.monto, moneda = EXCLUDED.moneda,
     contraparte = EXCLUDED.contraparte,
-    fecha_liquidacion = EXCLUDED.fecha_liquidacion,
     origen = EXCLUDED.origen, trader = EXCLUDED.trader,
     nota = EXCLUDED.nota,
     actualizado_en = CURRENT_TIMESTAMP
@@ -300,7 +300,6 @@ def actualizar(operacion_id: int, op: dict) -> dict:
                 entity_id = %(entity_id)s, cantidad = %(cantidad)s,
                 precio = %(precio)s, monto = %(monto)s, moneda = %(moneda)s,
                 contraparte = %(contraparte)s,
-                fecha_liquidacion = %(fecha_liquidacion)s,
                 origen = %(origen)s, trader = %(trader)s, nota = %(nota)s,
                 actualizado_en = CURRENT_TIMESTAMP
             WHERE operacion_id = %(operacion_id)s""", fila)
@@ -325,7 +324,7 @@ def _a_dict(fila) -> dict:
     if fila is None:
         return {}
     d = dict(fila)
-    for k in ("fecha", "fecha_liquidacion", "creado_en", "actualizado_en"):
+    for k in ("fecha", "creado_en", "actualizado_en"):
         if d.get(k) is not None:
             d[k] = str(d[k])
     for k in ("cantidad", "precio", "monto"):
@@ -552,9 +551,10 @@ def plantilla(filas: int = 8, origen: str = "excel") -> bytes:
     """
     The template, with the column names the reader recognizes.
 
-    The trader column is there for the traders' own registration and
-    absent from the FMS one, so the spreadsheet itself says which of the
-    two books it feeds instead of leaving it to whoever fills it in.
+    The book column (the trader's ledger) is there for the traders' own
+    registration and absent from the FMS one, so the spreadsheet itself
+    says which of the two books it feeds instead of leaving it to whoever
+    fills it in.
     """
     hoy = dt.date.today()
     ejemplo = pd.DataFrame({
@@ -568,12 +568,11 @@ def plantilla(filas: int = 8, origen: str = "excel") -> bytes:
         "monto": [984500] + [""] * (filas - 1),
         "moneda": ["USD"] + [""] * (filas - 1),
         "contraparte": ["BCP"] + [""] * (filas - 1),
-        "fecha_liquidacion": [hoy] + [""] * (filas - 1),
         "nota": [""] * filas,
     })
     if origen in ORIGENES_TRADER:
-        ejemplo.insert(len(ejemplo.columns) - 1, "trader",
-                       ["NOMBRE DEL TRADER"] + [""] * (filas - 1))
+        ejemplo.insert(len(ejemplo.columns) - 1, encabezado("trader"),
+                       ["NOMBRE DEL BOOK"] + [""] * (filas - 1))
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         ejemplo.to_excel(w, index=False, sheet_name="operaciones")

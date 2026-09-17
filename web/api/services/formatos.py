@@ -39,7 +39,7 @@ EJEMPLO_TRADEBOOK = {
     "fecha": "10/09/2026", "fondo": "2", "lado": "compra",
     "instrumento": "PERU 3.55 03/31", "cantidad": "1,000,000", "precio": "98.45",
     "monto": "984,500.00", "moneda": "USD", "contraparte": "BCP",
-    "fecha_liquidacion": "12/09/2026", "referencia": "OP00123",
+    "referencia": "OP00123",
     "trader": "R. SACHS", "nota": "",
 }
 
@@ -52,7 +52,7 @@ def _tradebook(origen: str) -> dict:
             continue
         obligatoria = (nombre in tb._OBLIGATORIAS
                        or (nombre == "trader" and de_traders))
-        columnas.append(_columna(nombre, obligatoria,
+        columnas.append(_columna(tb.encabezado(nombre), obligatoria,
                                  EJEMPLO_TRADEBOOK.get(nombre)))
     return {
         "titulo": ("Operaciones · registro del trader" if de_traders

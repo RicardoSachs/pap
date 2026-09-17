@@ -417,7 +417,7 @@ function AMano({ alCargar, traders }) {
 
 function Libro({ estado, alCambiar }) {
   const [ops, setOps] = useState(null);
-  const [filtro, setFiltro] = useState({ instrumento: '', contraparte: '', trader: '', origen: '' });
+  const [filtro, setFiltro] = useState({ instrumento: '', contraparte: '', trader: '', origen: 'traders' });
   const [eco, setEco] = useState('');
 
   const cargar = () => {
@@ -447,7 +447,9 @@ function Libro({ estado, alCambiar }) {
       <div className="panel-title">Lo cargado</div>
       <div className="controls spp-controls" style={{ marginBottom: 10 }}>
         <div className="field"><label>Libro</label>
-          <SppSeg items={[['Ambos', ''], ['De traders', 'traders'], ['De FMS', 'fms']]}
+          {/* Sin «Ambos»: los dos libros son la misma actividad a distinta
+              agregación, y mezclarlos en una lista la contaria dos veces. */}
+          <SppSeg items={[['De traders', 'traders'], ['De FMS', 'fms']]}
             value={filtro.origen}
             onChange={(v) => setFiltro((f) => ({ ...f, origen: v }))} /></div>
         <div className="field"><label>Book</label>

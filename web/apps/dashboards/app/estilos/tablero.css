@@ -55,12 +55,17 @@
   white-space: pre-wrap;
 }
 
-/* Carga views: act on the left, see on the right. Collapses on narrow screens. */
+/* Carga views: act on the left, see on the right. Collapses on narrow screens.
+   minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), and `auto` lets
+   a wide table on the right push the split over - so two rows of the same
+   page had their seam in two different places. With 0 as the floor the
+   halves are halves, and a table that does not fit scrolls inside its
+   panel (.table-wrap has overflow-x: auto) instead of widening it. */
 .spp-dos {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;
   margin-bottom: 16px;
 }
-.spp-dos .panel { margin-bottom: 0; }
+.spp-dos .panel { margin-bottom: 0; min-width: 0; }
 @media (max-width: 1100px) { .spp-dos { grid-template-columns: 1fr; } }
 
 /* Small key/value report tables (review reports, scheduled-run status). */

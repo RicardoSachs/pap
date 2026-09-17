@@ -259,8 +259,8 @@ def job_ingest_sbs() -> date:
 
 
 def job_positions_fms() -> date:
-    """Daily FMS positions: holdings, cash, net receivables, forwards,
-    sequentially, all for the previous NYSE-or-XLIM business day
+    """Daily FMS positions: holdings, cash, net receivables, forwards, then
+    the derived contribution fact, sequentially, all for the previous NYSE-or-XLIM business day
     (same union as the SBS reporting calendar). Feeds are idempotent,
     so one failing does not stop the rest; any failure is re-raised
     at the end so the job lands in job_runs as 'error'."""
@@ -269,6 +269,7 @@ def job_positions_fms() -> date:
     from src.pipelines.positions.fms.forwards.run import run_full as run_forwards
     from src.pipelines.positions.fms.holdings.run import run_full as run_holdings
     from src.pipelines.positions.fms.net_receivables.run import run_full as run_net_receivables
+    from src.pipelines.analytics.contribution.run import run_full as run_contribution
 
     run_date = prev_reporting_day(date.today())
     logger.info(f"--- job: positions fms | date={run_date} ---")
@@ -278,6 +279,7 @@ def job_positions_fms() -> date:
         ("cash", run_cash),
         ("net_receivables", run_net_receivables),
         ("forwards", run_forwards),
+        ("contribution", run_contribution),   # derived from holdings + valuation
     ]
     failures: list[str] = []
     for name, run_full in feeds:

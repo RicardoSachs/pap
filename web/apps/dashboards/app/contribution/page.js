@@ -62,7 +62,7 @@ export default function ContributionPage() {
     })();
   }, [portfolioId, range.from, range.to, source]);
 
-  const holdings = (data?.holdings || []).map((h) => ({ ...h, __key: h.entity_id }));
+  const holdings = (data?.holdings || []).map((h) => ({ ...h, __key: h.entity_id ?? h.position_key }));
   const ret = data?.portfolio_return ?? 0;
   const top = holdings.length ? holdings.reduce((mx, h) => (h.contribution > mx.contribution ? h : mx), holdings[0]) : null;
   const bottom = holdings.length ? holdings.reduce((mn, h) => (h.contribution < mn.contribution ? h : mn), holdings[0]) : null;

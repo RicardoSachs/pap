@@ -17,7 +17,7 @@
 #   08:30 acquire_sbs       browser scrape of prev reporting day
 #   09:00 check_sbs         gate: files arrived on network share
 #   09:15 ingest_sbs        SBS staging -> fact
-#   13:00 positions_fms     four FMS feeds, prev NYSE-or-XLIM day
+#   13:00 positions_fms     four FMS feeds + contribution, prev NYSE-or-XLIM day
 #   17:30 prices_bloomberg  America/New_York — DST-proof "after
 #                           NYSE close" regardless of season
 # ---------------------------------------------------------------

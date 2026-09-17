@@ -30,7 +30,7 @@ const LADOS = [['Compra', 'compra'], ['Venta', 'venta']];
 // que es donde ese id existe y donde sirve para no duplicar al recargar.
 const VACIO = {
   fecha: '', fondo: '2', lado: 'compra', instrumento: '', cantidad: '',
-  precio: '', monto: '', moneda: 'PEN', contraparte: '', fecha_liquidacion: '',
+  precio: '', monto: '', moneda: 'PEN', contraparte: '',
   trader: '', nota: '',
 };
 
@@ -73,7 +73,6 @@ export default function TradebookCarga() {
 function PorArchivo({ alCargar, origen, traders }) {
   const deTraders = origen !== 'fms';
   const [archivo, setArchivo] = useState(null);
-  const [hoja, setHoja] = useState('');
   const [trader, setTrader] = useState('');
   const [informe, setInforme] = useState(null);
   const [eco, setEco] = useState('');
@@ -91,7 +90,6 @@ function PorArchivo({ alCargar, origen, traders }) {
     const fd = new FormData();
     fd.append('archivo', archivo);
     fd.append('revisar', soloRevisar ? '1' : '');
-    fd.append('hoja', hoja);
     fd.append('origen', origen);
     fd.append('trader', deTraders ? trader : '');
     const r = await apiSend('/api/tradebook/archivo', 'POST', fd, true);
@@ -128,11 +126,9 @@ function PorArchivo({ alCargar, origen, traders }) {
       plantilla={`/api/tradebook/plantilla?origen=${origen}`}
       accept=".xlsx,.xls,.csv,.txt"
       onChange={(e) => { setArchivo(e.target.files?.[0] || null); invalidar(); }}
-      hoja={hoja}
-      onHoja={(v) => { setHoja(v); invalidar(); }}
       extra={deTraders && (
         <div className="controls" style={{ marginTop: 10 }}>
-          <div className="field"><label>Trader del archivo</label>
+          <div className="field"><label>Book del archivo</label>
             <input className="text-input" list="traders-conocidos" style={{ width: 220 }}
               placeholder="si el archivo no lo trae por fila"
               value={trader} onChange={(e) => { setTrader(e.target.value); invalidar(); }} />
@@ -143,7 +139,7 @@ function PorArchivo({ alCargar, origen, traders }) {
           {/* Es un valor POR DEFECTO, no una sobreescritura: un archivo que sí
               nombra a cada trader sigue diciendo lo que dice. */}
           <p className="page-sub dim" style={{ alignSelf: 'end', marginBottom: 6 }}>
-            Solo rellena las filas que no traigan columna de trader.
+            Solo rellena las filas que no traigan columna de book (trader).
           </p>
         </div>
       )}
@@ -176,7 +172,7 @@ function PorArchivo({ alCargar, origen, traders }) {
                   <tr><td>Fondos</td><td className="num">{informe.resumen.fondos.join(', ') || '—'}</td></tr>
                   <tr><td>Monedas</td><td className="num">{informe.resumen.monedas.join(', ') || '—'}</td></tr>
                   {deTraders && (
-                    <tr><td>Traders</td><td className="num">
+                    <tr><td>Books</td><td className="num">
                       {informe.resumen.traders?.join(', ') || '—'}</td></tr>
                   )}
                   {/* Sin referencia no hay forma de distinguir una recarga del
@@ -228,7 +224,7 @@ function PorArchivo({ alCargar, origen, traders }) {
                     <th>Fecha</th><th className="num">Fondo</th><th>Lado</th>
                     <th>Instrumento</th><th className="num">Cantidad</th>
                     <th className="num">Monto</th><th>Moneda</th>
-                    {deTraders && <th>Trader</th>}<th>Contraparte</th>
+                    {deTraders && <th>Book</th>}<th>Contraparte</th>
                   </tr></thead>
                   <tbody>{muestra.map((o, i) => (
                     <tr key={i}>
@@ -294,7 +290,7 @@ function AMano({ alCargar, traders }) {
     return Number.isFinite(n) ? n : null;
   };
   const faltan = [
-    !form.trader.trim() && 'trader', !form.fecha && 'fecha', !form.fondo && 'fondo',
+    !form.trader.trim() && 'book', !form.fecha && 'fecha', !form.fondo && 'fondo',
     !form.instrumento.trim() && 'instrumento', !(num(form.cantidad) > 0) && 'cantidad',
     !(num(form.precio) > 0) && 'precio', !form.moneda.trim() && 'moneda',
   ].filter(Boolean);
@@ -315,7 +311,9 @@ function AMano({ alCargar, traders }) {
         <div className="spp-grupo">
           <div className="spp-grupo-titulo">Quién y cuándo</div>
           <div className="controls spp-controls">
-            <div className="field"><label>Trader<Req /></label>
+            {/* «Book» en pantalla, `trader` por dentro: el libro de cada
+                trader ES su book, y asi lo nombra la mesa. */}
+            <div className="field"><label>Book<Req /></label>
               <input className="text-input" list="traders-conocidos" style={{ width: 170 }}
                 value={form.trader} onChange={set('trader')} />
               <datalist id="traders-conocidos">
@@ -360,13 +358,10 @@ function AMano({ alCargar, traders }) {
         </div>
 
         <div className="spp-grupo">
-          <div className="spp-grupo-titulo">Liquidación y contraparte</div>
+          <div className="spp-grupo-titulo">Contraparte y nota</div>
           <div className="controls spp-controls">
             <div className="field"><label>Contraparte</label>
               <input className="text-input" style={{ width: 160 }} value={form.contraparte} onChange={set('contraparte')} /></div>
-            <div className="field"><label>Liquidación</label>
-              <input className="date-input" type="date" value={form.fecha_liquidacion}
-                onChange={set('fecha_liquidacion')} /></div>
             <div className="field"><label>Nota</label>
               <input className="text-input" style={{ width: 220 }} value={form.nota} onChange={set('nota')} /></div>
           </div>
@@ -391,7 +386,7 @@ function AMano({ alCargar, traders }) {
             <thead><tr>
               <th>Fecha</th><th className="num">Fondo</th><th>Lado</th><th>Instrumento</th>
               <th className="num">Cantidad</th><th className="num">Precio</th>
-              <th className="num">Monto</th><th>Moneda</th><th>Trader</th>
+              <th className="num">Monto</th><th>Moneda</th><th>Book</th>
             </tr></thead>
             <tbody><tr>
               <td>{form.fecha ? fFecha(form.fecha) : vacio}</td>
@@ -455,7 +450,7 @@ function Libro({ estado, alCambiar }) {
           <SppSeg items={[['Ambos', ''], ['De traders', 'traders'], ['De FMS', 'fms']]}
             value={filtro.origen}
             onChange={(v) => setFiltro((f) => ({ ...f, origen: v }))} /></div>
-        <div className="field"><label>Trader</label>
+        <div className="field"><label>Book</label>
           <input className="text-input" style={{ width: 150 }} value={filtro.trader}
             onChange={(e) => setFiltro((f) => ({ ...f, trader: e.target.value }))} /></div>
         <div className="field"><label>Instrumento</label>
@@ -474,7 +469,7 @@ function Libro({ estado, alCambiar }) {
             <th>Fecha</th><th className="num">Fondo</th><th>Lado</th><th>Instrumento</th>
             <th className="num">Cantidad</th><th className="num">Precio</th>
             <th className="num">Monto</th><th>Moneda</th><th>Contraparte</th>
-            <th>Trader</th><th>Origen</th><th></th>
+            <th>Book</th><th>Origen</th><th></th>
           </tr></thead>
           <tbody>
             {filas.length ? filas.map((o) => (

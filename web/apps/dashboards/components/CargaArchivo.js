@@ -5,7 +5,7 @@
 // Dos paneles, actuar a la izquierda y ver a la derecha:
 //
 //   IZQUIERDA  título, qué se espera, y una cabecera siempre en el mismo
-//              orden: [formato] [↓ Plantilla] [archivo] [hoja]. Debajo, los
+//              orden: [formato] [↓ Plantilla] [archivo]. Debajo, los
 //              campos propios del sitio (extra), los botones (acciones) y el
 //              eco de lo que pasó.
 //   DERECHA    la vista previa de lo que trae el archivo, con un estado vacío
@@ -35,8 +35,6 @@ const CargaArchivo = forwardRef(function CargaArchivo({
   accept = '.xlsx,.xls,.csv',
   nombre = null,
   onChange,
-  hoja,
-  onHoja = null,
   extra = null,
   acciones = null,
   eco = '',
@@ -61,10 +59,9 @@ const CargaArchivo = forwardRef(function CargaArchivo({
           )}
           <input ref={ref} type="file" accept={accept} className="date-input"
             aria-label="Archivo a cargar" onChange={onChange} />
-          {onHoja && (
-            <input className="text-input" placeholder="Hoja (opcional)" style={{ width: 140 }}
-              value={hoja || ''} onChange={(e) => onHoja(e.target.value)} />
-          )}
+          {/* Sin selector de hoja: el lector toma la primera. Un cuadro
+              «Hoja (opcional)» era una pregunta más para el operador y casi
+              nunca tenia respuesta distinta de la primera. */}
           {nombre && <span className="page-sub dim" style={{ margin: 0 }}>{nombre}</span>}
         </div>
 

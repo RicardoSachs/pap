@@ -36,7 +36,9 @@ export default function SppPanelPage() {
   const metrica = 'valor_cuota';
   const [fondo, setFondo] = useState(2);
   const [ventana, setVentana] = useState(1);
-  const [escala, setEscala] = useState('nivel');
+  // Base 100 by default: it is the only reading in which four funds that
+  // started on different dates and bases can share one chart.
+  const [escala, setEscala] = useState('base');
   const [afpsSel, setAfpsSel] = useState([]);
 
   const [serieData, setSerieData] = useState(null);

@@ -184,7 +184,7 @@ export default function TradebookPanel() {
                   if (v === 'fms') setTrader('');
                 }} /></div>
               {libro !== 'fms' && (estado?.traders || []).length > 0 && (
-                <div className="field"><label>Trader</label>
+                <div className="field"><label>Book</label>
                   <SppSeg items={[['Todos', ''], ...(estado.traders || []).map((t) => [t, t])]}
                     value={trader} onChange={setTrader} /></div>
               )}

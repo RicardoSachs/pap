@@ -16,7 +16,7 @@ import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
   GRIS_COMPETIDOR, VENTANAS, colorDe, desdeVentana, fFecha,
-  fmtMetrica, fmtRend, grisLinea, metricasDe, nEnt, nf, nombreMetrica,
+  fmtMetrica, fmtRend, grisLinea, nEnt, nf, nombreMetrica,
   opera as operaCfg, ordenCasa, signo, valorMostrado,
 } from '../../lib/spp';
 import SppSeg from '../../components/SppSeg';
@@ -30,7 +30,10 @@ export default function SppPanelPage() {
   const [estado, setEstado] = useState(null);
   const [error, setError] = useState(null);
 
-  const [metrica, setMetrica] = useState('valor_cuota');
+  // The panel reads ONE metric: the price. Fondo (S/) and cuotas are
+  // still stored and the Libro still offers them; here they are the
+  // closing table's columns, not a series worth a chart.
+  const metrica = 'valor_cuota';
   const [fondo, setFondo] = useState(2);
   const [ventana, setVentana] = useState(1);
   const [escala, setEscala] = useState('nivel');
@@ -234,8 +237,6 @@ export default function SppPanelPage() {
 
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Métrica</label>
-            <SppSeg items={metricasDe(cfg)} value={metrica} onChange={setMetrica} /></div>
           <div className="field"><label>Tipo de fondo</label>
             <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
               value={fondo}
@@ -318,6 +319,14 @@ export default function SppPanelPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* The filter bar governs everything ABOVE this line. The windows and
+          the ranks below carry their own controls (control date, fund), and
+          without a visible cut the reader keeps changing the top filters and
+          wondering why the tables do not move. */}
+      <div className="spp-corte" role="separator">
+        <span>Los filtros de arriba mandan hasta aquí · lo que sigue tiene sus propios controles</span>
       </div>
 
       <div className="panel">

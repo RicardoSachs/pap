@@ -27,3 +27,15 @@
 
 /* Monthly rank cells. */
 .spp-puesto { text-align: center; }
+
+/* Corte entre lo que gobiernan los filtros de arriba y lo que trae sus
+   propios controles: una linea con la explicacion en medio. */
+.spp-corte {
+  display: flex; align-items: center; gap: 14px;
+  margin: 26px 0 22px; color: var(--text-secondary); font-size: 12px;
+}
+.spp-corte::before, .spp-corte::after {
+  content: ''; flex: 1; border-top: 1px solid var(--s4);
+}
+.spp-corte span { white-space: nowrap; }
+@media (max-width: 720px) { .spp-corte span { white-space: normal; text-align: center; } }

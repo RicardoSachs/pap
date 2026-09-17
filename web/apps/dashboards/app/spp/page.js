@@ -41,6 +41,7 @@ export default function SppPanelPage() {
   const [pos, setPos] = useState(null);
   const [fechaControl, setFechaControl] = useState('');
   const [fondoPos, setFondoPos] = useState(2);
+  const [vistaPos, setVistaPos] = useState('tabla');
 
   // Config first: without it we don't know how many AFPs exist.
   useEffect(() => {
@@ -339,8 +340,11 @@ export default function SppPanelPage() {
         {vent?.control ? (
           <>
             <details className="spp-desplegable" open>
-              <summary>Valor cuota en cada fecha base</summary>
-              <TablaVentanas cols={vent.cols_nivel} filas={vent.niveles} conUnidad={false} />
+              <summary>Rendimiento relativo · {casa} contra cada competidora</summary>
+              <TablaVentanas cols={(vent.cols_rend || []).filter((c) => c[2] !== 'nivel')}
+                filas={vent.relativos} conUnidad orden={ordenRel} />
+              <p className="page-sub">Cada sección es {casa} menos esa AFP: positivo significa que
+                {' '}{casa} rinde más. La sección de {casa} va en rendimiento absoluto.</p>
             </details>
             <details className="spp-desplegable">
               <summary>Rendimiento absoluto</summary>
@@ -350,11 +354,8 @@ export default function SppPanelPage() {
                 Las columnas diarias son el movimiento de ese día, no acumulados.</p>
             </details>
             <details className="spp-desplegable">
-              <summary>Rendimiento relativo · {casa} contra cada competidora</summary>
-              <TablaVentanas cols={(vent.cols_rend || []).filter((c) => c[2] !== 'nivel')}
-                filas={vent.relativos} conUnidad orden={ordenRel} />
-              <p className="page-sub">Cada sección es {casa} menos esa AFP: positivo significa que
-                {' '}{casa} rinde más. La sección de {casa} va en rendimiento absoluto.</p>
+              <summary>Valor cuota en cada fecha base</summary>
+              <TablaVentanas cols={vent.cols_nivel} filas={vent.niveles} conUnidad={false} />
             </details>
           </>
         ) : vent == null
@@ -365,11 +366,19 @@ export default function SppPanelPage() {
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between' }}>
           <div className="panel-title">Posiciones mensuales por rendimiento</div>
-          <div className="field"><label>Tipo de fondo</label>
-            <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
-              value={fondoPos} onChange={setFondoPos} /></div>
+          <div className="controls" style={{ margin: 0 }}>
+            <div className="field"><label>Tipo de fondo</label>
+              <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
+                value={fondoPos} onChange={setFondoPos} /></div>
+            <div className="field"><label>Vista</label>
+              <SppSeg items={[['Tabla', 'tabla'], ['Gráfico', 'grafico']]}
+                value={vistaPos} onChange={setVistaPos} /></div>
+          </div>
         </div>
-        {trazasPos.length ? (
+        {/* One space, two readings of the same ranks: the heat table says
+            WHO was where each month; the lines say how each one MOVED.
+            Both at once said it twice, and the panel was two screens tall. */}
+        {vistaPos === 'grafico' && (trazasPos.length ? (
           <PlotlyChart
             data={trazasPos}
             style={{ height: '300px' }}
@@ -382,7 +391,8 @@ export default function SppPanelPage() {
               xaxis: { type: 'category' },
             }}
           />
-        ) : <div className="dim">Sin meses cerrados suficientes.</div>}
+        ) : <div className="dim">Sin meses cerrados suficientes.</div>)}
+        {vistaPos === 'tabla' && (
         <div className="table-wrap spp-vent">
           <table>
             <thead><tr><th>AFP</th>{periodos.map((p) => <th key={p.clave}>{p.etiqueta}</th>)}</tr></thead>
@@ -420,9 +430,10 @@ export default function SppPanelPage() {
             </tbody>
           </table>
         </div>
+        )}
         <p className="page-sub">Puesto 1 al {totalPos} por rendimiento del mes, dentro de cada tipo
-          de fondo — más intenso = mejor puesto; la fila en color es {casa}. Cada mes cerrado rinde
-          contra el cierre del mes anterior; el último periodo es el MTD.</p>
+          de fondo{vistaPos === 'tabla' ? ' — más intenso = mejor puesto; la fila en color es ' : '; la línea gruesa es '}
+          {casa}. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
       </div>
     </div>
   );

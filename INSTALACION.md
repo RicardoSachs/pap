@@ -72,7 +72,7 @@ Termina comprobando que todo importa. Las versiones son las de
 FastAPI 0.137.1…).
 
 Las rutas pueden tener espacios (`Program Files`, `Mis Documentos`) y
-pueden ser de red (`\servidor\...`). Las librerías desde la red van
+pueden ser de red (`\\servidor\...`). Las librerías desde la red van
 bien: pip las copia dentro del `.venv`. El **Python** conviene tenerlo
 en local — el `.venv` recuerda dónde está su intérprete y lo necesita en
 cada arranque, también en la tarea programada de las 18:00. Y si la

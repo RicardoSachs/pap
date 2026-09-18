@@ -64,7 +64,15 @@ echo.
 rem ---- 2. El interprete --------------------------------------------------
 rem Prioridad: el que se indique en PYTHON_SPP, luego el portable de
 rem py_versions junto al proyecto, luego el 3.10 del sistema.
-set "PY=%PYTHON_SPP%"
+rem PY es el ejecutable y va SIEMPRE entre comillas al invocarlo: una ruta
+rem con espacios ("Program Files", "Mis Documentos") sin comillas se corta
+rem en el primer espacio. Los argumentos del lanzador (py -3.10) van aparte
+rem en PYARGS, porque un comando con argumento no admite comillas enteras.
+rem "if defined" primero: la sustitucion %VAR:"=% sobre una variable que
+rem no existe no da vacio, da el texto literal, y el if de abajo se rompe.
+set "PY="
+if defined PYTHON_SPP set "PY=%PYTHON_SPP:"=%"
+set "PYARGS="
 if "%PY%"=="" (
   for %%P in (
     "%~dp0..\..\py_versions\3106\python.exe"
@@ -74,7 +82,7 @@ if "%PY%"=="" (
 )
 if "%PY%"=="" (
   py -3.10 --version >nul 2>&1
-  if !errorlevel!==0 set "PY=py -3.10"
+  if !errorlevel!==0 (set "PY=py" & set "PYARGS=-3.10")
 )
 if "%PY%"=="" (
   python --version >nul 2>&1
@@ -86,8 +94,8 @@ if "%PY%"=="" (
   pause
   exit /b 1
 )
-echo Interprete    : %PY%
-%PY% --version
+echo Interprete    : %PY% %PYARGS%
+"%PY%" %PYARGS% --version
 echo.
 
 rem ---- 3. El entorno ----------------------------------------------------
@@ -95,7 +103,7 @@ if exist ".venv\Scripts\python.exe" (
   echo Ya existe .venv; se reutiliza.
 ) else (
   echo Creando .venv ...
-  %PY% -m venv .venv
+  "%PY%" %PYARGS% -m venv .venv
   if errorlevel 1 (
     echo No se pudo crear el entorno.
     pause

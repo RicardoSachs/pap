@@ -88,6 +88,10 @@ CREATE TABLE IF NOT EXISTS tradebook (
         CHECK ((origen = 'fms' AND trader IS NULL)
                OR (origen <> 'fms' AND length(trim(trader)) > 0)),
 
+    -- Quien ejecuto la operacion, que no es lo mismo que el book al que
+    -- se atribuye. Texto libre y opcional en los dos libros.
+    operador          TEXT,
+
     nota              TEXT,
 
     creado_en         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -70,9 +70,13 @@ _ALIAS = {
                    "folio", "tradeid", "operacion_id"),
     # The field is `trader` inside; the desk calls it the book, and so do
     # the template and the format window. Old files still say trader.
-    "trader": ("book", "libro", "trader", "operador", "responsable", "ejecutivo",
+    "trader": ("book", "libro", "trader", "responsable", "ejecutivo",
                "gestor", "portfoliomanager", "pm"),
     "nota": ("nota", "notas", "observacion", "observaciones", "comentario"),
+    # Who executed the trade, as distinct from the book it is booked to.
+    # Free text, optional, in both books. It used to be an alias of trader;
+    # a file that says operador now fills THIS column, not the book.
+    "operador": ("operador", "operator", "ejecutor", "quienopero"),
 }
 # Sin estas no hay operacion que registrar.
 _OBLIGATORIAS = ("fecha", "fondo", "lado", "instrumento", "cantidad")
@@ -90,7 +94,7 @@ _VENTA = ("venta", "ventas", "v", "s", "sell", "sold", "sale")
 
 _CAMPOS = ("referencia", "fecha", "fondo", "lado", "instrumento", "entity_id",
            "cantidad", "precio", "monto", "moneda", "contraparte",
-           "origen", "trader", "nota")
+           "origen", "trader", "nota", "operador")
 
 
 # ---- Normalizacion de un valor suelto -------------------------------------
@@ -231,6 +235,7 @@ def _validar(op: dict) -> dict:
         "origen": origen,
         "trader": trader,
         "nota": _texto(op.get("nota")),
+        "operador": _texto(op.get("operador")),
     }
 
 
@@ -239,11 +244,11 @@ def _validar(op: dict) -> dict:
 _INSERTA = """
 INSERT INTO tradebook (referencia, fecha, fondo, lado, instrumento, entity_id,
                        cantidad, precio, monto, moneda, contraparte,
-                       origen, trader, nota)
+                       origen, trader, nota, operador)
 VALUES (%(referencia)s, %(fecha)s, %(fondo)s, %(lado)s, %(instrumento)s,
         %(entity_id)s, %(cantidad)s, %(precio)s, %(monto)s, %(moneda)s,
         %(contraparte)s, %(origen)s, %(trader)s,
-        %(nota)s)
+        %(nota)s, %(operador)s)
 """
 # Solo alcanza a las filas que traen referencia; el indice unico es parcial.
 _UPSERT = _INSERTA + """
@@ -254,7 +259,7 @@ ON CONFLICT (referencia) WHERE referencia IS NOT NULL DO UPDATE SET
     monto = EXCLUDED.monto, moneda = EXCLUDED.moneda,
     contraparte = EXCLUDED.contraparte,
     origen = EXCLUDED.origen, trader = EXCLUDED.trader,
-    nota = EXCLUDED.nota,
+    nota = EXCLUDED.nota, operador = EXCLUDED.operador,
     actualizado_en = CURRENT_TIMESTAMP
 """
 
@@ -301,6 +306,7 @@ def actualizar(operacion_id: int, op: dict) -> dict:
                 precio = %(precio)s, monto = %(monto)s, moneda = %(moneda)s,
                 contraparte = %(contraparte)s,
                 origen = %(origen)s, trader = %(trader)s, nota = %(nota)s,
+                operador = %(operador)s,
                 actualizado_en = CURRENT_TIMESTAMP
             WHERE operacion_id = %(operacion_id)s""", fila)
         return _a_dict(conn.execute(
@@ -573,6 +579,9 @@ def plantilla(filas: int = 8, origen: str = "excel") -> bytes:
     if origen in ORIGENES_TRADER:
         ejemplo.insert(len(ejemplo.columns) - 1, encabezado("trader"),
                        ["NOMBRE DEL BOOK"] + [""] * (filas - 1))
+    # Last on purpose: it is the newest column, and files built on the
+    # previous template keep their columns where they were.
+    ejemplo["operador"] = [""] * filas
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         ejemplo.to_excel(w, index=False, sheet_name="operaciones")

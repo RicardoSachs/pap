@@ -239,3 +239,13 @@ def test_la_columna_del_trader_se_llama_book_y_acepta_los_dos_nombres():
     assert encabezado("trader") == "book"
     assert "book" in _ALIAS["trader"] and "trader" in _ALIAS["trader"]
     assert "fecha_liquidacion" not in _ALIAS
+
+
+def test_el_operador_es_un_campo_propio_y_ya_no_cae_en_el_book():
+    """Una columna `operador` del Excel llena operador, no book; y sin
+    operador la operacion entra igual, porque es opcional."""
+    from src.pipelines.tradebook.operaciones import _ALIAS
+    assert "operador" in _ALIAS and "operador" not in _ALIAS["trader"]
+    con = _validar({**BASE, "operador": "  M. LOPEZ "})
+    assert con["operador"] == "M. LOPEZ" and con["trader"] == "J. PEREZ"
+    assert _validar(BASE)["operador"] is None

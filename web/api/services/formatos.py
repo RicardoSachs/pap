@@ -40,7 +40,7 @@ EJEMPLO_TRADEBOOK = {
     "instrumento": "PERU 3.55 03/31", "cantidad": "1,000,000", "precio": "98.45",
     "monto": "984,500.00", "moneda": "USD", "contraparte": "BCP",
     "referencia": "OP00123",
-    "trader": "R. SACHS", "nota": "",
+    "trader": "R. SACHS", "nota": "", "operador": "M. LOPEZ",
 }
 
 

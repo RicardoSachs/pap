@@ -31,7 +31,7 @@ const LADOS = [['Compra', 'compra'], ['Venta', 'venta']];
 const VACIO = {
   fecha: '', fondo: '2', lado: 'compra', instrumento: '', cantidad: '',
   precio: '', monto: '', moneda: 'PEN', contraparte: '',
-  trader: '', nota: '',
+  operador: '', trader: '', nota: '',
 };
 
 export default function TradebookCarga() {
@@ -224,7 +224,7 @@ function PorArchivo({ alCargar, origen, traders }) {
                     <th>Fecha</th><th className="num">Fondo</th><th>Lado</th>
                     <th>Instrumento</th><th className="num">Cantidad</th>
                     <th className="num">Monto</th><th>Moneda</th>
-                    {deTraders && <th>Book</th>}<th>Contraparte</th>
+                    <th>Operador</th>{deTraders && <th>Book</th>}<th>Contraparte</th>
                   </tr></thead>
                   <tbody>{muestra.map((o, i) => (
                     <tr key={i}>
@@ -235,7 +235,7 @@ function PorArchivo({ alCargar, origen, traders }) {
                       <td className="num">{nEnt(Math.round(o.cantidad))}</td>
                       <td className="num">{nEnt(Math.round(o.monto))}</td>
                       <td>{o.moneda}</td>
-                      {deTraders && <td>{o.trader || '—'}</td>}
+                      <td>{o.operador || '—'}</td>{deTraders && <td>{o.trader || '—'}</td>}
                       <td>{o.contraparte || '—'}</td>
                     </tr>
                   ))}</tbody>
@@ -274,7 +274,8 @@ function AMano({ alCargar, traders }) {
       // conservan: quien captura a mano suele cargar varias seguidas suyas
       // del mismo día.
       setForm((f) => ({ ...VACIO, fecha: f.fecha, fondo: f.fondo, moneda: f.moneda,
-                        contraparte: f.contraparte, trader: f.trader }));
+                        contraparte: f.contraparte, trader: f.trader,
+                        operador: f.operador }));
       alCargar();
     } else setEco({ ok: false, texto: r.data.motivo });
   };
@@ -311,6 +312,11 @@ function AMano({ alCargar, traders }) {
         <div className="spp-grupo">
           <div className="spp-grupo-titulo">Quién y cuándo</div>
           <div className="controls spp-controls">
+            {/* Operador y Book son dos cosas: quien ejecuto, y el libro al que
+                se atribuye. El operador es libre; el book, obligatorio. */}
+            <div className="field"><label>Operador</label>
+              <input className="text-input" style={{ width: 170 }}
+                value={form.operador} onChange={set('operador')} /></div>
             {/* «Book» en pantalla, `trader` por dentro: el libro de cada
                 trader ES su book, y asi lo nombra la mesa. */}
             <div className="field"><label>Book<Req /></label>
@@ -386,7 +392,7 @@ function AMano({ alCargar, traders }) {
             <thead><tr>
               <th>Fecha</th><th className="num">Fondo</th><th>Lado</th><th>Instrumento</th>
               <th className="num">Cantidad</th><th className="num">Precio</th>
-              <th className="num">Monto</th><th>Moneda</th><th>Book</th>
+              <th className="num">Monto</th><th>Moneda</th><th>Operador</th><th>Book</th>
             </tr></thead>
             <tbody><tr>
               <td>{form.fecha ? fFecha(form.fecha) : vacio}</td>
@@ -398,6 +404,7 @@ function AMano({ alCargar, traders }) {
                 ? num(form.precio).toLocaleString('es-PE', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : vacio}</td>
               <td className="num">{montoCalc != null ? nEnt(Math.round(montoCalc)) : vacio}</td>
               <td>{form.moneda.trim().toUpperCase() || vacio}</td>
+              <td>{form.operador.trim() || vacio}</td>
               <td>{form.trader.trim() || vacio}</td>
             </tr></tbody>
           </table>
@@ -471,7 +478,7 @@ function Libro({ estado, alCambiar }) {
             <th>Fecha</th><th className="num">Fondo</th><th>Lado</th><th>Instrumento</th>
             <th className="num">Cantidad</th><th className="num">Precio</th>
             <th className="num">Monto</th><th>Moneda</th><th>Contraparte</th>
-            <th>Book</th><th>Origen</th><th></th>
+            <th>Operador</th><th>Book</th><th>Origen</th><th></th>
           </tr></thead>
           <tbody>
             {filas.length ? filas.map((o) => (
@@ -486,6 +493,7 @@ function Libro({ estado, alCambiar }) {
                 <td className="num">{nEnt(Math.round(o.monto))}</td>
                 <td>{o.moneda}</td>
                 <td>{o.contraparte || '—'}</td>
+                <td>{o.operador || <span className="dim">—</span>}</td>
                 <td>{o.trader || <span className="dim">—</span>}</td>
                 <td><span className={`tb-origen ${o.origen}`}>{o.origen}</span></td>
                 <td><button className="btn peligro" onClick={() => borrar(o)}>Anular</button></td>

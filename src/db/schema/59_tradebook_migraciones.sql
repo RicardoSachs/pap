@@ -91,3 +91,9 @@ CREATE INDEX IF NOT EXISTS ix_tradebook_origen ON tradebook (origen);
 -- ---------------------------------------------------------------
 ALTER TABLE tradebook DROP CONSTRAINT IF EXISTS ck_tradebook_liquidacion;
 ALTER TABLE tradebook DROP COLUMN IF EXISTS fecha_liquidacion;
+
+-- ---------------------------------------------------------------
+-- Operador (2026-09-18): quien ejecuto, distinto del book. Opcional,
+-- asi que la columna entra sin tocar las filas que ya estan.
+-- ---------------------------------------------------------------
+ALTER TABLE tradebook ADD COLUMN IF NOT EXISTS operador TEXT;

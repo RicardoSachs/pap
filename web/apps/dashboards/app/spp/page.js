@@ -136,17 +136,23 @@ export default function SppPanelPage() {
     const casaPor = new Map(casaPts.map((p) => [p[0], p[1]]));
     const casa0 = casaPts[0][1];
     const enPantalla = conDatos.map((s) => s.afp);
+    // Sin linea de casa, los grises ya no dicen "esta no es la casa": son
+    // tres lineas iguales. La MISMA tinta que en el resto del tablero, pero
+    // cada competidora con su trazo, para saber cual es cual sin leyenda.
+    const TRAZOS = ['solid', 'dash', 'dot', 'dashdot'];
+    const orden = ordenCasa(cfg, enPantalla).filter((a) => a !== casa);
     return otras.map((s) => {
       const pts = desde(s).filter((p) => casaPor.has(p[0]));
       if (!pts.length) return null;
       const otra0 = pts[0][1];
       const color = tintaDe(s.afp, enPantalla);
+      const trazo = TRAZOS[orden.indexOf(s.afp) % TRAZOS.length];
       return {
         x: pts.map((p) => p[0]),
         y: pts.map((p) => ((casaPor.get(p[0]) / casa0) - (p[1] / otra0)) * 10000),
         type: 'scatter', mode: 'lines', name: `${casa} − ${s.afp}`,
         legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
-        line: { color, width: 1.8 },
+        line: { color, width: 1.8, dash: trazo },
         hovertemplate: `<b>${casa} − ${s.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
         hoverlabel: { bordercolor: color },
       };
@@ -319,7 +325,9 @@ export default function SppPanelPage() {
           <PlotlyChart
             data={traces}
             layout={{
-              margin: { l: 70, r: 20, t: 10, b: 60 },
+              // " bps" alarga las etiquetas del eje: sin el margen extra el
+              // signo menos se recorta y -200 se lee como 200.
+              margin: { l: escala === 'alpha' ? 95 : 70, r: 20, t: 10, b: 60 },
               xaxis: { hoverformat: '%Y-%m-%d' },
               yaxis: {
                 type: 'linear',
@@ -328,7 +336,7 @@ export default function SppPanelPage() {
                 // En Alpha el cero ES la casa: la linea que lo marca es la
                 // referencia de lectura, no ruido.
                 zeroline: escala === 'alpha',
-                zerolinecolor: ct.gridcolor, zerolinewidth: 1.5,
+                zerolinecolor: ct.muted, zerolinewidth: 1.5,
                 ticksuffix: escala === 'alpha' ? ' bps' : '',
               },
             }}

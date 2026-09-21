@@ -137,23 +137,28 @@ export default function SppPanelPage() {
     const casa0 = casaPts[0][1];
     const enPantalla = conDatos.map((s) => s.afp);
     // Sin linea de casa, los grises ya no dicen "esta no es la casa": son
-    // tres lineas iguales. La MISMA tinta que en el resto del tablero, pero
-    // cada competidora con su trazo, para saber cual es cual sin leyenda.
-    const TRAZOS = ['solid', 'dash', 'dot', 'dashdot'];
+    // lineas iguales. Misma tinta, pero los tonos abiertos de punta a punta
+    // (el reparto normal los junta para que la casa destaque), y todas
+    // continuas: los trazos a rayas se leian como datos con huecos.
     const orden = ordenCasa(cfg, enPantalla).filter((a) => a !== casa);
+    const tonoDe = (afp) => {
+      const i = orden.indexOf(afp);
+      const a = orden.length < 2 ? 0.9 : 0.95 - (0.6 * i) / (orden.length - 1);
+      return grisLinea(a.toFixed(2));
+    };
     return otras.map((s) => {
       const pts = desde(s).filter((p) => casaPor.has(p[0]));
       if (!pts.length) return null;
       const otra0 = pts[0][1];
-      const color = tintaDe(s.afp, enPantalla);
-      const trazo = TRAZOS[orden.indexOf(s.afp) % TRAZOS.length];
+      const color = tonoDe(s.afp);
       return {
         x: pts.map((p) => p[0]),
         y: pts.map((p) => ((casaPor.get(p[0]) / casa0) - (p[1] / otra0)) * 10000),
-        type: 'scatter', mode: 'lines', name: `${casa} − ${s.afp}`,
+        // Solo la AFP: el titulo ya dice que todo es contra la casa.
+        type: 'scatter', mode: 'lines', name: s.afp,
         legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
-        line: { color, width: 1.8, dash: trazo },
-        hovertemplate: `<b>${casa} − ${s.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
+        line: { color, width: 2 },
+        hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
         hoverlabel: { bordercolor: color },
       };
     }).filter(Boolean);
@@ -197,6 +202,7 @@ export default function SppPanelPage() {
   }, [series, escala, cfg, casa]);
 
   const ct = chartTheme();
+  const etiquetaVentana = (VENTANAS.find(([, v]) => v === ventana) || ['—'])[0];
 
   // ---- Cierre por AFP (house first via the one shared ordering) ----------
   const ordenGlobal = ordenCasa(cfg, nombres);
@@ -315,11 +321,13 @@ export default function SppPanelPage() {
       </div>
 
       <div className="panel">
+        {/* El titulo dice lo que hay en pantalla - escala, fondo y ventana -
+            porque los filtros quedan arriba y el grafico se mira solo. */}
         <div className="panel-title">
           {escala === 'alpha'
-            ? `Alpha acumulado · ${casa} contra cada AFP · bps`
-            : <>Serie histórica · {nombreMetrica(cfg, metrica).toLowerCase()}
-              {escala === 'base' ? ' · base 100' : ''}</>}
+            ? `Alpha acumulado de ${casa} · Fondo ${fondo} · ${etiquetaVentana} · bps`
+            : `Serie histórica · ${nombreMetrica(cfg, metrica).toLowerCase()} · Fondo ${fondo}`
+              + ` · ${etiquetaVentana}${escala === 'base' ? ' · base 100' : ''}`}
         </div>
         {traces.length ? (
           <PlotlyChart

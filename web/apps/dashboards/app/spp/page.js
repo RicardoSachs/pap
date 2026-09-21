@@ -70,12 +70,16 @@ export default function SppPanelPage() {
     if (!cfg || !afpsSel.length) return;
     setError(null);
     const desde = desdeVentana(ventana, estado, vent?.fechas);
+    // En Alpha la casa es el punto de referencia de cada linea: se pide
+    // siempre, aunque el operador la haya apagado en "AFP en pantalla".
+    const afps = (escala === 'alpha' && casa && !afpsSel.includes(casa))
+      ? [casa, ...afpsSel] : afpsSel;
     const q = new URLSearchParams({
-      fondo: String(fondo), afps: afpsSel.join(','), metrica, desde,
+      fondo: String(fondo), afps: afps.join(','), metrica, desde,
     });
     apiGet(`/api/spp/serie?${q}`).then(setSerieData).catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, estado, metrica, fondo, ventana, afpsSel,
+  }, [cfg, estado, metrica, fondo, ventana, afpsSel, escala === 'alpha',
       vent?.fechas?.mes, vent?.fechas?.anio, vent?.fechas?.fy]);
 
   // Windows + positions follow metric and control date.
@@ -111,7 +115,46 @@ export default function SppPanelPage() {
     (afp === casa ? colorDe(cfg, afp, true) : grisDe(afp, lista));
 
   const series = serieData?.series || [];
+
+  // Alpha: cuanto le ha ganado la casa a CADA competidora desde el inicio
+  // de la ventana, en puntos basicos. Es la resta de las dos curvas de
+  // Base 100 - casa menos la otra - asi que positivo es la casa delante y
+  // la pendiente de cada dia es lo que ese dia abrio o cerro la brecha.
+  // Una linea por competidora, ninguna para la casa: la casa es el cero.
+  const trazasAlpha = () => {
+    const conDatos = series.filter((s) => s.puntos.length);
+    const propia = conDatos.find((s) => s.afp === casa);
+    const otras = conDatos.filter((s) => s.afp !== casa);
+    if (!propia || !otras.length) return [];
+    // Misma regla que Base 100: la primera fecha con dato en TODAS las
+    // series en pantalla, para que cada linea parta del mismo cero.
+    const inicios = conDatos.map((s) => s.puntos[0][0]);
+    const baseFecha = inicios.reduce((m, f) => (f > m ? f : m), inicios[0]);
+    const desde = (s) => s.puntos.filter((p) => p[0] >= baseFecha);
+    const casaPts = desde(propia);
+    if (!casaPts.length) return [];
+    const casaPor = new Map(casaPts.map((p) => [p[0], p[1]]));
+    const casa0 = casaPts[0][1];
+    const enPantalla = conDatos.map((s) => s.afp);
+    return otras.map((s) => {
+      const pts = desde(s).filter((p) => casaPor.has(p[0]));
+      if (!pts.length) return null;
+      const otra0 = pts[0][1];
+      const color = tintaDe(s.afp, enPantalla);
+      return {
+        x: pts.map((p) => p[0]),
+        y: pts.map((p) => ((casaPor.get(p[0]) / casa0) - (p[1] / otra0)) * 10000),
+        type: 'scatter', mode: 'lines', name: `${casa} − ${s.afp}`,
+        legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
+        line: { color, width: 1.8 },
+        hovertemplate: `<b>${casa} − ${s.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
+        hoverlabel: { bordercolor: color },
+      };
+    }).filter(Boolean);
+  };
+
   const traces = useMemo(() => {
+    if (escala === 'alpha') return trazasAlpha();
     const conDatos = series.filter((s) => s.puntos.length);
     let baseFecha = null;
     if (escala === 'base' && conDatos.length) {
@@ -250,7 +293,7 @@ export default function SppPanelPage() {
           <div className="field"><label>Ventana</label>
             <SppSeg items={VENTANAS} value={ventana} onChange={setVentana} /></div>
           <div className="field"><label>Escala</label>
-            <SppSeg items={[['Nivel', 'nivel'], ['Base 100', 'base']]}
+            <SppSeg items={[['Nivel', 'nivel'], ['Base 100', 'base'], ['Alpha', 'alpha']]}
               value={escala} onChange={setEscala} /></div>
           <div className="field"><label>AFP en pantalla</label>
             <SppSeg multi items={nombres.filter((a) => opera(a, fondo)).map((a) => [a, a])}
@@ -267,8 +310,10 @@ export default function SppPanelPage() {
 
       <div className="panel">
         <div className="panel-title">
-          Serie histórica · {nombreMetrica(cfg, metrica).toLowerCase()}
-          {escala === 'base' ? ' · base 100' : ''}
+          {escala === 'alpha'
+            ? `Alpha acumulado · ${casa} contra cada AFP · bps`
+            : <>Serie histórica · {nombreMetrica(cfg, metrica).toLowerCase()}
+              {escala === 'base' ? ' · base 100' : ''}</>}
         </div>
         {traces.length ? (
           <PlotlyChart
@@ -278,8 +323,13 @@ export default function SppPanelPage() {
               xaxis: { hoverformat: '%Y-%m-%d' },
               yaxis: {
                 type: 'linear',
-                title: escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
-                zeroline: false,
+                title: escala === 'alpha' ? 'Alpha acumulado (bps)'
+                  : escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
+                // En Alpha el cero ES la casa: la linea que lo marca es la
+                // referencia de lectura, no ruido.
+                zeroline: escala === 'alpha',
+                zerolinecolor: ct.gridcolor, zerolinewidth: 1.5,
+                ticksuffix: escala === 'alpha' ? ' bps' : '',
               },
             }}
           />
@@ -291,6 +341,15 @@ export default function SppPanelPage() {
             En Base 100 las series parten de 100 en la primera fecha con dato en todas
             las AFP en pantalla: es la única lectura comparable, porque cada fondo
             arrancó en fechas y bases distintas.
+          </p>
+        )}
+        {escala === 'alpha' && (
+          <p className="page-sub" style={{ marginTop: 8 }}>
+            Cada línea es la rentabilidad acumulada de {casa} menos la de esa AFP,
+            en puntos básicos, desde la primera fecha de la ventana con dato en
+            todas: por encima de cero {casa} va delante, y la pendiente de cada
+            día es lo que ese día abrió o cerró la brecha. {casa} no lleva línea
+            porque es el cero.
           </p>
         )}
       </div>

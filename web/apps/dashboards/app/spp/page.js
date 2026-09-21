@@ -214,36 +214,42 @@ export default function SppPanelPage() {
   const ordenRel = ordenCasa(cfg, nombres);
 
   function TablaVentanas({ cols, filas, conUnidad, orden }) {
-    // House first and in its brand color; competitor section headers stay
-    // neutral - same criterion as the charts and the positions heatmap.
+    // Un bloque por FONDO y dentro una fila por AFP: la pregunta de la mesa
+    // es "en el fondo 2, como vamos contra cada una", y asi las cuatro
+    // respuestas quedan juntas. La casa va primero y en su color; las
+    // competidoras, neutras - el mismo criterio que los graficos.
+    const ordenAfp = orden || ordenRel;
+    const fondos = (cfg?.fondos || []).filter((f) => filas.some((r) => r.fondo === f));
     return (
       <div className="table-wrap spp-vent">
         <table>
-          <thead><tr><th>Fondo</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
+          <thead><tr><th>AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
           <tbody>
-            {(orden || ordenRel).map((afp) => {
-              const suyas = filas.filter((r) => r.afp === afp);
-              if (!suyas.length) return null;
-              const esCasa = afp === casa;
-              const nota = suyas[0].absoluto === true ? ' · rendimiento absoluto' : '';
+            {fondos.map((f) => {
+              const delFondo = filas.filter((r) => r.fondo === f)
+                .sort((x, y) => ordenAfp.indexOf(x.afp) - ordenAfp.indexOf(y.afp));
               return [
-                <tr key={`${afp}-h`} className="spp-seccion">
-                  <td colSpan={cols.length + 1}
-                    className={esCasa ? '' : 'muted'}
-                    style={esCasa ? { color: colorDe(cfg, afp, true) } : undefined}>
-                    {afp}{nota}</td>
+                <tr key={`f${f}-h`} className="spp-seccion">
+                  <td colSpan={cols.length + 1} className="muted">Fondo {f}</td>
                 </tr>,
-                ...suyas.map((r) => (
-                  <tr key={`${afp}-${r.fondo}`}>
-                    <td>Fondo {r.fondo}</td>
-                    {cols.map((c) => {
-                      const unidad = conUnidad ? c[2] : 'nivel';
-                      const v = r.valores[c[0]];
-                      const clase = unidad === 'nivel' ? 'num' : `num ${signo(valorMostrado(v, unidad))}`;
-                      return <td key={c[0]} className={v == null ? 'num dim' : clase}>{fmtRend(v, unidad, metrica)}</td>;
-                    })}
-                  </tr>
-                )),
+                ...delFondo.map((r) => {
+                  const esCasa = r.afp === casa;
+                  // En la tabla relativa la fila de la casa no es una resta
+                  // sino su rendimiento a secas; se dice en la propia fila.
+                  const nota = r.absoluto === true ? ' · absoluto' : '';
+                  return (
+                    <tr key={`f${f}-${r.afp}`}>
+                      <td style={esCasa ? { color: colorDe(cfg, r.afp, true), fontWeight: 600 } : undefined}>
+                        {r.afp}{nota}</td>
+                      {cols.map((c) => {
+                        const unidad = conUnidad ? c[2] : 'nivel';
+                        const v = r.valores[c[0]];
+                        const clase = unidad === 'nivel' ? 'num' : `num ${signo(valorMostrado(v, unidad))}`;
+                        return <td key={c[0]} className={v == null ? 'num dim' : clase}>{fmtRend(v, unidad, metrica)}</td>;
+                      })}
+                    </tr>
+                  );
+                }),
               ];
             })}
           </tbody>
@@ -323,7 +329,7 @@ export default function SppPanelPage() {
       <div className="panel">
         {/* El titulo dice lo que hay en pantalla - escala, fondo y ventana -
             porque los filtros quedan arriba y el grafico se mira solo. */}
-        <div className="panel-title">
+        <div className="panel-title" style={{ textAlign: 'center' }}>
           {escala === 'alpha'
             ? `Alpha acumulado de ${casa} · Fondo ${fondo} · ${etiquetaVentana} · bps`
             : `Serie histórica · ${nombreMetrica(cfg, metrica).toLowerCase()} · Fondo ${fondo}`
@@ -352,22 +358,6 @@ export default function SppPanelPage() {
         ) : serieData == null
           ? <div className="loading">Cargando…</div>
           : <p className="page-sub dim">Sin datos para esta selección.</p>}
-        {escala === 'base' && (
-          <p className="page-sub" style={{ marginTop: 8 }}>
-            En Base 100 las series parten de 100 en la primera fecha con dato en todas
-            las AFP en pantalla: es la única lectura comparable, porque cada fondo
-            arrancó en fechas y bases distintas.
-          </p>
-        )}
-        {escala === 'alpha' && (
-          <p className="page-sub" style={{ marginTop: 8 }}>
-            Cada línea es la rentabilidad acumulada de {casa} menos la de esa AFP,
-            en puntos básicos, desde la primera fecha de la ventana con dato en
-            todas: por encima de cero {casa} va delante, y la pendiente de cada
-            día es lo que ese día abrió o cerró la brecha. {casa} no lleva línea
-            porque es el cero.
-          </p>
-        )}
       </div>
 
       <div className="panel">
@@ -430,7 +420,7 @@ export default function SppPanelPage() {
               <TablaVentanas cols={(vent.cols_rend || []).filter((c) => c[2] !== 'nivel')}
                 filas={vent.relativos} conUnidad orden={ordenRel} />
               <p className="page-sub">Cada sección es {casa} menos esa AFP: positivo significa que
-                {' '}{casa} rinde más. La sección de {casa} va en rendimiento absoluto.</p>
+                {' '}{casa} rinde más. La fila de {casa} va en rendimiento absoluto.</p>
             </details>
             <details className="spp-desplegable">
               <summary>Rendimiento absoluto</summary>

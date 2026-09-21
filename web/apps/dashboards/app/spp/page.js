@@ -225,7 +225,7 @@ export default function SppPanelPage() {
     return (
       <div className="table-wrap spp-vent">
         <table>
-          <thead><tr><th>Fondo</th><th>AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
+          <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
           <tbody>
             {fondos.map((f) => {
               const delFondo = filas.filter((r) => r.fondo === f)
@@ -240,7 +240,10 @@ export default function SppPanelPage() {
                       {i === 0 && (
                         <td rowSpan={delFondo.length} className="spp-fondo">Fondo {f}</td>
                       )}
-                      <td style={esCasa ? { color: colorDe(cfg, r.afp, true), fontWeight: 600 } : undefined}>
+                      {/* Con el fondo delante, esta ya no es la primera celda de la
+                          fila y la hoja global la alinearia a la derecha. */}
+                      <td className="spp-afp"
+                        style={esCasa ? { color: colorDe(cfg, r.afp, true), fontWeight: 600 } : undefined}>
                         {r.afp}{nota}</td>
                       {cols.map((c) => {
                         const unidad = conUnidad ? c[2] : 'nivel';

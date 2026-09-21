@@ -50,3 +50,4 @@
 }
 .spp-vent tr.spp-bloque td { border-top: 2px solid var(--s4); }
 .spp-vent tbody tr.spp-bloque:first-child td { border-top: none; }
+.spp-vent th.spp-afp, .spp-vent td.spp-afp { text-align: left; }

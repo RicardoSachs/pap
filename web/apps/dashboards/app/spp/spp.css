@@ -39,3 +39,14 @@
 }
 .spp-corte span { white-space: nowrap; }
 @media (max-width: 720px) { .spp-corte span { white-space: normal; text-align: center; } }
+
+/* Ventanas: el fondo es una celda que abarca sus filas de AFP. La primera
+   fila de cada bloque lleva una linea mas marcada para que los grupos se
+   lean sin fila de titulo. */
+.spp-vent td.spp-fondo {
+  vertical-align: middle; text-align: left; font-weight: 600;
+  color: var(--text-secondary); white-space: nowrap;
+  border-right: 1px solid var(--s4);
+}
+.spp-vent tr.spp-bloque td { border-top: 2px solid var(--s4); }
+.spp-vent tbody tr.spp-bloque:first-child td { border-top: none; }

@@ -216,29 +216,30 @@ export default function SppPanelPage() {
   function TablaVentanas({ cols, filas, conUnidad, orden }) {
     // Un bloque por FONDO y dentro una fila por AFP: la pregunta de la mesa
     // es "en el fondo 2, como vamos contra cada una", y asi las cuatro
-    // respuestas quedan juntas. La casa va primero y en su color; las
-    // competidoras, neutras - el mismo criterio que los graficos.
+    // respuestas quedan juntas. El fondo va en una columna a la izquierda,
+    // una celda que abarca sus filas (rowSpan), no en una fila propia: cada
+    // fila de titulo era una linea menos de datos en pantalla. La casa va
+    // primero y en su color; las competidoras, neutras.
     const ordenAfp = orden || ordenRel;
     const fondos = (cfg?.fondos || []).filter((f) => filas.some((r) => r.fondo === f));
     return (
       <div className="table-wrap spp-vent">
         <table>
-          <thead><tr><th>AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
+          <thead><tr><th>Fondo</th><th>AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
           <tbody>
             {fondos.map((f) => {
               const delFondo = filas.filter((r) => r.fondo === f)
                 .sort((x, y) => ordenAfp.indexOf(x.afp) - ordenAfp.indexOf(y.afp));
-              return [
-                <tr key={`f${f}-h`} className="spp-seccion">
-                  <td colSpan={cols.length + 1} className="muted">Fondo {f}</td>
-                </tr>,
-                ...delFondo.map((r) => {
+              return delFondo.map((r, i) => {
                   const esCasa = r.afp === casa;
                   // En la tabla relativa la fila de la casa no es una resta
                   // sino su rendimiento a secas; se dice en la propia fila.
                   const nota = r.absoluto === true ? ' · absoluto' : '';
                   return (
-                    <tr key={`f${f}-${r.afp}`}>
+                    <tr key={`f${f}-${r.afp}`} className={i === 0 ? 'spp-bloque' : ''}>
+                      {i === 0 && (
+                        <td rowSpan={delFondo.length} className="spp-fondo">Fondo {f}</td>
+                      )}
                       <td style={esCasa ? { color: colorDe(cfg, r.afp, true), fontWeight: 600 } : undefined}>
                         {r.afp}{nota}</td>
                       {cols.map((c) => {
@@ -249,8 +250,7 @@ export default function SppPanelPage() {
                       })}
                     </tr>
                   );
-                }),
-              ];
+                });
             })}
           </tbody>
         </table>

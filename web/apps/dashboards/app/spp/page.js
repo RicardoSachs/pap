@@ -235,10 +235,10 @@ export default function SppPanelPage() {
                   // En la tabla relativa la fila de la casa no es una resta
                   // sino su rendimiento a secas; se dice en la propia fila.
                   const nota = r.absoluto === true ? ' · absoluto' : '';
+                  // La fila de la casa va en negrita ENTERA - nombre y cifras -
+                  // conservando el color de signo de cada cifra: destaca por
+                  // peso, no por color.
                   return (
-                    {/* La fila de la casa va en negrita ENTERA - nombre y cifras -
-                        conservando el color de signo de cada cifra: destaca por
-                        peso, no por color. */}
                     <tr key={`f${f}-${r.afp}`}
                       className={`${i === 0 ? 'spp-bloque' : ''} ${esCasa ? 'spp-casa' : ''}`.trim()}>
                       {i === 0 && (

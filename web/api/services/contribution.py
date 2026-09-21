@@ -80,15 +80,19 @@ LEFT JOIN dim_security_fund   fnd ON fnd.security_id = s.security_id
 LEFT JOIN dim_security_bond   bd  ON bd.security_id  = s.security_id
 """
 
-_AUM_START_SQL = """
-SELECT valor_cartera FROM fact_portfolio_valuation
+_AUM_AT_SQL = """
+SELECT valor_cartera, date FROM fact_portfolio_valuation
 WHERE portfolio_id = %s AND date <= %s::date
 ORDER BY date DESC LIMIT 1
 """
 
 
 def get_contribution(portfolio_id: int, date_from: str, date_to: str, basis: str = "linked") -> dict:
-    """Return {portfolio, period, basis, days, portfolio_return, holdings[], by_asset_class[]}."""
+    """Return {portfolio, period, basis, days, portfolio_return, aum, aum_date, holdings[], by_asset_class[]}.
+
+    aum is valor_cartera at the latest snapshot on/before `to`, so the page
+    needs no separate holdings call for its AUM tile.
+    """
     params = {"pid": portfolio_id, "method": METHOD, "d0": date_from, "d1": date_to,
               "residual_name": RESIDUAL_NAME}
     with get_connection() as conn:
@@ -109,8 +113,11 @@ def get_contribution(portfolio_id: int, date_from: str, date_to: str, basis: str
         cur.execute(_HOLDINGS_SQL, params)
         holdings = [_row(r) for r in cur.fetchall()]
 
+        cur.execute(_AUM_AT_SQL, (portfolio_id, date_to))
+        end = cur.fetchone()
+
         if basis == "pnl":
-            cur.execute(_AUM_START_SQL, (portfolio_id, date_from))
+            cur.execute(_AUM_AT_SQL, (portfolio_id, date_from))
             aum = cur.fetchone()
             aum_start = _f(aum["valor_cartera"]) if aum else None
             for h in holdings:
@@ -125,6 +132,8 @@ def get_contribution(portfolio_id: int, date_from: str, date_to: str, basis: str
         "method": METHOD,
         "days": n_days,
         "portfolio_return": round(big_r, 6) if big_r is not None else 0.0,
+        "aum": round(_f(end["valor_cartera"]), 2) if end else None,
+        "aum_date": end["date"].isoformat() if end else None,
         "holdings": holdings,
         "by_asset_class": _bucket(holdings),
     }

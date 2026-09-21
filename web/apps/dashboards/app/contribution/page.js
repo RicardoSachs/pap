@@ -1,6 +1,6 @@
 // web/apps/dashboards/app/contribution/page.js
 // ---------------------------------------------------------------------------
-// Contribution dashboard. Portfolio, period, and source all come from the
+// Contribution dashboard. Portfolio and period come from the
 // global header. Bars sorted by contribution magnitude (largest positive at
 // top, largest negative at bottom), teal/rose with a vertical zero line.
 // KPI bar in bps + enhanced detail table with a sticky portfolio total row.
@@ -34,7 +34,7 @@ function synthSpark(seed, n = 30) {
 }
 
 export default function ContributionPage() {
-  const { portfolioId, range, source } = useDashboard();
+  const { portfolioId, range } = useDashboard();
   const [data, setData] = useState(null);
   const [aum, setAum] = useState(null);
   const [error, setError] = useState(null);
@@ -45,22 +45,15 @@ export default function ContributionPage() {
     setLoading(true); setError(null);
     (async () => {
       try {
-        // Clamp the period start to the earliest available snapshot so the
-        // beginning-weights lookup never falls before the data (e.g. YTD on a
-        // portfolio whose history starts mid-year). Uses the existing /dates endpoint.
-        const dates = await apiGet(`/api/portfolios/${portfolioId}/dates`); // newest-first
-        const earliest = dates[dates.length - 1];
-        const from = (earliest && range.from < earliest) ? earliest : range.from;
-        const [c, h] = await Promise.all([
-          apiGet(`/api/portfolios/${portfolioId}/contribution?from=${from}&to=${range.to}&source=${source}`),
-          apiGet(`/api/portfolios/${portfolioId}/holdings?date=${range.to}`).catch(() => null),
-        ]);
+        // One call. fact_contribution is daily, so a `from` before the data just
+        // includes every day (no clamp), and AUM at period end rides on the response.
+        const c = await apiGet(`/api/portfolios/${portfolioId}/contribution?from=${range.from}&to=${range.to}`);
         setData(c);
-        setAum(h?.total_market_value ?? null);
+        setAum(c.aum ?? null);
       } catch (e) { setError(e.message); }
       finally { setLoading(false); }
     })();
-  }, [portfolioId, range.from, range.to, source]);
+  }, [portfolioId, range.from, range.to]);
 
   const holdings = (data?.holdings || []).map((h) => ({ ...h, __key: h.entity_id ?? h.position_key }));
   const ret = data?.portfolio_return ?? 0;
@@ -72,7 +65,7 @@ export default function ContributionPage() {
     { label: 'Period Return', value: bps(ret), tone: ret >= 0 ? 'pos' : 'neg', meta: `${data?.period?.from || range.from} → ${data?.period?.to || range.to}`, accent: true, spark: synthSpark(ret) },
     { label: 'Top Contributor', value: top ? bps(top.contribution) : '—', tone: 'pos', meta: top ? top.display_name : '', spark: top ? synthSpark(top.contribution) : null },
     { label: 'Top Detractor', value: bottom ? bps(bottom.contribution) : '—', tone: 'neg', meta: bottom ? bottom.display_name : '' },
-    { label: '# Positions', value: holdings.length, meta: `source: ${source}` },
+    { label: '# Positions', value: holdings.length, meta: `${data?.days ?? 0} days, ${data?.basis || 'linked'}` },
   ];
 
   // sort ascending so the largest positive sits at the TOP of a horizontal bar

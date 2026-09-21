@@ -247,7 +247,7 @@ export default function SppPanelPage() {
                       {/* Con el fondo delante, esta ya no es la primera celda de la
                           fila y la hoja global la alinearia a la derecha. */}
                       <td className="spp-afp"
-                        style={esCasa ? { color: colorDe(cfg, r.afp, true), fontWeight: 600 } : undefined}>
+                        style={esCasa ? { color: colorDe(cfg, r.afp, true) } : undefined}>
                         {r.afp}{nota}</td>
                       {cols.map((c) => {
                         const unidad = conUnidad ? c[2] : 'nivel';

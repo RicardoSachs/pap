@@ -23,15 +23,19 @@ Cuatro descargas, todas desde el navegador de esa misma máquina:
 | **El proyecto** | `https://github.com/RicardoSachs/pap/archive/refs/heads/cambios_vc.zip` (2 MB — incluye el tablero ya compilado) |
 | **Python 3.10** | `https://github.com/gabdejo/py_versions` → carpeta `3106`. Si esa máquina ya tiene Python 3.10, sáltatelo |
 | **Las librerías** | `https://github.com/gabdejo/pypro_packs` — el wheelhouse que ya usas |
-| **Lo que falta** | `https://github.com/RicardoSachs/pap/releases/download/deps-py310/dependencias-faltantes-py310.zip` (38 MB) |
+| **Lo que falta** | `https://github.com/RicardoSachs/pap/releases/download/deps-py310/dependencias-faltantes-py310.zip` (44 MB) |
 
-Esa última descarga trae cuatro paquetes que **no están** en
+Esa última descarga trae los paquetes que **no están** en
 `pypro_packs` y el proyecto necesita:
 
 - **`python-multipart`** — sin él la API ni siquiera arranca: FastAPI lo
   exige para recibir archivos, y de eso depende la carga del XLS
   histórico.
 - **`playwright`** (con `pyee` y `greenlet`) — la extracción de la SBS.
+- **`blpapi`** — la API de Bloomberg. Se instala en todas las máquinas
+  (el wheel trae su propia DLL) y solo trabaja donde el `.env` dice
+  `BLOOMBERG_ENABLED=true`; en las demás la pestaña *Series Bloomberg*
+  responde que no hay terminal.
 
 Descomprime cada zip en una carpeta que puedas ubicar; el instalador
 del paso 3 las busca solo si están junto al proyecto o en *Descargas*.

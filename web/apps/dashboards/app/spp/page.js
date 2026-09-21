@@ -236,7 +236,11 @@ export default function SppPanelPage() {
                   // sino su rendimiento a secas; se dice en la propia fila.
                   const nota = r.absoluto === true ? ' · absoluto' : '';
                   return (
-                    <tr key={`f${f}-${r.afp}`} className={i === 0 ? 'spp-bloque' : ''}>
+                    {/* La fila de la casa va en negrita ENTERA - nombre y cifras -
+                        conservando el color de signo de cada cifra: destaca por
+                        peso, no por color. */}
+                    <tr key={`f${f}-${r.afp}`}
+                      className={`${i === 0 ? 'spp-bloque' : ''} ${esCasa ? 'spp-casa' : ''}`.trim()}>
                       {i === 0 && (
                         <td rowSpan={delFondo.length} className="spp-fondo">Fondo {f}</td>
                       )}

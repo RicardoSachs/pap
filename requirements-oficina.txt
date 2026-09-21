@@ -42,3 +42,7 @@ selenium==4.44.0
 # python-multipart es imprescindible: sin el la API no arranca.
 python-multipart==0.0.32
 playwright==1.62.0
+# blpapi: la API de Bloomberg. Se instala en TODAS las maquinas (el wheel
+# trae su propia DLL y no exige terminal); solo se usa donde el .env dice
+# BLOOMBERG_ENABLED=true. Wheel py3-none-win_amd64, sirve en 3.10.
+blpapi==3.26.9.1

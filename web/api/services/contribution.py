@@ -12,6 +12,9 @@
 #
 # weight = average of daily weight_prev over the period (0 on days not held);
 # return = compounded daily return_pen over the days held.
+#
+# Daily measures are cast to float8 before LN/EXP: NUMERIC transcendental
+# math in Postgres is ~100x slower and this runs over holdings x days rows.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ RESIDUAL_NAME = "Residual (cash, deposits, forwards, fees)"
 
 _DAY_CTE = """
 WITH day AS (
-    SELECT date, SUM(contribution) AS r
+    SELECT date, SUM(contribution)::float8 AS r
     FROM fact_contribution
     WHERE portfolio_id = %(pid)s AND method = %(method)s
       AND date > %(d0)s::date AND date <= %(d1)s::date
@@ -53,10 +56,10 @@ kk AS (
 ),
 agg AS (
     SELECT c.position_type, c.position_key, c.security_entity_id,
-           SUM(c.weight_prev) / kk.n_days                                         AS weight,
-           EXP(SUM(LN(1 + c.return_pen)) FILTER (WHERE c.return_pen > -1)) - 1    AS return,
-           SUM(c.pnl_pen)                                                          AS pnl_pen,
-           SUM(c.contribution * k.kt / kk.big_k)                                   AS contribution
+           SUM(c.weight_prev::float8) / kk.n_days                                        AS weight,
+           EXP(SUM(LN(1 + c.return_pen::float8)) FILTER (WHERE c.return_pen > -1)) - 1   AS return,
+           SUM(c.pnl_pen)                                                                 AS pnl_pen,
+           SUM(c.contribution::float8 * k.kt / kk.big_k)                                  AS contribution
     FROM fact_contribution c
     JOIN k ON k.date = c.date
     CROSS JOIN kk

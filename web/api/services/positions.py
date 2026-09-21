@@ -71,12 +71,12 @@ def get_holdings(portfolio_id: int, reference_date: str | None = None) -> dict:
 
         if reference_date is None:
             cur.execute(
-                "SELECT MAX(date) AS d FROM vw_positions_unified WHERE portfolio_id = %s",
+                "SELECT MAX(date) AS d FROM fact_portfolio_valuation WHERE portfolio_id = %s",
                 (portfolio_id,),
             )
         else:
             cur.execute(
-                "SELECT MAX(date) AS d FROM vw_positions_unified WHERE portfolio_id = %s AND date <= %s::date",
+                "SELECT MAX(date) AS d FROM fact_portfolio_valuation WHERE portfolio_id = %s AND date <= %s::date",
                 (portfolio_id, reference_date),
             )
         snap = cur.fetchone()["d"]

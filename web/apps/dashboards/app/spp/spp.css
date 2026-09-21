@@ -52,3 +52,17 @@
 .spp-vent tbody tr.spp-bloque:first-child td { border-top: none; }
 .spp-vent th.spp-afp, .spp-vent td.spp-afp { text-align: left; }
 .spp-vent tr.spp-casa td { font-weight: 700; }
+
+/* Cabecera de grafico: titulo centrado y boton de datos a la derecha. Tres
+   columnas 1fr auto 1fr, para que el boton no mueva el titulo del centro. */
+.spp-cabecera-grafico {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 12px; margin-bottom: 12px;
+}
+.spp-cabecera-grafico > :last-child { justify-self: end; }
+
+/* La fila de la casa, sombreada con su color ademas de en negrita. La celda
+   del fondo abarca el bloque entero y no es de la casa: se excluye. */
+.spp-vent tr.spp-casa td:not(.spp-fondo) {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}

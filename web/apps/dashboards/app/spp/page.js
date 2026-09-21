@@ -21,6 +21,7 @@ import {
 } from '../../lib/spp';
 import SppSeg from '../../components/SppSeg';
 import SppTabs from '../../components/SppTabs';
+import DescargaDatos from '../../components/DescargaDatos';
 import { chartTheme } from '../../lib/theme';
 
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
@@ -203,6 +204,14 @@ export default function SppPanelPage() {
 
   const ct = chartTheme();
   const etiquetaVentana = (VENTANAS.find(([, v]) => v === ventana) || ['—'])[0];
+  const tituloSerie = escala === 'alpha'
+    ? `Alpha acumulado de ${casa} · Fondo ${fondo} · ${etiquetaVentana} · bps`
+    : `Serie histórica · ${nombreMetrica(cfg, metrica).toLowerCase()} · Fondo ${fondo}`
+      + ` · ${etiquetaVentana}${escala === 'base' ? ' · base 100' : ''}`;
+  // "Alpha acumulado de PROFUTURO · Fondo 2 · YTD · bps" -> un nombre de archivo
+  const archivoDe = (t) => t.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
   // ---- Cierre por AFP (house first via the one shared ordering) ----------
   const ordenGlobal = ordenCasa(cfg, nombres);
@@ -336,11 +345,13 @@ export default function SppPanelPage() {
       <div className="panel">
         {/* El titulo dice lo que hay en pantalla - escala, fondo y ventana -
             porque los filtros quedan arriba y el grafico se mira solo. */}
-        <div className="panel-title" style={{ textAlign: 'center' }}>
-          {escala === 'alpha'
-            ? `Alpha acumulado de ${casa} · Fondo ${fondo} · ${etiquetaVentana} · bps`
-            : `Serie histórica · ${nombreMetrica(cfg, metrica).toLowerCase()} · Fondo ${fondo}`
-              + ` · ${etiquetaVentana}${escala === 'base' ? ' · base 100' : ''}`}
+        <div className="spp-cabecera-grafico">
+          <span />
+          <div className="panel-title" style={{ margin: 0 }}>{tituloSerie}</div>
+          {/* El CSV lleva la vista tal cual: nivel, base 100 o alpha en bps.
+              El nombre del archivo repite el titulo, que es lo que se lee
+              cuando el archivo aparece dias despues en una carpeta. */}
+          <DescargaDatos trazas={traces} nombre={archivoDe(tituloSerie)} />
         </div>
         {traces.length ? (
           <PlotlyChart
@@ -456,6 +467,10 @@ export default function SppPanelPage() {
             <div className="field"><label>Vista</label>
               <SppSeg items={[['Tabla', 'tabla'], ['Gráfico', 'grafico']]}
                 value={vistaPos} onChange={setVistaPos} /></div>
+            <div className="field"><label aria-hidden="true">&nbsp;</label>
+              {/* Tabla y grafico son los mismos puestos: un solo CSV para ambas. */}
+              <DescargaDatos trazas={trazasPos} ejeX="periodo"
+                nombre={`posiciones-fondo-${fondoPos}`} /></div>
           </div>
         </div>
         {/* One space, two readings of the same ranks: the heat table says

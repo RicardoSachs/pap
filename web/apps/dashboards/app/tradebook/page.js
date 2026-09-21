@@ -15,6 +15,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import SppSeg from '../../components/SppSeg';
+import DescargaDatos from '../../components/DescargaDatos';
 import TradebookTabs from '../../components/TradebookTabs';
 import useVerTodo from '../../components/useVerTodo';
 import { apiGet } from '../../lib/api';
@@ -236,7 +237,11 @@ export default function TradebookPanel() {
           </div>
 
           <div className="panel">
-            <div className="panel-title">Volumen operado · por {periodo}</div>
+            <div className="controls" style={{ justifyContent: 'space-between' }}>
+              <div className="panel-title">Volumen operado · por {periodo}</div>
+              <DescargaDatos trazas={traces} ejeX="periodo"
+                nombre={`volumen-operado-por-${periodo}${moneda ? '-' + moneda : ''}`} />
+            </div>
             {traces.length ? (
               <PlotlyChart
                 data={traces}

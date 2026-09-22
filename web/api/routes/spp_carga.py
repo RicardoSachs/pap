@@ -17,18 +17,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Response, UploadFile
+from fastapi import APIRouter, File, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from src.configs.machine_config import machine_id, scraper_enabled
-from src.pipelines.prices.manual import series as man
 from src.pipelines.prices.sbs.valor_cuota import afps as reg
 from src.pipelines.prices.sbs.valor_cuota import benchmark as bench
 from src.pipelines.prices.sbs.valor_cuota import benchmark_composicion as bcomp
 from src.pipelines.prices.sbs.valor_cuota.registro import registrar_valores
 from src.pipelines.prices.sbs.valor_cuota.run import (
     MODOS_CARGA, cargar_historico, revisar_historico, run_daily, ultima_corrida)
-from web.api.routes._spp_comun import XLSX, es_si, fecha_iso, leer_archivo
+from web.api.routes._spp_comun import XLSX, fecha_iso, leer_archivo
 from web.api.services.spp_tarea import (
     TAREA_WINDOWS, con_bitacora, guardar_subida, lanzar, leer_subida)
 
@@ -186,113 +185,6 @@ def post_historico_cargar(datos: dict) -> JSONResponse:
                                      contenido=guardado["datos"], modo=modo))
     return JSONResponse({"ok": ok, "motivo": motivo},
                         status_code=200 if ok else 409)
-
-
-# ---- Series manuales (componentes fuera de Bloomberg) ---------------------
-# The store for benchmark component prices no vendor provides. Levels of
-# the benchmark itself are never loaded through here (nor anywhere): they
-# are calculated from the composition.
-
-@router.get("/series-manuales")
-def get_series_manuales() -> dict:
-    return {"series": man.series()}
-
-
-@router.post("/series-manuales")
-def post_serie_manual(datos: dict) -> JSONResponse:
-    """Registers or updates a series; idempotent by nombre."""
-    try:
-        serie = man.registrar_serie(datos.get("nombre"),
-                                    datos.get("descripcion"),
-                                    datos.get("moneda"))
-        return JSONResponse({"ok": True, "serie": serie})
-    except (ValueError, TypeError) as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
-    except Exception as exc:
-        logger.exception("alta de serie manual")
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
-
-
-@router.delete("/series-manuales/{serie_id}")
-def delete_serie_manual(serie_id: int, datos: str = "") -> JSONResponse:
-    """Refuses when the series has data unless ?datos=1 confirms it,
-    and always refuses while a composition references it."""
-    try:
-        return JSONResponse({"ok": True,
-                             "resultado": man.borrar_serie(serie_id, es_si(datos))})
-    except ValueError as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=409)
-    except Exception as exc:
-        logger.exception("baja de serie manual")
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
-
-
-@router.get("/series-manuales/{serie_id}/datos")
-def get_serie_manual_datos(serie_id: int) -> JSONResponse:
-    try:
-        return JSONResponse({"ok": True, "puntos": man.leer(serie_id)})
-    except (ValueError, TypeError) as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
-
-
-@router.post("/series-manuales/{serie_id}/valores")
-def post_serie_manual_valores(serie_id: int, datos: dict) -> JSONResponse:
-    """Point entry: {fecha: valor|null} - null deletes that date."""
-    try:
-        resultado = man.registrar_valores(serie_id, datos.get("valores") or {})
-        return JSONResponse({"ok": True, "resultado": resultado})
-    except (ValueError, TypeError) as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
-    except Exception as exc:
-        logger.exception("registro de serie manual")
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
-
-
-@router.post("/series-manuales/{serie_id}/archivo")
-async def post_serie_manual_archivo(serie_id: int,
-                                    archivo: UploadFile = File(...),
-                                    revisar: str = Form(""),
-                                    refrescar: str = Form("")) -> JSONResponse:
-    """
-    Load by file into one series. With revisar=1 only reports what was
-    read; nothing reaches the base without having been shown first.
-    """
-    crudo, error = await leer_archivo(archivo)
-    if error:
-        return error
-    solo_revisar = es_si(revisar)
-    try:
-        if solo_revisar:
-            informe = man.leer_archivo_valores(crudo)
-            informe.pop("valores", None)
-        else:
-            informe = man.importar_valores(serie_id, crudo,
-                                           refrescar=es_si(refrescar))
-        informe["archivo"] = archivo.filename
-        return JSONResponse({"ok": True, "revisado": solo_revisar,
-                             "informe": informe})
-    except (ValueError, TypeError) as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=400)
-    except Exception as exc:
-        logger.exception("carga de serie manual")
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=500)
-
-
-@router.get("/series-manuales/plantilla")
-def get_serie_manual_plantilla() -> Response:
-    return Response(man.plantilla(), media_type=XLSX,
-                    headers={"Content-Disposition":
-                             "attachment; filename=plantilla_serie_manual.xlsx"})
-
-
-@router.get("/series-manuales/{serie_id}/exportar")
-def get_serie_manual_exportar(serie_id: int,
-                              desde: str | None = None,
-                              hasta: str | None = None) -> Response:
-    return Response(man.exportar_datos(serie_id, fecha_iso(desde), fecha_iso(hasta)),
-                    media_type=XLSX,
-                    headers={"Content-Disposition":
-                             f"attachment; filename=serie_manual_{serie_id}.xlsx"})
 
 
 # ---- Indices compuestos: target y benchmark -------------------------------

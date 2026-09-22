@@ -6,9 +6,8 @@
 -- no-op on a database whose tables already exist: a constraint that
 -- changes shape after the first deployment NEVER reaches an older
 -- database, and the mismatch only surfaces as a runtime error.
--- (It already happened once: benchmark_composicion's fuente CHECK
--- gained 'manual' in the 2026-09 redesign and had to be ALTERed by
--- hand here.)
+-- (It already happened: benchmark_composicion's fuente CHECK changed
+-- shape twice in 2026-09 and had to be ALTERed here each time.)
 --
 -- This file runs last (alphabetically after 55_) and re-states the
 -- constraints the CODE depends on, idempotently: every block is safe
@@ -35,18 +34,20 @@ BEGIN
 END $$;
 
 
--- ---- benchmark_composicion: the 'manual' source
--- Components price from three stores since the 2026-09 redesign
--- (bloomberg / fact / manual). A database created before it keeps the
--- two-value CHECK and rejects every manual component with a
--- check_violation the UI can only show as a 500.
+-- ---- benchmark_composicion: one source, 'fact' (2026-09-22)
+-- The Bloomberg registry and the keyed-in series left the project: the
+-- target and benchmark will be composed from an external table. The
+-- CHECK narrows to the one store that remains; the composition table
+-- held no rows of the other two when this ran (verified), so nothing
+-- is orphaned. Re-stated here because the CREATE in 53 is a no-op on a
+-- database that already has the table.
 ALTER TABLE benchmark_composicion
     DROP CONSTRAINT IF EXISTS benchmark_composicion_fuente_check;
 ALTER TABLE benchmark_composicion
     DROP CONSTRAINT IF EXISTS ck_benchmark_composicion_fuente;
 ALTER TABLE benchmark_composicion
     ADD CONSTRAINT ck_benchmark_composicion_fuente
-    CHECK (fuente IN ('bloomberg', 'fact', 'manual'));
+    CHECK (fuente IN ('fact'));
 
 ALTER TABLE benchmark_composicion
     DROP CONSTRAINT IF EXISTS benchmark_composicion_fx_fuente_check;
@@ -54,7 +55,15 @@ ALTER TABLE benchmark_composicion
     DROP CONSTRAINT IF EXISTS ck_benchmark_composicion_fx_fuente;
 ALTER TABLE benchmark_composicion
     ADD CONSTRAINT ck_benchmark_composicion_fx_fuente
-    CHECK (fx_fuente IN ('bloomberg', 'fact', 'manual'));
+    CHECK (fx_fuente IN ('fact'));
+
+-- The four tables of the retired stores. Nothing reads or writes them
+-- any more, and a table nothing owns is a promise the schema cannot
+-- keep. IF EXISTS: a database created after this change never had them.
+DROP TABLE IF EXISTS bloomberg_dato;
+DROP TABLE IF EXISTS bloomberg_serie;
+DROP TABLE IF EXISTS serie_manual_dato;
+DROP TABLE IF EXISTS serie_manual;
 
 
 -- ---- Indices compuestos: target y benchmark (2026-09-16)

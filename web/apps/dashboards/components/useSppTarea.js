@@ -2,7 +2,7 @@
 // web/apps/dashboards/components/useSppTarea.js
 // ---------------------------------------------------------------------------
 // The one polling loop over /api/spp/tarea (SBS extraction, historical load,
-// Bloomberg download follow the same background-task contract). It used to be
+// index recalculation follow the same background-task contract). It used to be
 // written per page and had already diverged in interval and error handling.
 //
 //   iniciar(accion, alTerminar)  kick off UI state and start polling

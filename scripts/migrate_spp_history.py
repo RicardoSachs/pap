@@ -10,7 +10,8 @@
 #                           series_registry (source 'sbs').
 #   spp.benchmark_diario    bench_f{n} -> fact_prices (source
 #                           'benchmark').
-#   spp.bloomberg_serie /   copied into the ported tables; serie_id is
+#   (the old Bloomberg registry is not carried: that store left the
+#   project in 2026-09)
 #   spp.bloomberg_dato      remapped through the logical key
 #                           (ticker_clave, campo, intervalo) so re-runs
 #                           are safe whatever the destination holds.
@@ -25,7 +26,6 @@
 # Usage:
 #   python scripts/migrate_spp_history.py --dry-run
 #   set SPP_SRC_PASSWORD=... && python scripts/migrate_spp_history.py
-#   python scripts/migrate_spp_history.py --skip-bloomberg
 # ---------------------------------------------------------------
 
 import argparse
@@ -146,87 +146,6 @@ def migrate_bench(src, dest, schema: str, series_map, dry_run: bool) -> tuple[in
     return leidas, cargadas
 
 
-def migrate_bloomberg(src, dest, schema: str, dry_run: bool) -> tuple[int, int]:
-    """
-    Copies bloomberg_serie + bloomberg_dato, remapping serie_id through the
-    LOGICAL key (ticker_clave, campo, intervalo).
-
-    Preserving the source ids would silently diverge the moment the
-    destination already holds one of these series under a different id
-    (registered from the dashboard, or a prior partial run): the serie
-    insert would be skipped by ON CONFLICT while the dato rows carried the
-    source's id - a foreign-key abort at best, points attached to the wrong
-    ticker at worst. Letting the identity assign ids and mapping per series
-    makes re-runs safe against any destination state.
-    """
-    try:
-        series = src.execute(
-            f'SELECT * FROM "{schema}"."bloomberg_serie" ORDER BY serie_id').fetchall()
-    except psycopg.errors.UndefinedTable:
-        logger.info("bloomberg_serie no existe en el origen; se omite.")
-        src.rollback()
-        return 0, 0
-
-    n_series = n_datos = 0
-    id_map: dict[int, int] = {}
-    for s in series:
-        if dry_run:
-            n_series += 1
-            continue
-        r = dest.execute(
-            """
-            INSERT INTO bloomberg_serie (
-                ticker, ticker_clave, campo, intervalo, descripcion,
-                moneda, fecha_inicio, activa, ultima_fecha, ultimo_intento,
-                ultimo_resultado, ultimo_error, puntos, creada_en
-            ) VALUES (%(ticker)s, %(ticker_clave)s, %(campo)s,
-                      %(intervalo)s, %(descripcion)s, %(moneda)s,
-                      %(fecha_inicio)s, %(activa)s, %(ultima_fecha)s,
-                      %(ultimo_intento)s, %(ultimo_resultado)s,
-                      %(ultimo_error)s, %(puntos)s, %(creada_en)s)
-            ON CONFLICT (ticker_clave, campo, intervalo) DO NOTHING
-            """,
-            s,
-        )
-        if r.rowcount > 0:
-            n_series += 1
-        fila = dest.execute(
-            """
-            SELECT serie_id FROM bloomberg_serie
-            WHERE ticker_clave = %(ticker_clave)s
-              AND campo = %(campo)s AND intervalo = %(intervalo)s
-            """,
-            s,
-        ).fetchone()
-        id_map[s["serie_id"]] = fila["serie_id"]
-
-    cur = src.execute(
-        f'SELECT serie_id, fecha, valor FROM "{schema}"."bloomberg_dato"')
-    sin_serie = 0
-    for d in cur:
-        if dry_run:
-            n_datos += 1
-            continue
-        dest_id = id_map.get(d["serie_id"])
-        if dest_id is None:
-            sin_serie += 1
-            continue
-        r = dest.execute(
-            """
-            INSERT INTO bloomberg_dato (serie_id, fecha, valor)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (serie_id, fecha) DO NOTHING
-            """,
-            (dest_id, d["fecha"], d["valor"]),
-        )
-        if r.rowcount > 0:
-            n_datos += 1
-    if sin_serie:
-        logger.warning(f"bloomberg_dato: {sin_serie} punto(s) huerfanos en el "
-                       "origen (serie_id sin fila en bloomberg_serie); omitidos.")
-    return n_series, n_datos
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Migrate the SPP monitor's history into this project's DB.")
@@ -237,7 +156,6 @@ def main() -> int:
     parser.add_argument("--src-password", default=None,
                         help="Prefer the SPP_SRC_PASSWORD env var.")
     parser.add_argument("--src-schema", default="spp")
-    parser.add_argument("--skip-bloomberg", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                         help="Count what would be migrated; write nothing.")
     args = parser.parse_args()
@@ -265,11 +183,6 @@ def main() -> int:
                                              series_map, args.dry_run)
         logger.info(f"benchmark_diario: {b_leidas:,} celdas leidas, "
                     f"{b_cargadas:,} {'a cargar' if args.dry_run else 'cargadas'}.")
-
-        if not args.skip_bloomberg:
-            n_s, n_d = migrate_bloomberg(src, dest, args.src_schema, args.dry_run)
-            logger.info(f"bloomberg: {n_s:,} series, {n_d:,} datos "
-                        f"{'a copiar' if args.dry_run else 'copiados'}.")
 
         # Verification: destination totals for the migrated sources.
         if not args.dry_run:

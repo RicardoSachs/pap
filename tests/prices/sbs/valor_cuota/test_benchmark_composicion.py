@@ -136,17 +136,3 @@ def test_cambiar_solo_los_pesos_tampoco_salta():
     assert niveles[D2] == pytest.approx(110.0)     # +20% y 0%, al 50/50
     # El rebalanceo del D2 no mueve el nivel; recien el D3 pesa el 90/10.
     assert niveles[D3] == pytest.approx(110.0 * (1 + 0.9 * 0.10))
-
-
-# ---- La negativa a borrar una serie en uso nombra el indice -----------------
-
-def test_el_motivo_dice_que_indice_y_que_fondo():
-    from src.pipelines.prices.sbs.valor_cuota.benchmark_composicion import motivo_en_uso
-    vig = [{"tipo": "target", "fondo": 2, "vigente_desde": "2026-01-01"}]
-    hist = [{"tipo": "benchmark", "fondo": 3, "vigente_desde": "2020-01-01"}]
-    m = motivo_en_uso("SPX Index", vig, hist)
-    assert "target del fondo 2" in m
-    assert "canasta vigente" in m
-    m2 = motivo_en_uso("SPX Index", [], hist)
-    assert "benchmark del fondo 3" in m2
-    assert "ya no esta en ninguna canasta vigente" in m2

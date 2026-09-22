@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from web.api.routes import (contribution, formatos, portfolios, positions,
                             prices, tradebook,
-                            securities, spp, spp_bloomberg, spp_carga)
+                            securities, spp, spp_carga)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -82,7 +82,6 @@ app.include_router(portfolios.router)
 app.include_router(positions.router)
 app.include_router(contribution.router)
 app.include_router(spp.router)
-app.include_router(spp_bloomberg.router)
 app.include_router(spp_carga.router)
 app.include_router(tradebook.router)
 app.include_router(formatos.router)

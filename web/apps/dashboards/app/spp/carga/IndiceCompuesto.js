@@ -11,9 +11,12 @@
 // no está escrita aquí.
 //
 // El componente es dueño de su estado. La página que lo monta le pasa la
-// configuración y la tarea de fondo compartida, y le avisa con `version`
-// cuando cambia el catálogo de series manuales (crear o borrar una), para
-// que el selector de FX no se quede con una lista vieja.
+// configuración y la tarea de fondo compartida.
+//
+// Los componentes salen de UNA base: el libro de precios del pipeline
+// (series_registry / fact_prices). El registro Bloomberg y las series
+// manuales que también alimentaban esto se retiraron en 2026-09; el target
+// y el benchmark se armarán desde una tabla externa.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -38,7 +41,7 @@ function Informe({ filas }) {
 }
 
 export default function IndiceCompuesto({
-  tipo, etiqueta, cfg, setCfg, ocupado, tarea, iniciar, alTerminarTarea, version = 0,
+  tipo, etiqueta, cfg, setCfg, ocupado, tarea, iniciar, alTerminarTarea,
 }) {
   const base = `/api/spp/indice/${tipo}`;
   // «el target», «el benchmark»: para las frases.
@@ -100,15 +103,9 @@ export default function IndiceCompuesto({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, tipo]);
 
-  // El catálogo de FX cambia cuando la página crea o borra una serie manual.
-  useEffect(() => {
-    if (version) cargarCatalogoFx();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version]);
-
-  // Hasta 100 resultados (50 por base): se muestran los primeros y el resto
-  // llega con el botón, en vez de encerrarlos en una caja con scroll.
-  const cHallazgos = ['bloomberg', 'manual'].flatMap((fu) =>
+  // Hasta 50 resultados: se muestran los primeros y el resto llega con el
+  // botón, en vez de encerrarlos en una caja con scroll.
+  const cHallazgos = ['fact'].flatMap((fu) =>
     (cResultados?.[fu] || []).map((s) => ({ ...s, fu })));
   const [cVisibles, VerMasSeries] = useVerTodo(cHallazgos, 8);
 
@@ -182,10 +179,8 @@ export default function IndiceCompuesto({
     }));
   };
 
-  // Los componentes salen de las DOS bases: el registro Bloomberg y las
-  // series manuales (el backend todavía acepta 'fact' para composiciones
-  // guardadas antes del rediseño).
-  const opcionesFx = ['bloomberg', 'manual'].flatMap((fu) =>
+  // El FX sale de la misma base que los componentes.
+  const opcionesFx = ['fact'].flatMap((fu) =>
     (cCatalogoFx?.[fu] || []).map((s) => ({
       v: JSON.stringify({ fuente: fu, ref_id: s.ref_id }),
       t: `${s.etiqueta} (${nombreFuente(fu)})`,
@@ -248,15 +243,12 @@ export default function IndiceCompuesto({
       <div className="spp-dos">
         <div className="panel">
           <div className="panel-title">Composición de «{nombreDe(cFondo)}»</div>
-          <p className="page-sub">El {nombreTipo} de cada fondo se <b>construye</b> desde las dos
-            bases de componentes (Bloomberg y series manuales): una canasta de series con pesos,
+          <p className="page-sub">El {nombreTipo} de cada fondo se <b>construye</b> desde las series
+            del libro de precios: una canasta de series con pesos,
             <b> versionada por fecha</b>: cambiar tickers o pesos crea una composición nueva desde
             su fecha de vigencia, sin tocar la historia. Entre rebalanceos los pesos <b>derivan </b>
             con los precios (buy-and-hold). Recalcular regenera la serie completa (base 100 en el
             primer rebalanceo). Los niveles nunca se cargan a mano.</p>
-          <p className="page-sub dim">Los componentes salen de las dos bases: los de Bloomberg se
-            administran en la pestaña <b>Series Bloomberg</b>; los demás, en el área
-            <b> Series manuales</b> de aquí al lado.</p>
 
           <div className="controls spp-controls">
             <div className="field"><label>Tipo de fondo</label>
@@ -269,7 +261,7 @@ export default function IndiceCompuesto({
 
           <div className="controls" style={{ marginTop: 10 }}>
             <input className="date-input" placeholder="Buscar serie (ticker, nombre)…"
-              aria-label="Buscar serie en las dos bases"
+              aria-label="Buscar serie"
               value={cBusqueda} onChange={(e) => setCBusqueda(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && buscarSeries()} />
             <button className="btn" onClick={buscarSeries}>Buscar</button>
@@ -286,7 +278,7 @@ export default function IndiceCompuesto({
                   </tr>
                 ))}
                 {!cHallazgos.length && (
-                  <tr><td className="dim">Sin resultados en las dos bases (Bloomberg y manuales).</td></tr>
+                  <tr><td className="dim">Sin resultados.</td></tr>
                 )}
               </tbody></table>
             </div>

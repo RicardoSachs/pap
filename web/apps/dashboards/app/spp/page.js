@@ -247,9 +247,6 @@ export default function SppPanelPage() {
                 .sort((x, y) => ordenAfp.indexOf(x.afp) - ordenAfp.indexOf(y.afp));
               return delFondo.map((r, i) => {
                   const esCasa = r.afp === casa;
-                  // En la tabla relativa la fila de la casa no es una resta
-                  // sino su rendimiento a secas; se dice en la propia fila.
-                  const nota = r.absoluto === true ? ' · absoluto' : '';
                   // La fila de la casa va en negrita ENTERA - nombre y cifras -
                   // conservando el color de signo de cada cifra: destaca por
                   // peso, no por color.
@@ -263,7 +260,7 @@ export default function SppPanelPage() {
                           fila y la hoja global la alinearia a la derecha. */}
                       <td className="spp-afp"
                         style={esCasa ? { color: colorDe(cfg, r.afp, true) } : undefined}>
-                        {r.afp}{nota}</td>
+                        {r.afp}</td>
                       {cols.map((c) => {
                         const unidad = conUnidad ? c[2] : 'nivel';
                         const v = r.valores[c[0]];

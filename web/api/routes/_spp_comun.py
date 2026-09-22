@@ -1,7 +1,7 @@
 
 # web/api/routes/_spp_comun.py
 # ---------------------------------------------------------------------------
-# Shared plumbing of the SPP routers (spp_carga, spp_bloomberg): the upload
+# Shared plumbing of the SPP router (spp_carga): the upload
 # limits, the truthy-flag convention of the monitor's forms, the read-and-
 # validate of an uploaded file, and the comma-separated id parser. One owner
 # for each so the two routers cannot drift.

@@ -14,8 +14,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import {
-  apiSend, apiUrl, fFecha, fHora, fmtMetrica, fondosDe as fondosDeCfg, hoyLocal,
-  metricasDe, nEnt, nombreFuente, nombreMetrica,
+  apiSend, apiUrl, fFecha, fHora, fmtMetrica, fondosDe as fondosDeCfg,
+  hoyLocal, metricasDe, nEnt, nombreMetrica,
 } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
@@ -26,14 +26,13 @@ import SppTabs from '../../../components/SppTabs';
 import useSppTarea from '../../../components/useSppTarea';
 import IndiceCompuesto from './IndiceCompuesto';
 
-// The three work areas, and the hash that makes each one linkable. Panel,
-// Libro and Bloomberg are routes; these were pure state, so a reload (which
+// The work areas, and the hash that makes each one linkable. Panel and
+// Libro are routes; these were pure state, so a reload (which
 // the task hook itself sometimes advises) always dropped the operator back
 // into Valor cuota.
 // Target y Benchmark son el mismo componente con distinto tipo: lo que el
 // fondo persigue y aquello contra lo que se lo mide.
-const AREAS = [['Valor cuota', 'vc'], ['Series manuales', 'series'],
-  ['Target', 'target'], ['Benchmark', 'benchmark']];
+const AREAS = [['Valor cuota', 'vc'], ['Target', 'target'], ['Benchmark', 'benchmark']];
 const CLAVES_AREA = AREAS.map(([, v]) => v);
 
 // Small key/value report table used by every section.
@@ -98,7 +97,7 @@ export default function SppCargaPage() {
     } catch { /* el área sigue cambiando aunque la URL no acompañe */ }
   };
 
-  // ---- shared background task (hook shared with the Bloomberg tab) ----
+  // ---- shared background task (one hook for the whole page) ----
   const { tarea, ocupado, iniciar } = useSppTarea();
 
   const cargarEstado = () => apiGet('/api/spp/estado').then(setEstado).catch(() => {});
@@ -300,150 +299,6 @@ export default function SppCargaPage() {
       ['Celdas que difieren del libro', nEnt(i.celdas_distintas)],
       ['Celdas idénticas', nEnt(i.celdas_iguales)],
     ];
-    return f;
-  };
-
-  // Cuenta cuantas veces cambio el catalogo de series manuales (crear o
-  // borrar una): los editores de indices la miran para refrescar su lista
-  // de FX, ahora que viven en su propio componente.
-  const [versionSeries, setVersionSeries] = useState(0);
-
-  // ---- series manuales (componentes fuera de Bloomberg) ----
-  const [smSeries, setSmSeries] = useState([]);
-  const [smSel, setSmSel] = useState(null);
-  const [smNombre, setSmNombre] = useState('');
-  const [smDesc, setSmDesc] = useState('');
-  const [smMoneda, setSmMoneda] = useState('');
-  const [smFecha, setSmFecha] = useState('');
-  const [smValor, setSmValor] = useState('');
-  const [smPuntos, setSmPuntos] = useState([]);
-  const [smEco, setSmEco] = useState('');
-  // La carga por archivo vive en su propia fila: su eco tambien.
-  const [smEcoArch, setSmEcoArch] = useState('');
-  const smRef = useRef(null);
-  const [smArchivo, setSmArchivo] = useState('Ningún archivo seleccionado');
-  const [smInforme, setSmInforme] = useState(null);
-  const [smCargado, setSmCargado] = useState(false);
-
-  const smSerie = smSeries.find((s) => s.serie_id === smSel) || null;
-
-  const cargarSeriesManuales = () =>
-    apiGet('/api/spp/series-manuales').then((j) => {
-      const lista = j.series || [];
-      setSmSeries(lista);
-      setSmSel((prev) => (lista.some((s) => s.serie_id === prev)
-        ? prev : (lista[0]?.serie_id ?? null)));
-    }).catch(() => {});
-
-  const verPuntos = async (id) => {
-    if (id == null) { setSmPuntos([]); return; }
-    try {
-      const j = await apiGet(`/api/spp/series-manuales/${id}/datos`);
-      setSmPuntos(j.puntos || []);
-    } catch { setSmPuntos([]); }
-  };
-
-  useEffect(() => { if (cfg) { setSmFecha(hoyLocal()); cargarSeriesManuales(); } }, [cfg]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Changing the selected series invalidates a review made against another
-  // one: the file stays in the input, but its report and its load buttons
-  // belong to the series it was reviewed for. Without this, reviewing
-  // against A and then switching to B wrote A's file into B unreviewed.
-  //
-  // The echo is deliberately NOT cleared here: registering or deleting a
-  // series changes the selection itself, so clearing it would erase the
-  // confirmation of the very action that moved it. Each action clears the
-  // echo when it starts.
-  useEffect(() => {
-    verPuntos(smSel);
-    setSmInforme(null);
-    setSmCargado(false);
-    if (smRef.current) smRef.current.value = '';
-    setSmArchivo('Ningún archivo seleccionado');
-  }, [smSel]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const crearSerie = async () => {
-    setSmEco('');
-    const r = await apiSend('/api/spp/series-manuales', 'POST',
-      { nombre: smNombre, descripcion: smDesc, moneda: smMoneda });
-    if (!r.ok) { setSmEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
-    setSmEco({ ok: true, texto: `Serie «${r.data.serie.nombre}» registrada. Ya puede recibir valores y entrar a la canasta.` });
-    setSmNombre(''); setSmDesc(''); setSmMoneda('');
-    await cargarSeriesManuales();
-    setSmSel(r.data.serie.serie_id);
-    setVersionSeries((v) => v + 1);
-  };
-
-  const borrarSerieManual = async () => {
-    if (!smSerie) return;
-    setSmEco('');
-    if (!window.confirm(
-      `Borrar la serie «${smSerie.nombre}»${smSerie.puntos ? ` con sus ${smSerie.puntos} valor(es)` : ''}. ¿Continuar?`)) return;
-    const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}?datos=1`, 'DELETE');
-    setSmEco(r.ok
-      ? { ok: true, texto: `Serie «${smSerie.nombre}» borrada.` }
-      : { ok: false, texto: r.data.motivo || `Error ${r.status}` });
-    cargarSeriesManuales();
-    setVersionSeries((v) => v + 1);
-  };
-
-  const registrarPunto = async (borrar) => {
-    setSmEco('');
-    if (!smSerie) { setSmEco({ ok: false, texto: 'Elige una serie primero.' }); return; }
-    if (!smFecha) { setSmEco({ ok: false, texto: 'Falta la fecha.' }); return; }
-    if (!borrar && String(smValor).trim() === '') {
-      setSmEco({ ok: false, texto: 'Falta el valor. Para quitar un dato usa «Borrar la fecha».' }); return;
-    }
-    if (borrar && !window.confirm(
-      `Borrar el valor del ${fFecha(smFecha)} en «${smSerie.nombre}». ¿Continuar?`)) return;
-    const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}/valores`, 'POST',
-      { valores: { [smFecha]: borrar ? null : Number(smValor) } });
-    if (!r.ok) { setSmEco({ ok: false, texto: r.data.motivo || `Error ${r.status}` }); return; }
-    const x = r.data.resultado;
-    setSmEco({ ok: true, texto: `«${x.nombre}»: ${x.escritos} valor(es) escritos, ${x.borrados} borrados.` });
-    setSmValor('');
-    cargarSeriesManuales(); verPuntos(smSerie.serie_id);
-  };
-
-  const subirSerie = async (revisar, refrescar) => {
-    const a = smRef.current?.files?.[0];
-    if (!a) { setSmEcoArch({ ok: false, texto: 'Elige un archivo primero.' }); return; }
-    if (!smSerie) { setSmEcoArch({ ok: false, texto: 'Elige una serie primero.' }); return; }
-    if (!revisar && refrescar && !window.confirm(
-      'Cargar y corregir: además de agregar lo que falta, reemplaza los valores ya cargados con los del archivo. ¿Continuar?')) return;
-    setSmArchivo(`${a.name} · ${revisar ? 'revisando…' : 'cargando…'}`);
-    const fd = new FormData();
-    fd.append('archivo', a);
-    if (revisar) fd.append('revisar', '1');
-    if (refrescar) fd.append('refrescar', '1');
-    const r = await apiSend(`/api/spp/series-manuales/${smSerie.serie_id}/archivo`, 'POST', fd, true);
-    if (!r.ok) {
-      setSmArchivo(a.name);
-      setSmInforme(null);
-      setSmEcoArch({ ok: false, texto: r.data.motivo || `Error ${r.status}` });
-      return;
-    }
-    setSmArchivo(`${a.name} · ${revisar ? 'revisado, nada escrito todavía' : 'cargado'}`);
-    setSmInforme({ ...r.data.informe, cargado: !revisar, serie: smSerie.nombre });
-    setSmCargado(!revisar);
-    if (!revisar) { cargarSeriesManuales(); verPuntos(smSerie.serie_id); }
-  };
-
-  const filasInformeSm = (i) => {
-    const lectura = i.origen === 'excel'
-      ? `Excel · hoja «${i.hoja || '—'}»`
-      : `CSV, separador «${i.separador}» · decimales con ${i.decimal}`;
-    const f = [
-      ['Archivo', i.archivo || '—'],
-      ['Serie destino', i.serie || '—'],
-      ['Lectura', lectura],
-      ['Contenido', `${nEnt(i.filas)} fechas`],
-      ['Rango', `${fFecha(i.desde)} a ${fFecha(i.hasta)}`],
-    ];
-    if (i.cargado) {
-      f.push(['Fechas nuevas', nEnt(i.nuevas)]);
-      f.push(['Fechas actualizadas', nEnt(i.actualizadas)]);
-      f.push(['Sin cambio', nEnt(i.sin_cambio)]);
-    }
     return f;
   };
 
@@ -673,139 +528,6 @@ export default function SppCargaPage() {
 
       </>)}
 
-      {seccion === 'series' && (<>
-      {/* ===== 4 · Series manuales: componentes fuera de Bloomberg ===== */}
-      <div className="spp-dos">
-        <div className="panel">
-          <div className="panel-title">Series manuales · componentes fuera de Bloomberg</div>
-          <p className="page-sub">La segunda base de componentes del target y del benchmark: lo que Bloomberg
-            no trae se registra aquí como serie y se le cargan precios a mano o por Excel
-            (más abajo). Borrar es siempre un acto manual por fecha.</p>
-
-          <div className="controls spp-controls">
-            <div className="field"><label htmlFor="sm-nombre">Nueva serie</label>
-              <input id="sm-nombre" className="date-input" placeholder="Nombre (p. ej. Índice X)"
-                value={smNombre} onChange={(e) => setSmNombre(e.target.value)} /></div>
-            <div className="field"><label htmlFor="sm-desc">Descripción</label>
-              <input id="sm-desc" className="date-input" placeholder="opcional"
-                value={smDesc} onChange={(e) => setSmDesc(e.target.value)} /></div>
-            <div className="field"><label htmlFor="sm-moneda">Moneda</label>
-              <input id="sm-moneda" className="date-input" placeholder="USD / PEN"
-                style={{ width: 90 }}
-                value={smMoneda} onChange={(e) => setSmMoneda(e.target.value)} /></div>
-            <div className="field"><label aria-hidden="true">&nbsp;</label>
-              <button className="btn principal" disabled={!smNombre.trim() || ocupado}
-                onClick={crearSerie}>Registrar serie</button></div>
-          </div>
-          <p className="page-sub dim">Registrar una serie con un nombre que ya existe actualiza
-            su descripción y moneda; no la duplica.</p>
-
-          <div className="controls spp-controls" style={{ marginTop: 12 }}>
-            <div className="field"><label htmlFor="sm-serie">Serie</label>
-              <select id="sm-serie" className="select" value={smSel ?? ''}
-                onChange={(e) => setSmSel(e.target.value ? Number(e.target.value) : null)}>
-                {!smSeries.length && <option value="">— registra una serie primero —</option>}
-                {smSeries.map((s) => (
-                  <option key={s.serie_id} value={s.serie_id}>
-                    {s.nombre}{s.moneda ? ` · ${s.moneda}` : ''}</option>
-                ))}
-              </select></div>
-            <div className="field"><label htmlFor="sm-fecha">Fecha</label>
-              <input id="sm-fecha" className="date-input" type="date" value={smFecha}
-                onChange={(e) => setSmFecha(e.target.value)} /></div>
-            <div className="field"><label htmlFor="sm-valor">Valor</label>
-              <input id="sm-valor" className="date-input" type="number" min="0" step="0.0001"
-                placeholder="0.0000" value={smValor}
-                onChange={(e) => setSmValor(e.target.value)} /></div>
-          </div>
-          <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn principal" disabled={!smSerie || ocupado}
-              onClick={() => registrarPunto(false)}>Registrar valor</button>
-            <button className="btn peligro" disabled={!smSerie || ocupado}
-              onClick={() => registrarPunto(true)}>Borrar la fecha</button>
-            <button className="btn peligro" disabled={!smSerie || ocupado}
-              onClick={borrarSerieManual}>Borrar la serie</button>
-            {smSerie && (
-              <a className="btn" href={apiUrl(`/api/spp/series-manuales/${smSerie.serie_id}/exportar`)}>
-                ↓ Bajar «{smSerie.nombre}» · XLSX</a>
-            )}
-          </div>
-          <Eco eco={smEco} />
-        </div>
-
-        <div className="panel">
-          <div className="panel-title">En la base</div>
-          {smSeries.length ? (
-            <Informe filas={smSeries.map((s) => [
-              `${s.nombre}${s.moneda ? ` · ${s.moneda}` : ''}${s.usos ? ' · en la canasta' : ''}`,
-              s.puntos
-                ? `${nEnt(s.puntos)} fechas · ${fFecha(s.desde)} a ${fFecha(s.hasta)} · último ${s.ultimo}`
-                : 'sin datos todavía',
-            ])} />
-          ) : (
-            <p className="page-sub">Todavía no hay ninguna serie manual. Crea una a la
-              izquierda y cárgale precios; después podrás sumarla a la canasta del target o del benchmark.</p>
-          )}
-          {smSerie && smPuntos.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div className="panel-title">Últimos valores de «{smSerie.nombre}»</div>
-              <div className="table-wrap">
-                <table>
-                  <thead><tr><th>Fecha</th><th className="num">Valor</th></tr></thead>
-                  <tbody>
-                    {smPuntos.slice(-15).reverse().map((p) => (
-                      <tr key={p.fecha}>
-                        <td>{fFecha(p.fecha)}</td>
-                        <td className="num">{Number(p.valor).toLocaleString('es-PE',
-                          { minimumFractionDigits: 2, maximumFractionDigits: 7 })}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <CargaArchivo
-        ref={smRef}
-        titulo="Series manuales · carga de valores por archivo"
-        descripcion={<>Columnas <b>fecha</b> y <b>valor</b>, para la serie elegida arriba
-          {smSerie ? <>: <b>{smSerie.nombre}</b></> : ' (elige una primero)'}. El archivo
-          nunca borra: agrega lo que falta y, solo si lo pides, corrige lo que difiere.</>}
-        formato="series_manuales"
-        plantilla="/api/spp/series-manuales/plantilla"
-        onChange={() => subirSerie(true, false)}
-        nombre={smArchivo}
-        acciones={smInforme && !smCargado && (<>
-          <button className="btn principal" disabled={ocupado}
-            onClick={() => subirSerie(false, false)}>Cargar lo que falta</button>
-          <button className="btn peligro" disabled={ocupado}
-            onClick={() => subirSerie(false, true)}>Cargar y corregir</button>
-        </>)}
-        eco={smEcoArch}
-        previaEstado={smInforme && (smCargado
-          ? `«${smInforme.serie}»: cargado.`
-          : `«${smInforme.serie}»: revisado, nada escrito todavía.`)}
-        previa={smInforme && (<>
-          <Informe filas={filasInformeSm(smInforme)} />
-          {(smInforme.avisos || []).map((a, i) => (
-            <p key={i} className="page-sub">Aviso: {a}</p>
-          ))}
-          {smInforme.total_omitidas > 0 && (
-            <p className="page-sub flag-warn">Se omitieron <b>{smInforme.total_omitidas}</b> fila(s):{' '}
-              {smInforme.omitidas.slice(0, 5).map((o) => `línea ${o.linea} (${o.motivo})`).join('; ')}
-              {smInforme.total_omitidas > 5 ? '; …' : ''}</p>
-          )}
-          <Muestra muestra={smInforme.muestra}
-            titulo={smCargado ? 'Últimas filas cargadas' : 'Últimas filas del archivo'} />
-        </>)}
-        previaVacia="Elige la serie arriba y luego el archivo; aquí verás lo que trae antes de que nada toque la base."
-      />
-
-      </>)}
-
       {(seccion === 'target' || seccion === 'benchmark') && (
         <IndiceCompuesto
           key={seccion}
@@ -815,7 +537,6 @@ export default function SppCargaPage() {
           cfg={cfg} setCfg={setCfg}
           ocupado={ocupado} tarea={tarea} iniciar={iniciar}
           alTerminarTarea={alTerminarTarea}
-          version={versionSeries}
         />
       )}
     </div>

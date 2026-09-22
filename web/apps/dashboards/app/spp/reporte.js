@@ -130,7 +130,7 @@ export async function generarReporte({ cfg, vent }) {
         fila.push({ content: `Fondo ${f}`, rowSpan: filas.length,
           styles: { valign: 'middle', fontStyle: 'bold', textColor: GRIS, halign: 'left' } });
       }
-      fila.push(latin1(r.afp + (r.absoluto ? ' · absoluto' : '')));
+      fila.push(latin1(r.afp));
       cols.forEach((c) => fila.push(latin1(fmtRend(r.valores[c[0]], c[2], 'valor_cuota'))));
       body.push(fila);
       meta.push({ esCasa: r.afp === casa, r });

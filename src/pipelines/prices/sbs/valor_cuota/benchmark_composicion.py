@@ -16,9 +16,11 @@
 #   - weights DRIFT between rebalances (buy-and-hold): the stored
 #     peso is the allocation AT the rebalance date; afterwards each
 #     holding floats with its price until the next composition.
-#   - components price from any store ('bloomberg' registry, 'fact'
-#     spine or 'manual' keyed-in series), optionally multiplied by
-#     an FX series.
+#   - components price from the pipeline spine (fact_prices through
+#     series_registry), optionally multiplied by an FX series from the
+#     same store. The Bloomberg registry and the keyed-in series that
+#     once fed this went away in 2026-09: the target and benchmark will
+#     be built from an external table instead.
 #   - recalcular() REGENERATES the whole series from the first
 #     composition (base 100), replacing whatever was stored - the
 #     composition is the source of truth.
@@ -39,7 +41,9 @@ from src.pipelines.prices.sbs.valor_cuota.loader import UPSERT_CORRIGE
 logger = logging.getLogger(__name__)
 
 BASE_INDICE = 100.0
-FUENTES = ("bloomberg", "fact", "manual")
+# One store. The tuple stays so the CHECK, the writer and the reader
+# keep agreeing through one name when the external source arrives.
+FUENTES = ("fact",)
 
 
 def _tipo(tipo) -> str:
@@ -204,7 +208,7 @@ def guardar_composicion(tipo: str, fondo: int, vigente_desde,
         fuente = str(c.get("fuente") or "").strip()
         if fuente not in FUENTES:
             raise ValueError(f"Fuente no valida: {fuente}. "
-                             "Usa bloomberg, fact o manual.")
+                             "La unica fuente es fact (series_registry).")
         try:
             ref_id = int(c.get("ref_id"))
         except (TypeError, ValueError):
@@ -293,100 +297,23 @@ def _validar_referencias(conn, componentes: list[dict], tipo: str, fondo: int) -
         if c["fx_ref_id"] is not None:
             pares.append((c["fx_fuente"], c["fx_ref_id"], f"FX de {c['etiqueta']}"))
         for fuente, ref_id, nombre in pares:
-            if fuente == "bloomberg":
-                fila = conn.execute(
-                    "SELECT 1 FROM bloomberg_serie WHERE serie_id = %s",
-                    (ref_id,)).fetchone()
-            elif fuente == "manual":
-                fila = conn.execute(
-                    "SELECT 1 FROM serie_manual WHERE serie_id = %s",
-                    (ref_id,)).fetchone()
-            else:
-                fila = conn.execute(
-                    "SELECT 1 FROM series_registry WHERE series_id = %s",
-                    (ref_id,)).fetchone()
+            fila = conn.execute(
+                "SELECT 1 FROM series_registry WHERE series_id = %s",
+                (ref_id,)).fetchone()
             if fila is None:
                 raise ValueError(
                     f"La serie de '{nombre}' (fuente {fuente}, id {ref_id}) "
                     "no existe.")
 
 
-# ---- Usos: quien referencia una serie ------------------------------
-
-def usos_de(conn, fuente: str, ref_id: int) -> tuple[list[dict], list[dict]]:
-    """
-    Where a priced series is used by ANY composite index, split into
-    the baskets in force and the superseded ones.
-
-    The split is the whole point. This table is VERSIONED: a rebalance
-    inserts a new basket instead of editing rows, so a component dropped
-    years ago still has rows here forever. Counting all of them together
-    and telling the operator to "take it out of the basket" names
-    something they cannot find - it is not in the current basket. What
-    they can act on is the index, the fund and the date of the version
-    that still holds it.
-
-    "In force" is per (tipo, fondo): the target of fund 2 and the
-    benchmark of fund 2 each have their own current basket.
-
-    Returns (vigentes, historicos), each row with tipo, fondo and
-    vigente_desde.
-    """
-    filas = conn.execute(
-        """
-        SELECT c.tipo, c.fondo, c.vigente_desde,
-               c.vigente_desde = (SELECT MAX(v.vigente_desde)
-                                  FROM benchmark_composicion v
-                                  WHERE v.tipo = c.tipo AND v.fondo = c.fondo) AS vigente
-        FROM benchmark_composicion c
-        WHERE (c.fuente = %s AND c.ref_id = %s)
-           OR (c.fx_fuente = %s AND c.fx_ref_id = %s)
-        ORDER BY c.tipo, c.fondo, c.vigente_desde
-        """, (fuente, ref_id, fuente, ref_id)).fetchall()
-    return ([f for f in filas if f["vigente"]],
-            [f for f in filas if not f["vigente"]])
-
-
-def motivo_en_uso(nombre: str, vigentes: list[dict], historicos: list[dict]) -> str:
-    """The refusal, written so the next step is obvious: which index, which
-    fund, which version."""
-    def lista(filas):
-        return ", ".join(
-            f"{_nombre_tipo(f.get('tipo', 'target'))} del fondo {f['fondo']} "
-            f"(desde {f['vigente_desde']})" for f in filas)
-
-    if vigentes:
-        aviso = (f"'{nombre}' esta en una canasta vigente: {lista(vigentes)}. "
-                 "Quitala de esa canasta antes de borrarla.")
-        if historicos:
-            aviso += (f" Tambien aparece en {len(historicos)} version(es) "
-                      "anterior(es).")
-        return aviso
-    # Solo en versiones superadas: decirle "quitala de la canasta" seria
-    # mandarlo a buscar algo que ya no esta ahi.
-    return (f"'{nombre}' ya no esta en ninguna canasta vigente, pero si en "
-            f"{len(historicos)} version(es) anterior(es): {lista(historicos)}. "
-            "Borrarla dejaria esos tramos sin poder recalcularse. Si ya no "
-            "necesitas reproducirlos, borra primero esas versiones de la "
-            "composicion.")
-
-
-# ---- Precios --------------------------------------------------------
+# ---- Precios de un componente ------------------------------------------
 
 def _precios(conn, fuente: str, ref_id: int) -> dict:
-    """{date: price} of one series, whole history."""
-    if fuente == "bloomberg":
-        filas = conn.execute(
-            "SELECT fecha AS d, valor AS v FROM bloomberg_dato "
-            "WHERE serie_id = %s ORDER BY fecha", (ref_id,)).fetchall()
-    elif fuente == "manual":
-        filas = conn.execute(
-            "SELECT fecha AS d, valor AS v FROM serie_manual_dato "
-            "WHERE serie_id = %s ORDER BY fecha", (ref_id,)).fetchall()
-    else:
-        filas = conn.execute(
-            "SELECT date AS d, price AS v FROM fact_prices "
-            "WHERE series_id = %s ORDER BY date", (ref_id,)).fetchall()
+    """{date: price} of one series, whole history. `fuente` is always
+    'fact' today; it stays in the signature for the external source."""
+    filas = conn.execute(
+        "SELECT date AS d, price AS v FROM fact_prices "
+        "WHERE series_id = %s ORDER BY date", (ref_id,)).fetchall()
     return {f["d"]: float(f["v"]) for f in filas}
 
 
@@ -574,27 +501,11 @@ def recalcular(tipo: str, fondo: int, log=logger.info) -> dict:
 # ---- Catalogo para la UI --------------------------------------------
 
 def series_disponibles(q: str = "") -> dict:
-    """Pickable series for the composition editor, all three stores.
+    """Pickable series for the composition editor: the pipeline spine.
     The calculated indices themselves are left out: an index built from
     another index is a loop waiting to happen."""
     q = f"%{q.strip()}%" if q.strip() else "%"
     with get_connection() as conn:
-        man = conn.execute(
-            """
-            SELECT s.serie_id, s.nombre, s.moneda, s.descripcion,
-                   COUNT(d.fecha) AS puntos
-            FROM serie_manual s
-            LEFT JOIN serie_manual_dato d USING (serie_id)
-            WHERE s.nombre ILIKE %s OR COALESCE(s.descripcion, '') ILIKE %s
-            GROUP BY s.serie_id ORDER BY s.nombre LIMIT 50
-            """, (q, q)).fetchall()
-        bbg = conn.execute(
-            """
-            SELECT serie_id, ticker, campo, intervalo, descripcion
-            FROM bloomberg_serie
-            WHERE ticker ILIKE %s OR COALESCE(descripcion, '') ILIKE %s
-            ORDER BY ticker LIMIT 50
-            """, (q, q)).fetchall()
         fact = conn.execute(
             """
             SELECT sr.series_id, e.procode, e.name, sr.field, sr.source
@@ -605,20 +516,9 @@ def series_disponibles(q: str = "") -> dict:
             ORDER BY e.procode LIMIT 50
             """, (reg.SOURCE_BENCH, q, q)).fetchall()
     return {
-        "bloomberg": [{"ref_id": r["serie_id"],
-                       "etiqueta": r["ticker"],
-                       "detalle": f"{r['campo']} · {r['intervalo']}"
-                                  + (f" · {r['descripcion']}" if r["descripcion"] else "")}
-                      for r in bbg],
         "fact": [{"ref_id": r["series_id"],
                   "etiqueta": r["procode"],
                   "detalle": f"{r['field']} · {r['source']}"
                              + (f" · {r['name']}" if r["name"] else "")}
                  for r in fact],
-        "manual": [{"ref_id": r["serie_id"],
-                    "etiqueta": r["nombre"],
-                    "detalle": f"{r['puntos']} punto(s)"
-                               + (f" · {r['moneda']}" if r["moneda"] else "")
-                               + (f" · {r['descripcion']}" if r["descripcion"] else "")}
-                   for r in man],
     }

@@ -162,8 +162,6 @@ def main() -> int:
                                  "cree el esquema.")
             for tabla, etiqueta in (("series_registry", "series registradas"),
                                     ("fact_prices", "observaciones del libro"),
-                                    ("bloomberg_serie", "series Bloomberg"),
-                                    ("serie_manual", "series manuales"),
                                     ("benchmark", "indices declarados (target/benchmark)"),
                                     ("benchmark_composicion", "filas de composicion")):
                 n = intentar(lambda t=tabla: conn.execute(

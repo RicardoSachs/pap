@@ -32,10 +32,9 @@ Esa última descarga trae los paquetes que **no están** en
   exige para recibir archivos, y de eso depende la carga del XLS
   histórico.
 - **`playwright`** (con `pyee` y `greenlet`) — la extracción de la SBS.
-- **`blpapi`** — la API de Bloomberg. Se instala en todas las máquinas
-  (el wheel trae su propia DLL) y solo trabaja donde el `.env` dice
-  `BLOOMBERG_ENABLED=true`; en las demás la pestaña *Series Bloomberg*
-  responde que no hay terminal.
+- **`blpapi`** — la API de Bloomberg, que usan los pipelines de precios
+  del repositorio base. Se instala en todas las máquinas (el wheel trae
+  su propia DLL) y solo trabaja donde el `.env` dice `BLOOMBERG_ENABLED=true`.
 
 Descomprime cada zip en una carpeta que puedas ubicar; el instalador
 del paso 3 las busca solo si están junto al proyecto o en *Descargas*.
@@ -120,10 +119,9 @@ Si **esa** máquina tiene terminal Bloomberg, agrega también:
 BLOOMBERG_ENABLED=true
 ```
 
-y la pestaña *Series Bloomberg* podrá descargar de verdad los
-componentes del target y del benchmark. Déjalo fuera en las máquinas sin terminal:
-el tablero sigue funcionando igual, solo que esa descarga responde que
-no hay terminal aquí.
+para los pipelines de precios del repositorio base. El tablero SPP no lo
+necesita: el target y el benchmark se componen de series del propio libro
+de precios (y, más adelante, de una tabla externa).
 
 `DATA_DIR` es opcional pero conviene fijarlo: vacío significa "la
 carpeta `data` hermana del proyecto", y si algún día mueves la carpeta
@@ -167,8 +165,8 @@ Eso deja el libro completo desde 1993. La extracción diaria se encarga
 del resto.
 
 > Lo que no viaja por esta vía es lo que solo existe en la otra
-> computadora: las correcciones hechas a mano, el registro de series
-> Bloomberg, las series manuales y las composiciones del target y del benchmark. Son
+> computadora: las correcciones hechas a mano y las composiciones del
+> target y del benchmark. Son
 > pocas y se vuelven a declarar desde el tablero en minutos. Si algún
 > día quieres moverlas tal cual y tienes cómo pasar un archivo, está
 > `scripts\respaldo_spp.py --exportar` / `--importar`.
@@ -227,7 +225,7 @@ Prueba opcional de que el código está sano en esta máquina (necesita
 .venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook -q
 ```
 
-Deben pasar los 125.
+Deben pasar los 118.
 
 ---
 

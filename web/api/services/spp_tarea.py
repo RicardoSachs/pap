@@ -4,7 +4,7 @@
 # Shared plumbing of the SPP tab's write operations:
 #
 #   - the single background task slot (SBS extraction, historical load,
-#     Bloomberg download). One thread + one lock: a second launch is refused
+#     index recalculation). One thread + one lock: a second launch is refused
 #     with the name of the operation already running. The frontend polls the
 #     bitacora until activa goes false - same contract as the monitor.
 #   - con_bitacora(): adapter that pipes the pipeline's `logging` records

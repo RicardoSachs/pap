@@ -9,15 +9,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// El target y el benchmark se arman desde DOS bases de componentes: la de Bloomberg
-// (esta pestaña) y la de series manuales (un área de «Registro y carga»).
 // Se nombran como pares para que se lean como lo que son, aunque vivan en
 // niveles distintos de la navegación.
 const TABS = [
   { href: '/spp/', label: 'Panel' },
   { href: '/spp/libro/', label: 'Libro' },
   { href: '/spp/carga/', label: 'Registro y carga' },
-  { href: '/spp/bloomberg/', label: 'Series Bloomberg' },
 ];
 
 export default function SppTabs() {

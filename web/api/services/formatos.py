@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import datetime as dt
 
-from src.pipelines.prices.bloomberg import manual_series as bbg
 from src.pipelines.tradebook import operaciones as tb
 
 
@@ -62,31 +61,6 @@ def _tradebook(origen: str) -> dict:
     }
 
 
-def _series_manuales() -> dict:
-    return {
-        "titulo": "Valores de una serie manual",
-        "columnas": [
-            _columna("fecha", True, "10/09/2026"),
-            _columna("valor", True, "1,234.5678"),
-        ],
-        "plantilla": "/api/spp/series-manuales/plantilla",
-    }
-
-
-def _bloomberg() -> dict:
-    ejemplo = {"ticker": "SPX Index", "campo": "PX_LAST", "intervalo": "diario",
-               "fecha_inicio": "01/01/2016", "descripcion": "S&P 500",
-               "moneda": "USD"}
-    return {
-        "titulo": "Series de Bloomberg a registrar",
-        "columnas": [
-            _columna(c, c == "ticker", ejemplo.get(c))
-            for c in bbg.CABECERA_SERIES
-        ],
-        "plantilla": "/api/spp/bloomberg/plantilla",
-    }
-
-
 def _valor_cuota_historico() -> dict:
     """
     El unico que no sale de un lector de columnas: es el Excel que publica
@@ -111,8 +85,6 @@ def _valor_cuota_historico() -> dict:
 FORMATOS = {
     "tradebook_traders": lambda: _tradebook("excel"),
     "tradebook_fms": lambda: _tradebook("fms"),
-    "series_manuales": _series_manuales,
-    "bloomberg": _bloomberg,
     "valor_cuota_historico": _valor_cuota_historico,
 }
 

@@ -2,7 +2,7 @@
 // web/apps/dashboards/components/Bitacora.js
 // ---------------------------------------------------------------------------
 // The running log of the shared background task (SBS extraction, historical
-// load, Bloomberg download, benchmark recalculation).
+// load, benchmark recalculation).
 //
 // One component because the two copies had already diverged in the state that
 // matters most: while a task was running, the carga view still read "Sin

@@ -60,12 +60,10 @@ export async function apiSend(path, method, body, isForm = false) {
   }
 }
 
-// The ONE name for each price store. The same source read 'BBG', 'bloomberg'
-// and 'Bloomberg' within one screen; the benchmark editor shows them side by
-// side, so they have to be said the same way.
-export const NOMBRE_FUENTE = {
-  bloomberg: 'Bloomberg', manual: 'Manual', fact: 'Histórico',
-};
+// The ONE name for each price store the composition editor can draw from.
+// There is one today (the pipeline spine); the map stays so the external
+// source can be named here when it arrives.
+export const NOMBRE_FUENTE = { fact: 'Histórico' };
 export const nombreFuente = (f) => NOMBRE_FUENTE[f] || f;
 
 // FALLBACKS only, for the instant before /api/spp/config arrives: the

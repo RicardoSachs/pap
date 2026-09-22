@@ -41,16 +41,19 @@ const GRIS = [90, 90, 90];
 
 const latin1 = (t) => String(t).replace(/−/g, '-').replace(/→/g, '->');
 
-function layoutPapel(titulo) {
+function layoutPapel(titulo, subtitulo) {
   // Tamanos para papel: la imagen de 1600 px se imprime en 19 cm (A4
   // vertical), asi que 13 px de pantalla quedaban en letra de 4 puntos.
   const fuente = { family: 'Helvetica, Arial, sans-serif', size: 25, color: '#222' };
   return {
-    title: { text: titulo, font: { ...fuente, size: 30 }, x: 0.02, xanchor: 'left' },
+    // Cada grafico se titula solo, como en el Panel ("Alpha F2"), con el
+    // rango y la unidad debajo: la imagen tiene que entenderse suelta.
+    title: { text: titulo, font: { ...fuente, size: 32 }, x: 0.02, xanchor: 'left',
+      subtitle: { text: subtitulo, font: { ...fuente, size: 22, color: '#666' } } },
     paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: fuente,
     // l: sitio para "-450 bps" mas el titulo del eje; con 130 se recortaba
     // el signo en los fondos que se mueven en cientos de bps.
-    margin: { l: 165, r: 30, t: 70, b: 100 },
+    margin: { l: 165, r: 30, t: 110, b: 100 },
     legend: { orientation: 'h', y: -0.22, font: fuente },
     xaxis: { gridcolor: '#e6e6e6', linecolor: '#cccccc', tickfont: fuente },
     yaxis: {
@@ -61,7 +64,7 @@ function layoutPapel(titulo) {
   };
 }
 
-async function imagenAlpha(Plotly, { series, casa, cfg, titulo }) {
+async function imagenAlpha(Plotly, { series, casa, cfg, titulo, subtitulo }) {
   const curvas = alphaDe(series, casa);
   if (!curvas.length) return null;
   const orden = ordenCasa(cfg, curvas.map((c) => c.afp)).filter((a) => a !== casa);
@@ -69,7 +72,7 @@ async function imagenAlpha(Plotly, { series, casa, cfg, titulo }) {
     x: c.x, y: c.y, type: 'scatter', mode: 'lines', name: c.afp,
     line: { color: TONOS[orden.indexOf(c.afp) % TONOS.length], width: 2.2 },
   }));
-  return Plotly.toImage({ data, layout: layoutPapel(titulo) },
+  return Plotly.toImage({ data, layout: layoutPapel(titulo, subtitulo) },
     // scale 1.2 basta para imprimir; con 1.5 y sin comprimir, ocho graficos
     // hacian un PDF de 40 MB.
     { format: 'png', width: ANCHO_PX, height: ALTO_PX, scale: 1.2 });
@@ -164,9 +167,7 @@ export async function generarReporte({ cfg, vent }) {
   doc.setFontSize(7); doc.setTextColor(...GRIS);
   // Partida al ancho de la pagina: de una pieza se salia por la derecha.
   const nota = doc.splitTextToSize(latin1(
-    `Cada fila de competidora es ${casa} menos esa AFP: positivo significa que ${casa}`
-    + ` rinde más. La fila de ${casa} va en rendimiento absoluto. Hasta meses en puntos básicos;`
-    + ' FY, YTD y año pasado en porcentaje.'), W - 2 * M);
+    'Hasta meses en puntos básicos; FY, YTD y año pasado en porcentaje.'), W - 2 * M);
   doc.text(nota, M, doc.lastAutoTable.finalY + 6);
 
   // ---- Alpha: todos los YTD, despues todos los FY; dos fondos por pagina ----
@@ -177,13 +178,13 @@ export async function generarReporte({ cfg, vent }) {
     for (let i = 0; i < fondos.length; i += POR_PAGINA) {
       doc.addPage();
       doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30);
-      doc.text(latin1(`Alpha acumulado ${etiqueta} · ${casa} contra cada AFP`
-        + ` · del ${fFecha(desde)} al ${fFecha(fecha)}`), M, 15);
+      doc.text(latin1(`Alpha acumulado ${etiqueta} · ${casa} contra cada AFP`), M, 15);
       let y = 22;
       for (const f of fondos.slice(i, i + POR_PAGINA)) {
         const g = seriesPorGrafico.find((x) => x.f === f && x.etiqueta === etiqueta);
-        const titulo = `Fondo ${f}`;
-        const img = g ? await imagenAlpha(Plotly, { series: g.series, casa, cfg, titulo }) : null;
+        const titulo = `Alpha F${f} · ${etiqueta}`;
+        const subtitulo = `del ${fFecha(desde)} al ${fFecha(fecha)} · puntos básicos, ${casa} menos cada AFP`;
+        const img = g ? await imagenAlpha(Plotly, { series: g.series, casa, cfg, titulo, subtitulo }) : null;
         if (img) {
           // 'FAST' = Flate: jsPDF guarda el PNG sin comprimir si no se le pide.
           doc.addImage(img, 'PNG', M, y, anchoImg, altoImg, undefined, 'FAST');

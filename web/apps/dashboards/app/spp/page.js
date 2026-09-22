@@ -440,8 +440,6 @@ export default function SppPanelPage() {
               <summary>Rendimiento relativo · {casa} contra cada competidora</summary>
               <TablaVentanas cols={(vent.cols_rend || []).filter((c) => c[2] !== 'nivel')}
                 filas={vent.relativos} conUnidad orden={ordenRel} />
-              <p className="page-sub">Cada fila de competidora es {casa} menos esa AFP: positivo significa que
-                {' '}{casa} rinde más. La fila de {casa} va en rendimiento absoluto.</p>
             </details>
             <details className="spp-desplegable">
               <summary>Rendimiento absoluto</summary>

@@ -1,5 +1,6 @@
 @echo off
-rem Doble clic para registrar la extraccion diaria del SPP a las 18:00.
+rem Doble clic para registrar la extraccion diaria del SPP a las 16:00
+rem (con reintentos a las 16:30 y 17:00).
 rem
 rem Existe porque Windows no ejecuta archivos .ps1 con doble clic y la
 rem politica por defecto (Restricted) rechaza el guion desde la consola:

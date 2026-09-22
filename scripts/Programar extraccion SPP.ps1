@@ -5,7 +5,7 @@
 # politica de ejecucion de PowerShell, que por defecto rechaza este
 # guion en una maquina recien instalada):
 #
-#   scripts\"Programar extraccion SPP.bat"              -> registra a las 18:00
+#   scripts\"Programar extraccion SPP.bat"              -> registra a las 16:00 (+16:30, +17:00)
 #   scripts\"Programar extraccion SPP.bat" -Hora 19:30  -> a otra hora
 #   scripts\"Programar extraccion SPP.bat" -Estado      -> que hay registrado hoy
 #   scripts\"Programar extraccion SPP.bat" -Probar      -> la corre ahora
@@ -17,10 +17,8 @@
 # USA EL MISMO NOMBRE DE TAREA que el monitor standalone a proposito:
 # registrarla aqui ES el corte - reemplaza la tarea vieja (-Force), y asi
 # nunca hay dos scrapers compitiendo por la misma pagina de la SBS.
-# El nombre tiene un gemelo en web/api/services/spp_tarea.py
-# (TAREA_WINDOWS): /api/spp/programado consulta la tarea por ese nombre,
-# asi que un cambio aqui sin su gemelo deja al tablero reportando la
-# automatizacion como muerta mientras el scrape sigue corriendo.
+# Nadie mas consulta la tarea por su nombre: el tablero dejo de mostrar
+# la corrida automatica (2026-09-22); su rastro es data\spp\extraccion.log.
 #
 # No requiere permisos de administrador: la tarea corre en la sesion del
 # usuario (-LogonType Interactive), que es justo lo que hace falta para que
@@ -28,7 +26,7 @@
 
 [CmdletBinding()]
 param(
-  [string]$Hora = "18:00",
+  [string]$Hora = "16:00",
   [switch]$Estado,
   [switch]$Probar,
   [switch]$Quitar
@@ -78,7 +76,7 @@ if (-not (Test-Path $Script)) { throw "No se encontro $Script" }
 if ($Hora -notmatch '^([01]?\d|2[0-3]):[0-5]\d$') { throw "Hora invalida: $Hora. Usa HH:mm." }
 
 # El WAF de la SBS exige Chrome REAL (el Chromium de Playwright no pasa).
-# Avisar aqui evita descubrirlo recien a las 18:00, en una corrida sin nadie
+# Avisar aqui evita descubrirlo recien a las 16:00, en una corrida sin nadie
 # delante.
 $chrome = @(
   "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
@@ -95,6 +93,19 @@ $accion = New-ScheduledTaskAction -Execute $Python `
             -Argument "`"$Script`" --programado" -WorkingDirectory $Raiz
 
 $disparador = New-ScheduledTaskTrigger -Daily -At $Hora
+
+# Tres intentos: a la hora, media hora despues y una hora despues. La SBS
+# publica t-2 habil "por la tarde" sin hora fija; si a las 16:00 aun no
+# esta, los reintentos lo recogen. Cada corrida mira primero si el libro
+# ya tiene el dia (correr_programado) y, si lo tiene, no abre Chrome: los
+# reintentos cuestan un segundo cuando el primero acerto. Si ninguno trae
+# nada, se deja asi hasta el dia siguiente.
+# New-ScheduledTaskTrigger solo admite -RepetitionInterval con -Once, asi
+# que la repeticion se toma de un disparador de un solo uso y se copia.
+$repeticion = (New-ScheduledTaskTrigger -Once -At $Hora `
+                 -RepetitionInterval (New-TimeSpan -Minutes 30) `
+                 -RepetitionDuration (New-TimeSpan -Hours 1)).Repetition
+$disparador.Repetition = $repeticion
 
 # StartWhenAvailable recupera la corrida si a esa hora la maquina estaba
 # apagada. El tope de 30 minutos solo existe para que un Chrome colgado por
@@ -121,7 +132,7 @@ Register-ScheduledTask -TaskName $Tarea -Action $accion -Trigger $disparador `
                 "Inserta lo que falte; nunca sobreescribe. " +
                 "Rastro en data\spp\extraccion.log.") | Out-Null
 
-Write-Output "Registrada: '$Tarea', todos los dias a las $Hora, apuntando a este repo."
+Write-Output "Registrada: '$Tarea', todos los dias a las $Hora con reintentos a +30 y +60 min, apuntando a este repo."
 Write-Output ""
 Mostrar-Estado
 Write-Output ""

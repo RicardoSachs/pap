@@ -18,8 +18,12 @@
 #   cargar_historico()    second half: write the reviewed bytes in the
 #                         chosen mode (faltantes | sobrescribir).
 #   correr_programado()   run_daily with a trail (extraccion.log/.json
-#                         under data/spp/) for the Windows task and
-#                         the dashboard's "corrida automatica" box.
+#                         under data/spp/) for the Windows task. Skips
+#                         the scrape when the book already holds the
+#                         day the SBS publishes (t-2 business days):
+#                         the task fires at 16:00 and retries at 16:30
+#                         and 17:00, and only the first that finds
+#                         something should touch the SBS.
 #
 # Unlike the file-driven SBS feeds this one does not use the
 # backfill-pending dance: the series universe is closed and declared
@@ -67,7 +71,7 @@ def candado_extraccion():
     One SPP scrape at a time, ACROSS processes.
 
     Three paths reach the same visible Chrome and the same browser
-    profile: the Windows task at 18:00, the tablero's button, and the
+    profile: the Windows task at 16:00, the tablero's button, and the
     .ps1's -Probar. The existing guards each cover only their own lane
     (the API's task slot is a lock inside one uvicorn process,
     -MultipleInstances only compares the task with itself), so a scrape
@@ -342,6 +346,40 @@ def _recortar_registro(lineas: int = LINEAS_REGISTRO) -> None:
         pass
 
 
+def fecha_objetivo(hoy: date | None = None) -> date:
+    """The day the SBS page is expected to have published by now:
+    two business days back (weekdays; the SBS calendar has no other
+    holes the feed would wait for)."""
+    from datetime import timedelta
+    d = hoy or date.today()
+    habiles = 0
+    while habiles < 2:
+        d -= timedelta(days=1)
+        if d.weekday() < 5:
+            habiles += 1
+    return d
+
+
+def libro_tiene_completo(fecha: date) -> bool:
+    """True when every AFP valor cuota series has a row for `fecha`.
+    The calculated indices are not part of the question: they follow
+    the book, they do not come from the SBS."""
+    with get_connection() as conn:
+        fila = conn.execute(
+            """
+            SELECT COUNT(*) AS series, COUNT(fp.series_id) AS con_dato
+            FROM series_registry sr
+            JOIN dim_entity e ON e.entity_id = sr.entity_id
+            LEFT JOIN fact_prices fp
+                   ON fp.series_id = sr.series_id AND fp.date = %s
+            WHERE sr.source = %s AND sr.field = %s
+              AND e.procode LIKE 'SPP\\_%%'
+              AND e.procode NOT LIKE 'SPP\\_TARGET\\_%%'
+              AND e.procode NOT LIKE 'SPP\\_BENCH\\_%%'
+            """, (fecha, afps.SOURCE_SBS, afps.METRICA_FIELD["valor_cuota"])).fetchone()
+    return bool(fila) and fila["series"] > 0 and fila["con_dato"] == fila["series"]
+
+
 def correr_programado(refrescar: bool = False) -> dict:
     """
     run_daily with a written trail. Does not propagate the exception:
@@ -381,8 +419,21 @@ def correr_programado(refrescar: bool = False) -> dict:
             raise RuntimeError(
                 f"El scraper no esta habilitado en esta maquina ({machine_id()}). "
                 "Pon SCRAPER_ENABLED=true en el archivo .env del proyecto.")
-        res = run_daily(refresh=refrescar)
-        estado.update(ok=True, error=None, **res)
+        objetivo = fecha_objetivo()
+        if not refrescar and libro_tiene_completo(objetivo):
+            # The 16:30 and 17:00 retries land here when 16:00 already
+            # brought the day: nothing to fetch, no Chrome, a one-line
+            # trail that says so.
+            import time as _time
+            lineas.append((_time.time(),
+                           f"El libro ya tiene el {objetivo:%d/%m/%Y} (t-2 habil) "
+                           "completo: no se raspa la SBS."))
+            estado.update(ok=True, error=None, omitida=True,
+                          objetivo=str(objetivo), fechas=0, cargadas=0, omitidas=0)
+        else:
+            res = run_daily(refresh=refrescar)
+            estado.update(ok=True, error=None, omitida=False,
+                          objetivo=str(objetivo), **res)
     except Exception as exc:
         estado.update(ok=False, error=str(exc)[:400],
                       fechas=0, cargadas=0, omitidas=0)

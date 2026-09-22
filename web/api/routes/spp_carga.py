@@ -10,12 +10,7 @@
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
-import json
 import logging
-import os
-import subprocess
-import sys
-from pathlib import Path
 
 from fastapi import APIRouter, File, Response, UploadFile
 from fastapi.responses import JSONResponse
@@ -29,7 +24,7 @@ from src.pipelines.prices.sbs.valor_cuota.run import (
     MODOS_CARGA, cargar_historico, revisar_historico, run_daily, ultima_corrida)
 from web.api.routes._spp_comun import XLSX, fecha_iso, leer_archivo
 from web.api.services.spp_tarea import (
-    TAREA_WINDOWS, con_bitacora, guardar_subida, lanzar, leer_subida)
+    con_bitacora, estado_tarea, guardar_subida, lanzar, leer_subida)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +32,16 @@ router = APIRouter(prefix="/api/spp", tags=["spp-carga"])
 
 
 # ---- Extraccion -----------------------------------------------------------
+
+# ---- La tarea de fondo ------------------------------------------------------
+# One background task for the whole SPP tablero (SBS extraction, historical
+# load, index recalculation); the frontend hook polls this. It lived in the
+# Bloomberg router until that router went away (2026-09-22).
+
+@router.get("/tarea")
+def get_tarea() -> dict:
+    return estado_tarea()
+
 
 @router.post("/extraer")
 def post_extraer(datos: dict | None = None) -> JSONResponse:
@@ -53,69 +58,6 @@ def post_extraer(datos: dict | None = None) -> JSONResponse:
                         con_bitacora(run_daily, refresh=refrescar))
     return JSONResponse({"ok": ok, "motivo": motivo},
                         status_code=200 if ok else 409)
-
-
-@router.get("/programado")
-def get_programado() -> dict:
-    """What Windows says about the scheduled task, and how the last
-    unattended run went."""
-    return {"tarea": _tarea_windows(), "ultima": ultima_corrida(),
-            "nombre": TAREA_WINDOWS}
-
-
-def _tarea_windows() -> dict:
-    """
-    Queried via PowerShell, not schtasks: Get-ScheduledTaskInfo property
-    names are stable, while schtasks output is translated per system
-    language.
-    """
-    if os.name != "nt":
-        return {"disponible": False, "motivo": "Solo en Windows."}
-    # Timestamps go out as ISO ('s' = yyyy-MM-ddTHH:mm:ss), NEVER as
-    # [string]$date: that cast formats with the powershell process's
-    # culture, which varies per machine (dd/MM vs MM/dd) and made the
-    # dashboard swap day and month depending on where the API ran.
-    guion = (
-        f"$t = Get-ScheduledTask -TaskName '{TAREA_WINDOWS}' -ErrorAction SilentlyContinue; "
-        "if (-not $t) { '{\"registrada\":false}' } else { "
-        "$i = $t | Get-ScheduledTaskInfo; "
-        "[pscustomobject]@{ registrada=$true; estado=[string]$t.State; "
-        "  proxima=if ($i.NextRunTime) { $i.NextRunTime.ToString('s') } else { '' }; "
-        "  ultima=if ($i.LastRunTime) { $i.LastRunTime.ToString('s') } else { '' }; "
-        "  resultado=$i.LastTaskResult; omitidas=$i.NumberOfMissedRuns; "
-        "  ejecutable=[string]$t.Actions[0].Execute; "
-        "  argumentos=[string]$t.Actions[0].Arguments; "
-        "  disparo=[string]($t.Triggers | ForEach-Object { $_.StartBoundary }) "
-        "} | ConvertTo-Json -Compress }")
-    try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive",
-                            "-Command", guion],
-                           capture_output=True, text=True, timeout=25)
-        datos = json.loads((r.stdout or "").strip() or '{"registrada":false}')
-        datos["disponible"] = True
-        if datos.get("registrada"):
-            datos["apunta_aqui"] = _apunta_aqui(datos.get("ejecutable"))
-        return datos
-    except Exception as exc:
-        return {"disponible": False, "motivo": str(exc)[:200]}
-
-
-def _apunta_aqui(ejecutable: str | None) -> bool:
-    """
-    Whether the registered task runs THIS copy of the project.
-
-    On the machine without git every update is a fresh zip in a new
-    folder, so it is easy to end up with the task still driving the old
-    copy (or a deleted one) while the tablero reports the automation as
-    healthy. The task's python is the repo's own .venv, which is also
-    the interpreter serving this API.
-    """
-    if not ejecutable:
-        return True
-    try:
-        return Path(ejecutable).resolve() == Path(sys.executable).resolve()
-    except Exception:
-        return True
 
 
 # ---- Registro manual ------------------------------------------------------

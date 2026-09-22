@@ -129,6 +129,23 @@ export default function SppPanelPage() {
 
   const series = serieData?.series || [];
 
+  // Lo que dice la etiqueta al pasar el cursor: por AFP, cuanto lleva desde
+  // el inicio de la ventana y cuanto se movio ese dia, cada cifra en el
+  // color de su signo. Van como texto ya armado en customdata porque el
+  // color depende del valor y la plantilla del hover no sabe de condiciones.
+  const conSigno = (v, fmt) => {
+    if (v == null || !Number.isFinite(v)) return '<span style="opacity:0.6">—</span>';
+    const t = chartTheme();
+    const color = v > 0 ? t.positive : v < 0 ? t.negative : t.muted;
+    return `<span style="color:${color}">${fmt(v)}</span>`;
+  };
+  const pct = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
+  const bps = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} bps`;
+  const acumYDiaria = (ys, fmt, acumDe) => ys.map((y, i) => [
+    conSigno(acumDe(y), fmt),
+    conSigno(i > 0 ? y - ys[i - 1] : null, fmt),
+  ]);
+
   // Alpha: cuanto le ha ganado la casa a CADA competidora desde el inicio
   // de la ventana, en puntos basicos. Es la resta de las dos curvas de
   // Base 100 - casa menos la otra - asi que positivo es la casa delante y
@@ -154,7 +171,10 @@ export default function SppPanelPage() {
         x: c.x, y: c.y, type: 'scatter', mode: 'lines', name: c.afp,
         legendrank: ordenCasa(cfg, enPantalla).indexOf(c.afp) + 1,
         line: { color, width: 2 },
-        hovertemplate: `<b>${c.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
+        // En bps el acumulado ES el valor de la linea; el diario, su paso.
+        customdata: acumYDiaria(c.y, bps, (y) => y),
+        hovertemplate: `<b>${c.afp}</b><br>Alpha acumulado  %{customdata[0]}`
+          + '<br>Del día  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
     });
@@ -180,6 +200,14 @@ export default function SppPanelPage() {
         pts = s.puntos.filter((p) => p[0] >= baseFecha);
         base = pts.length ? pts[0][1] : null;
       }
+      // Rentabilidad acumulada desde el primer punto en pantalla y variacion
+      // del dia, sobre el valor cuota crudo: es lo mismo en Nivel y Base 100.
+      const crudos = pts.map((p) => p[1]);
+      const inicio = crudos[0];
+      const rent = crudos.map((v, i) => [
+        conSigno(inicio ? v / inicio - 1 : null, pct),
+        conSigno(i > 0 && crudos[i - 1] ? v / crudos[i - 1] - 1 : null, pct),
+      ]);
       return {
         x: pts.map((p) => p[0]),
         y: pts.map((p) => (base ? (p[1] / base) * 100 : p[1])),
@@ -188,9 +216,9 @@ export default function SppPanelPage() {
         // order (house last) keeps its line drawn on top of the grays.
         legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
         line: { color, width: esCasa ? 2.8 : 1.6 },
-        // La etiqueta de un solo valor, que es lo que el grafico necesita:
-        // la comparacion entre AFP ya esta en las tablas de abajo.
-        hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:,.4f}<extra></extra>`,
+        customdata: rent,
+        hovertemplate: `<b>${s.afp}</b><br>Rent. acumulada  %{customdata[0]}`
+          + '<br>Rent. diaria  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
     });
@@ -388,7 +416,11 @@ export default function SppPanelPage() {
               // " bps" alarga las etiquetas del eje: sin el margen extra el
               // signo menos se recorta y -200 se lee como 200.
               margin: { l: escala === 'alpha' ? 95 : 70, r: 20, t: 10, b: 60 },
-              xaxis: { hoverformat: '%Y-%m-%d' },
+              // Una sola etiqueta por fecha con un bloque por AFP, como la
+              // tarjeta del visor de precios: la fecha arriba y, debajo,
+              // cada AFP con su acumulado y su dia.
+              hovermode: 'x unified',
+              xaxis: { hoverformat: '%d %b %Y' },
               yaxis: {
                 type: 'linear',
                 title: escala === 'alpha' ? 'Alpha acumulado (bps)'

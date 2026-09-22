@@ -6,7 +6,7 @@ sin acceso a PyPI.
 
 Al terminar tendrás el tablero abriéndose con doble clic, el libro de
 valor cuota completo desde 1993 y la extracción diaria automática a
-las 18:00.
+las 16:00 (con reintentos a las 16:30 y 17:00).
 
 Verificado el 2026-09-14 reproduciendo ese entorno completo (Python
 3.10.6 portable + los wheels de `pypro_packs`): los tests pasan, la
@@ -78,7 +78,7 @@ Las rutas pueden tener espacios (`Program Files`, `Mis Documentos`) y
 pueden ser de red (`\\servidor\...`). Las librerías desde la red van
 bien: pip las copia dentro del `.venv`. El **Python** conviene tenerlo
 en local — el `.venv` recuerda dónde está su intérprete y lo necesita en
-cada arranque, también en la tarea programada de las 18:00. Y si la
+cada arranque, también en la tarea programada de las 16:00. Y si la
 carpeta venía con un `.venv` de otra máquina, bórralo antes: un entorno
 no se puede copiar, sigue apuntando al Python de donde nació.
 
@@ -187,7 +187,12 @@ fechas desde 1993.
 
 Doble clic en **`scripts\Programar extraccion SPP.bat`**. Registra la
 tarea de Windows *Profuturo - Valor cuota SPP*, todos los días a las
-18:00, apuntando a esta copia del proyecto.
+16:00 con reintentos a las 16:30 y 17:00, apuntando a esta copia del
+proyecto. La SBS publica el valor cuota de **t-2 días hábiles**; cada
+intento mira primero si el libro ya lo tiene y, si es así, no abre
+Chrome. Si a las 17:00 la SBS aún no publicó, se queda así hasta el
+día siguiente. No hay cuadro en el tablero: el rastro está en
+`data\spp\extraccion.log`.
 
 Y ahora lo importante, **la primera vez en esta máquina**:
 
@@ -198,7 +203,7 @@ scripts\"Programar extraccion SPP.bat" -Probar
 Quédate mirando. Se abre Chrome; si el WAF de la SBS muestra una
 verificación, resuélvela a mano. Esa cookie queda guardada en el perfil
 y las corridas siguientes trabajan solas. Mientras no hagas esto, la
-tarea de las 18:00 fallará contra el WAF.
+tarea de las 16:00 fallará contra el WAF.
 
 Otros comandos del mismo archivo: `-Estado` (qué hay registrado),
 `-Hora 19:30` (cambiar la hora), `-Quitar`.
@@ -225,7 +230,7 @@ Prueba opcional de que el código está sano en esta máquina (necesita
 .venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook -q
 ```
 
-Deben pasar los 118.
+Deben pasar los 121.
 
 ---
 

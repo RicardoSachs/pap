@@ -14,8 +14,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import {
-  apiSend, apiUrl, fFecha, fHora, fmtMetrica, fondosDe as fondosDeCfg,
-  hoyLocal, metricasDe, nEnt, nombreMetrica,
+  apiSend, apiUrl, fFecha, fmtMetrica, fondosDe as fondosDeCfg, hoyLocal,
+  metricasDe, nEnt, nombreMetrica,
 } from '../../../lib/spp';
 import Bitacora from '../../../components/Bitacora';
 import Eco from '../../../components/Eco';
@@ -104,16 +104,14 @@ export default function SppCargaPage() {
 
   const alTerminarTarea = (despues) => (t) => {
     cargarEstado();
-    cargarProgramado();
     if (despues) despues(t);
   };
 
-  // ---- extraccion + corrida automatica ----
-  const [prog, setProg] = useState(null);
+  // ---- extraccion ----
+  // La corrida automatica (tarea de Windows a las 16:00, con reintentos)
+  // no tiene cuadro en pantalla: deja su rastro en data/spp/extraccion.log
+  // y en la bitacora. Aqui solo vive el lanzamiento a mano.
   const [ecoExtraer, setEcoExtraer] = useState('');
-
-  const cargarProgramado = () =>
-    apiGet('/api/spp/programado').then(setProg).catch(() => setProg(null));
 
   const extraer = async (refrescar) => {
     // Overwriting confirms, like every other action that replaces stored
@@ -155,7 +153,6 @@ export default function SppCargaPage() {
     }).catch(() => {});
     setRFecha(hoyLocal());
     cargarEstado();
-    cargarProgramado();
   }, []);
 
   // Preload the fund boxes with what the book already holds (±12 days for
@@ -302,51 +299,6 @@ export default function SppCargaPage() {
     return f;
   };
 
-  // ---- corrida automatica render ----
-  // 267009 = la tarea sigue corriendo; 0 = terminó bien. Cualquier otro
-  // código significa que el proceso murió antes de dejar su propio rastro,
-  // que es justo el caso que este cuadro leía como «correcta».
-  const EN_CURSO = 267009;
-  const progFilas = () => {
-    const t = prog?.tarea || {}; const u = prog?.ultima || {};
-    const filas = [];
-    if (!t.disponible) filas.push(['Programación', 'no se pudo consultar']);
-    else if (!t.registrada) return null;   // handled with the aviso below
-    else {
-      const hora = (t.disparo || '').slice(11, 16);
-      filas.push(['Frecuencia', hora ? `todos los días a las ${hora}` : 'diaria']);
-      filas.push(['Estado', t.estado || '—']);
-      filas.push(['Próxima', fHora(t.proxima)]);
-      if (t.omitidas) filas.push(['Corridas omitidas', t.omitidas]);
-      if (t.ultima) filas.push(['Último lanzamiento (Windows)', fHora(t.ultima)]);
-    }
-    if (u.inicio) {
-      filas.push(['Última corrida', `${fHora(u.inicio)} · ${u.segundos || 0} s`]);
-      filas.push(['Resultado', u.ok !== false
-        ? `correcta · ${u.cargadas || 0} observación(es) nuevas en ${u.fechas || 0} fecha(s)`
-        : `falló${u.error ? ` · ${u.error}` : ''}`]);
-    } else filas.push(['Última corrida', 'todavía ninguna']);
-    return filas;
-  };
-
-  // Windows lanzó la tarea y el pipeline no alcanzó a escribir su rastro:
-  // sin esto, el cuadro seguía mostrando la corrida buena anterior.
-  const lanzamientoMudo = () => {
-    const t = prog?.tarea || {}; const u = prog?.ultima || {};
-    if (!t.registrada || !t.ultima) return null;
-    if (t.resultado === EN_CURSO || t.resultado === 0 || t.resultado == null) return null;
-    if (u.inicio && new Date(u.inicio) >= new Date(t.ultima)) return null;
-    return `La última corrida lanzada por Windows (${fHora(t.ultima)}) terminó con `
-      + `código ${t.resultado} sin dejar rastro propio.`;
-  };
-
-  // La tarea guarda la ruta absoluta del proyecto: con el zip es fácil
-  // terminar con dos copias y que la automatización trabaje sobre la vieja.
-  const otraCopia = () => (prog?.tarea?.registrada && prog.tarea.apunta_aqui === false
-    ? `La tarea programada apunta a otra copia del proyecto (${prog.tarea.ejecutable}). `
-      + 'Vuelve a registrarla desde esta carpeta.'
-    : null);
-
   const metricaPaso = rMetrica === 'valor_cuota' ? '0.0000001' : '0.01';
 
   return (
@@ -436,8 +388,9 @@ export default function SppCargaPage() {
         <div className="panel">
           <div className="panel-title">Valor cuota · extracción diaria</div>
           <p className="page-sub">Lee la página de variables SPP (últimos 7 días hábiles) e
-            inserta solo lo que falta, con las tres métricas. Es la única carga que corre
-            sola. Toma unos 20–90 s.</p>
+            inserta solo lo que falta, con las tres métricas. Corre sola cada día a las
+            16:00 (y reintenta a las 16:30 y 17:00 si la SBS aún no publicó); aquí se lanza
+            a mano. Toma unos 20–90 s.</p>
           <div className="controls">
             <button className="btn principal" disabled={ocupado}
               onClick={() => extraer(false)}>Correr extracción</button>
@@ -449,17 +402,6 @@ export default function SppCargaPage() {
             máquina donde corre la API. No la cierres mientras corre.
           </p>
           <Eco eco={ecoExtraer} />
-
-          <div className="panel-title" style={{ marginTop: 14 }}>Corrida automática</div>
-          {prog && !prog.tarea?.registrada && prog.tarea?.disponible ? (
-            <p className="page-sub">La extracción <b>no corre sola</b> todavía. Para activarla,
-              doble clic en{' '}
-              <span className="mono">scripts\Programar extraccion SPP.bat</span> — queda diaria
-              a las 18:00 (<span className="mono">-Hora 19:30</span> la cambia,{' '}
-              <span className="mono">-Quitar</span> la elimina).</p>
-          ) : progFilas() ? <Informe filas={progFilas()} /> : <p className="page-sub dim">—</p>}
-          {otraCopia() && <p className="page-sub flag-warn">{otraCopia()}</p>}
-          {lanzamientoMudo() && <p className="page-sub flag-warn">{lanzamientoMudo()}</p>}
         </div>
 
         <div className="panel">

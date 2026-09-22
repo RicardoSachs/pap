@@ -5,8 +5,9 @@
 //
 //   Pagina 1     la tabla de rendimiento relativo (la casa contra cada
 //                competidora), con bloques por fondo, igual que en pantalla.
-//   Una pagina   por tipo de fondo, con dos graficos: alpha acumulado YTD y
-//                FY, en puntos basicos. Cuatro fondos -> ocho graficos.
+//   Despues      el alpha acumulado en puntos basicos, primero YTD y luego
+//                FY: dos fondos por pagina, en el orden de los fondos.
+//                Cuatro fondos -> ocho graficos en cuatro paginas.
 //
 // Se arma aqui y no en el servidor por la misma razon que el CSV de cada
 // grafico: los graficos salen de las MISMAS trazas que pinta el Panel
@@ -166,26 +167,33 @@ export async function generarReporte({ cfg, vent }) {
     + ' FY, YTD y año pasado en porcentaje.'), W - 2 * M);
   doc.text(nota, M, doc.lastAutoTable.finalY + 6);
 
-  // ---- Una pagina por fondo: alpha YTD y FY ----------------------------------
+  // ---- Alpha: todos los YTD, despues todos los FY; dos fondos por pagina ----
   const anchoImg = W - 2 * M;
   const altoImg = anchoImg * ALTO_PX / ANCHO_PX;
-  for (const f of fondos) {
-    doc.addPage();
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30);
-    doc.text(latin1(`Fondo ${f} · alpha acumulado de ${casa} contra cada AFP · al ${fFecha(fecha)}`), M, 15);
-    let y = 22;
-    for (const [etiqueta, desde] of ventanas) {
-      const g = seriesPorGrafico.find((x) => x.f === f && x.etiqueta === etiqueta);
-      const titulo = `${etiqueta} · desde ${fFecha(desde)} · bps`;
-      const img = g ? await imagenAlpha(Plotly, { series: g.series, casa, cfg, titulo }) : null;
-      if (img) {
-        // 'FAST' = Flate: jsPDF guarda el PNG sin comprimir si no se le pide.
-        doc.addImage(img, 'PNG', M, y, anchoImg, altoImg, undefined, 'FAST');
-      } else {
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GRIS);
-        doc.text(latin1(`${titulo}: sin datos suficientes en la ventana.`), M, y + 10);
+  const POR_PAGINA = 2;
+  for (const [etiqueta, desde] of ventanas) {
+    for (let i = 0; i < fondos.length; i += POR_PAGINA) {
+      doc.addPage();
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30);
+      doc.text(latin1(`Alpha acumulado ${etiqueta} · ${casa} contra cada AFP`
+        + ` · del ${fFecha(desde)} al ${fFecha(fecha)}`), M, 15);
+      let y = 22;
+      for (const f of fondos.slice(i, i + POR_PAGINA)) {
+        const g = seriesPorGrafico.find((x) => x.f === f && x.etiqueta === etiqueta);
+        const titulo = `Fondo ${f}`;
+        const img = g ? await imagenAlpha(Plotly, { series: g.series, casa, cfg, titulo }) : null;
+        if (img) {
+          // 'FAST' = Flate: jsPDF guarda el PNG sin comprimir si no se le pide.
+          doc.addImage(img, 'PNG', M, y, anchoImg, altoImg, undefined, 'FAST');
+        } else {
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GRIS);
+          doc.text(latin1(`${titulo}: sin datos suficientes en la ventana.`), M, y + 10);
+        }
+        y += altoImg + 10;
       }
-      y += altoImg + 10;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRIS);
+      doc.text(latin1(`Expresado en puntos básicos: ${casa} menos cada AFP, acumulado desde el`
+        + ` primer día de la ventana con dato en todas.`), M, y - 2);
     }
   }
 

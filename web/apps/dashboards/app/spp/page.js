@@ -212,11 +212,15 @@ export default function SppPanelPage() {
   };
 
   const etiquetaVentana = (VENTANAS.find(([, v]) => v === ventana) || ['—'])[0];
-  const tituloSerie = escala === 'alpha'
-    ? `Alpha acumulado de ${casa} · Fondo ${fondo} · ${etiquetaVentana} · bps`
-    : `Serie histórica · ${nombreMetrica(cfg, metrica).toLowerCase()} · Fondo ${fondo}`
-      + ` · ${etiquetaVentana}${escala === 'base' ? ' · base 100' : ''}`;
-  // "Alpha acumulado de PROFUTURO · Fondo 2 · YTD · bps" -> un nombre de archivo
+  // Titulo corto - el lector ya sabe que es la serie del valor cuota - y
+  // al pie del grafico en que esta expresado. La ventana y el resto de la
+  // seleccion estan a la vista en la barra de arriba.
+  const tituloSerie = escala === 'alpha' ? `Alpha F${fondo}` : `Evolución F${fondo}`;
+  const pieSerie = escala === 'alpha'
+    ? `Expresado en puntos básicos: ${casa} menos cada AFP`
+    : escala === 'base' ? 'Expresado en base 100'
+      : `Expresado en ${nombreMetrica(cfg, metrica).toLowerCase()}`;
+  // "Evolución F2 · Expresado en base 100 · 1A" -> un nombre de archivo
   const archivoDe = (t) => t.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -377,7 +381,8 @@ export default function SppPanelPage() {
           {/* El CSV lleva la vista tal cual: nivel, base 100 o alpha en bps.
               El nombre del archivo repite el titulo, que es lo que se lee
               cuando el archivo aparece dias despues en una carpeta. */}
-          <DescargaDatos trazas={traces} nombre={archivoDe(tituloSerie)} />
+          <DescargaDatos trazas={traces}
+            nombre={archivoDe(`${tituloSerie} · ${pieSerie} · ${etiquetaVentana}`)} />
         </div>
         {traces.length ? (
           <PlotlyChart
@@ -402,6 +407,9 @@ export default function SppPanelPage() {
         ) : serieData == null
           ? <div className="loading">Cargando…</div>
           : <p className="page-sub dim">Sin datos para esta selección.</p>}
+        {traces.length > 0 && (
+          <p className="page-sub dim" style={{ textAlign: 'center', margin: '6px 0 0' }}>{pieSerie}</p>
+        )}
       </div>
 
       {/* The filter bar governs everything ABOVE this line. The windows and

@@ -15,13 +15,14 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  GRIS_COMPETIDOR, VENTANAS, colorDe, desdeVentana, fFecha, fmtRend,
+  GRIS_COMPETIDOR, VENTANAS, alphaDe, colorDe, desdeVentana, fFecha, fmtRend,
   grisLinea, nEnt, nombreMetrica, opera as operaCfg, ordenCasa, signo,
   valorMostrado,
 } from '../../lib/spp';
 import SppSeg from '../../components/SppSeg';
 import SppTabs from '../../components/SppTabs';
 import DescargaDatos from '../../components/DescargaDatos';
+import { generarReporte } from './reporte';
 import { chartTheme } from '../../lib/theme';
 
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
@@ -45,7 +46,11 @@ export default function SppPanelPage() {
   const [serieData, setSerieData] = useState(null);
   const [vent, setVent] = useState(null);
   const [pos, setPos] = useState(null);
+  // La fecha de control manda en TODO el panel: grafico, ventanas y
+  // posiciones. Nace en la ultima fecha con valor cuota COMPLETO (todas las
+  // AFP y fondos publicados); cuotas y fondo no cuentan para eso.
   const [fechaControl, setFechaControl] = useState('');
+  const [generando, setGenerando] = useState(false);
   const [fondoPos, setFondoPos] = useState(2);
   const [vistaPos, setVistaPos] = useState('tabla');
 
@@ -59,6 +64,11 @@ export default function SppPanelPage() {
 
   const nombres = useMemo(() => (cfg?.afps || []).map((a) => a.nombre), [cfg]);
   const casa = cfg?.casa;
+
+  useEffect(() => {
+    if (estado?.hasta_completa && !fechaControl) setFechaControl(estado.hasta_completa);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estado?.hasta_completa]);
   const opera = (afp, f) => operaCfg(cfg, afp, f);
 
   // Historic series follows the metric/fund/window/AFP selection - and the
@@ -68,24 +78,26 @@ export default function SppPanelPage() {
   // tables right beside it, and never adopted the true prior close the
   // first time it loaded (it used the calendar fallback instead).
   useEffect(() => {
-    if (!cfg || !afpsSel.length) return;
+    if (!cfg || !afpsSel.length || !fechaControl) return;
     setError(null);
-    const desde = desdeVentana(ventana, estado, vent?.fechas);
+    // Las ventanas de años (1A, 3A...) cuentan hacia atras desde la fecha
+    // de control, no desde el ultimo dato del libro.
+    const desde = desdeVentana(ventana, { hasta: fechaControl }, vent?.fechas);
     // En Alpha la casa es el punto de referencia de cada linea: se pide
     // siempre, aunque el operador la haya apagado en "AFP en pantalla".
     const afps = (escala === 'alpha' && casa && !afpsSel.includes(casa))
       ? [casa, ...afpsSel] : afpsSel;
     const q = new URLSearchParams({
-      fondo: String(fondo), afps: afps.join(','), metrica, desde,
+      fondo: String(fondo), afps: afps.join(','), metrica, desde, hasta: fechaControl,
     });
     apiGet(`/api/spp/serie?${q}`).then(setSerieData).catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, estado, metrica, fondo, ventana, afpsSel, escala === 'alpha',
+  }, [cfg, fechaControl, metrica, fondo, ventana, afpsSel, escala === 'alpha',
       vent?.fechas?.mes, vent?.fechas?.anio, vent?.fechas?.fy]);
 
   // Windows + positions follow metric and control date.
   useEffect(() => {
-    if (!cfg) return;
+    if (!cfg || !fechaControl) return;
     setError(null);
     const q = new URLSearchParams({ metrica });
     if (fechaControl) q.set('fecha', fechaControl);
@@ -124,18 +136,6 @@ export default function SppPanelPage() {
   // Una linea por competidora, ninguna para la casa: la casa es el cero.
   const trazasAlpha = () => {
     const conDatos = series.filter((s) => s.puntos.length);
-    const propia = conDatos.find((s) => s.afp === casa);
-    const otras = conDatos.filter((s) => s.afp !== casa);
-    if (!propia || !otras.length) return [];
-    // Misma regla que Base 100: la primera fecha con dato en TODAS las
-    // series en pantalla, para que cada linea parta del mismo cero.
-    const inicios = conDatos.map((s) => s.puntos[0][0]);
-    const baseFecha = inicios.reduce((m, f) => (f > m ? f : m), inicios[0]);
-    const desde = (s) => s.puntos.filter((p) => p[0] >= baseFecha);
-    const casaPts = desde(propia);
-    if (!casaPts.length) return [];
-    const casaPor = new Map(casaPts.map((p) => [p[0], p[1]]));
-    const casa0 = casaPts[0][1];
     const enPantalla = conDatos.map((s) => s.afp);
     // Sin linea de casa, los grises ya no dicen "esta no es la casa": son
     // lineas iguales. Misma tinta, pero los tonos abiertos de punta a punta
@@ -147,22 +147,17 @@ export default function SppPanelPage() {
       const a = orden.length < 2 ? 0.9 : 0.95 - (0.6 * i) / (orden.length - 1);
       return grisLinea(a.toFixed(2));
     };
-    return otras.map((s) => {
-      const pts = desde(s).filter((p) => casaPor.has(p[0]));
-      if (!pts.length) return null;
-      const otra0 = pts[0][1];
-      const color = tonoDe(s.afp);
+    return alphaDe(series, casa).map((c) => {
+      const color = tonoDe(c.afp);
       return {
-        x: pts.map((p) => p[0]),
-        y: pts.map((p) => ((casaPor.get(p[0]) / casa0) - (p[1] / otra0)) * 10000),
         // Solo la AFP: el titulo ya dice que todo es contra la casa.
-        type: 'scatter', mode: 'lines', name: s.afp,
-        legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
+        x: c.x, y: c.y, type: 'scatter', mode: 'lines', name: c.afp,
+        legendrank: ordenCasa(cfg, enPantalla).indexOf(c.afp) + 1,
         line: { color, width: 2 },
-        hovertemplate: `<b>${s.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
+        hovertemplate: `<b>${c.afp}</b> · %{x}<br>%{y:+,.1f} bps<extra></extra>`,
         hoverlabel: { bordercolor: color },
       };
-    }).filter(Boolean);
+    });
   };
 
   const traces = useMemo(() => {
@@ -203,6 +198,19 @@ export default function SppPanelPage() {
   }, [series, escala, cfg, casa]);
 
   const ct = chartTheme();
+
+  const reportePdf = async () => {
+    if (!cfg || !vent?.control) return;
+    setGenerando(true); setError(null);
+    try {
+      await generarReporte({ cfg, vent });
+    } catch (e) {
+      setError(`No se pudo generar el reporte: ${e.message}`);
+    } finally {
+      setGenerando(false);
+    }
+  };
+
   const etiquetaVentana = (VENTANAS.find(([, v]) => v === ventana) || ['—'])[0];
   const tituloSerie = escala === 'alpha'
     ? `Alpha acumulado de ${casa} · Fondo ${fondo} · ${etiquetaVentana} · bps`
@@ -310,6 +318,10 @@ export default function SppPanelPage() {
 
       <div className="panel">
         <div className="controls spp-controls">
+          <div className="field"><label>Fecha de control</label>
+            <input className="date-input" type="date" value={fechaControl}
+              max={estado?.hasta || undefined}
+              onChange={(e) => e.target.value && setFechaControl(e.target.value)} /></div>
           <div className="field"><label>Tipo de fondo</label>
             <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
               value={fondo}
@@ -333,6 +345,13 @@ export default function SppPanelPage() {
                 const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
                 return next.length ? next : [v];
               })} /></div>
+          <div className="field" style={{ marginLeft: 'auto' }}><label aria-hidden="true">&nbsp;</label>
+            {/* La tabla relativa y los ocho alphas (YTD y FY por fondo) a la
+                fecha de control, como PDF. Se arma en el navegador. */}
+            <button className="btn principal" onClick={reportePdf}
+              disabled={generando || !vent?.control}
+              title="Tabla de rendimiento relativo + alpha YTD y FY de cada fondo">
+              {generando ? 'Generando…' : '↓ Reporte PDF'}</button></div>
         </div>
       </div>
 
@@ -377,7 +396,7 @@ export default function SppPanelPage() {
           without a visible cut the reader keeps changing the top filters and
           wondering why the tables do not move. */}
       <div className="spp-corte" role="separator">
-        <span>Los filtros de arriba mandan hasta aquí · lo que sigue tiene sus propios controles</span>
+        <span>Fondo, ventana, escala y AFP mandan hasta aquí · la fecha de control manda en todo el panel</span>
       </div>
 
       <div className="panel">
@@ -392,9 +411,6 @@ export default function SppPanelPage() {
               </p>
             )}
           </div>
-          <div className="field"><label>Fecha de control</label>
-            <input className="date-input" type="date" value={fechaControl}
-              onChange={(e) => setFechaControl(e.target.value)} /></div>
         </div>
 
         {vent?.control ? (

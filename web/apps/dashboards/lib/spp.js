@@ -218,3 +218,31 @@ export function desdeVentana(v, estado, fechasVent) {
   h.setFullYear(h.getFullYear() - v);
   return h.toISOString().slice(0, 10);
 }
+
+// Alpha acumulado: la curva base 100 de la casa menos la de cada competidora,
+// en puntos basicos, desde la primera fecha con dato en TODAS las series
+// (la misma regla que Base 100: cada linea parte del mismo cero). Solo la
+// matematica: el Panel y el reporte PDF la visten cada uno a su manera.
+export function alphaDe(series, casa) {
+  const conDatos = (series || []).filter((s) => s.puntos?.length);
+  const propia = conDatos.find((s) => s.afp === casa);
+  const otras = conDatos.filter((s) => s.afp !== casa);
+  if (!propia || !otras.length) return [];
+  const inicios = conDatos.map((s) => s.puntos[0][0]);
+  const baseFecha = inicios.reduce((m, f) => (f > m ? f : m), inicios[0]);
+  const desde = (s) => s.puntos.filter((p) => p[0] >= baseFecha);
+  const casaPts = desde(propia);
+  if (!casaPts.length) return [];
+  const casaPor = new Map(casaPts.map((p) => [p[0], p[1]]));
+  const casa0 = casaPts[0][1];
+  return otras.map((s) => {
+    const pts = desde(s).filter((p) => casaPor.has(p[0]));
+    if (!pts.length) return null;
+    const otra0 = pts[0][1];
+    return {
+      afp: s.afp,
+      x: pts.map((p) => p[0]),
+      y: pts.map((p) => ((casaPor.get(p[0]) / casa0) - (p[1] / otra0)) * 10000),
+    };
+  }).filter(Boolean);
+}

@@ -15,9 +15,9 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  GRIS_COMPETIDOR, VENTANAS, colorDe, desdeVentana, fFecha,
-  fmtMetrica, fmtRend, grisLinea, nEnt, nf, nombreMetrica,
-  opera as operaCfg, ordenCasa, signo, valorMostrado,
+  GRIS_COMPETIDOR, VENTANAS, colorDe, desdeVentana, fFecha, fmtRend,
+  grisLinea, nEnt, nombreMetrica, opera as operaCfg, ordenCasa, signo,
+  valorMostrado,
 } from '../../lib/spp';
 import SppSeg from '../../components/SppSeg';
 import SppTabs from '../../components/SppTabs';
@@ -213,12 +213,6 @@ export default function SppPanelPage() {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-  // ---- Cierre por AFP (house first via the one shared ordering) ----------
-  const ordenGlobal = ordenCasa(cfg, nombres);
-  const cierres = (estado?.series || [])
-    .filter((x) => x.fondo === fondo && afpsSel.includes(x.afp))
-    .sort((a, b) => ordenGlobal.indexOf(a.afp) - ordenGlobal.indexOf(b.afp));
-
   // ---- Ventanas tables ---------------------------------------------------
   const ordenRel = ordenCasa(cfg, nombres);
 
@@ -376,34 +370,6 @@ export default function SppPanelPage() {
         ) : serieData == null
           ? <div className="loading">Cargando…</div>
           : <p className="page-sub dim">Sin datos para esta selección.</p>}
-      </div>
-
-      <div className="panel">
-        <div className="panel-title">Cierre por AFP · Fondo {fondo}</div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>AFP</th><th className="num">Valor cuota</th><th className="num">Var. diaria</th>
-              <th className="num">Cuotas</th><th className="num">Fondo S/</th><th className="num">Desde</th>
-            </tr></thead>
-            <tbody>
-              {cierres.length ? cierres.map((s) => (
-                <tr key={s.afp}>
-                  <td><span className="spp-chip"
-                    style={{ background: tintaDe(s.afp, cierres.map((x) => x.afp)) }} />
-                    <b style={{ color: s.afp === casa ? colorDe(cfg, s.afp, true) : 'inherit' }}>
-                      {s.afp}</b></td>
-                  <td className="num">{nf(s.valor)}</td>
-                  <td className={`num ${signo(s.var_bps)}`}>
-                    {s.var_bps == null ? '—' : `${s.var_bps >= 0 ? '+' : ''}${s.var_bps} bps`}</td>
-                  <td className="num">{fmtMetrica(s.cuotas, 'cuotas', true)}</td>
-                  <td className="num">{fmtMetrica(s.fondo_soles, 'fondo', true)}</td>
-                  <td className="num">{s.inicio?.slice(0, 4)}</td>
-                </tr>
-              )) : <tr><td colSpan={6} className="dim">Sin datos para esta selección.</td></tr>}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {/* The filter bar governs everything ABOVE this line. The windows and

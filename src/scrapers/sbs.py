@@ -360,36 +360,28 @@ def acquire_range(
 
 def find_latest_file(folder_name: str, run_date: date, raw_dir: Optional[Path] = None) -> Optional[Path]:
     """
-    Finds the most recent .xls file in data/raw/sbs/vector_precios/{file_type}/
-    up to and including run_date.
-    Used by check_sbs.py and ingestion pipeline extract.py
-    Returns None if no file found.
-    
+    Finds the .xls file for exactly run_date in
+    data/raw/sbs/vector_precios/{folder_name}/ (files are named
+    yyyymmdd[postfix].xls by the scraper). Returns None if absent.
+
+    Exact match on purpose: every caller stamps `date = run_date` on the
+    rows it reads, so returning an earlier file would re-publish stale
+    prices under a new date (this happened: 20260918.xls was ingested
+    as 2026-09-21 and 2026-09-22).
+
     :param folder_name: Vector folder name (vector_completo, tc, rfl, etc.)
     :type folder_name: str
     """
-    download_dir = _resolve_raw_dir(raw_dir)
-    search_dir = download_dir / folder_name
+    search_dir = _resolve_raw_dir(raw_dir) / folder_name
     if not search_dir.exists():
         logger.warning(f'SBS raw dir does not exist: {search_dir}')
         return None
-    
-    files = sorted(search_dir.glob('*.xls'), reverse = True)
-    if not files:
-        logger.warning(f'No SBS files found in {search_dir}')
-        return None
-    
-    cutoff = run_date.strftime('%Y%m%d')
-    target = next(
-        (f for f in files if f.stem[:8] <= cutoff),
-        None
-    )
 
+    target = next(iter(sorted(search_dir.glob(run_date.strftime('%Y%m%d') + '*.xls'))), None)
     if target is None:
-        logger.warning('No SBS file on or before {run_date} in {search_dir}')
+        logger.warning(f'No SBS file for {run_date} in {search_dir}')
     else:
         logger.info(f'Found SBS file in {folder_name}: {target.name}')
-
     return target
 
 def _wait_for_login(driver, timeout_seconds: int) -> bool:

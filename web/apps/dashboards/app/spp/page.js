@@ -304,7 +304,16 @@ export default function SppPanelPage() {
 
   return (
     <div>
-      <h1 className="page-title">Valor Cuota SPP</h1>
+      <div className="spp-cabecera-pagina">
+        <h1 className="page-title">Valor Cuota SPP</h1>
+        {/* El reporte va arriba de todo, junto al titulo: es lo que se lleva
+            de la pagina, no un filtro mas. Tabla relativa y alpha YTD/FY por
+            fondo a la fecha de control, en PDF armado en el navegador. */}
+        <button className="btn principal" onClick={reportePdf}
+          disabled={generando || !vent?.control}
+          title="Tabla de rendimiento relativo + alpha YTD y FY de cada fondo, a la fecha de control">
+          {generando ? 'Generando…' : '↓ Reporte PDF'}</button>
+      </div>
       <p className="page-sub">
         Valor cuota diario del SPP · fuente SBS
         {estado?.filas ? ` · ${nEnt(estado.filas)} fechas (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})` : ''}
@@ -345,13 +354,6 @@ export default function SppPanelPage() {
                 const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
                 return next.length ? next : [v];
               })} /></div>
-          <div className="field" style={{ marginLeft: 'auto' }}><label aria-hidden="true">&nbsp;</label>
-            {/* La tabla relativa y los ocho alphas (YTD y FY por fondo) a la
-                fecha de control, como PDF. Se arma en el navegador. */}
-            <button className="btn principal" onClick={reportePdf}
-              disabled={generando || !vent?.control}
-              title="Tabla de rendimiento relativo + alpha YTD y FY de cada fondo">
-              {generando ? 'Generando…' : '↓ Reporte PDF'}</button></div>
         </div>
       </div>
 

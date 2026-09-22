@@ -26,6 +26,10 @@ import {
   alphaDe, fFecha, fmtRend, opera, ordenCasa, valorMostrado,
 } from '../../lib/spp';
 
+// Proporcion de cada grafico: dos por pagina A4 vertical, con titulo.
+const ANCHO_PX = 1600;
+const ALTO_PX = 900;
+
 // Tonos para papel: distintos entre si y legibles sobre blanco.
 const TONOS = ['#1f2933', '#6b7c93', '#a7b1bd', '#cfd5db'];
 const ROJO_CASA = [208, 43, 31];
@@ -37,13 +41,13 @@ const GRIS = [90, 90, 90];
 const latin1 = (t) => String(t).replace(/−/g, '-').replace(/→/g, '->');
 
 function layoutPapel(titulo) {
-  // Tamanos para papel: la imagen de 1600 px se imprime en 27 cm, asi que
-  // 13 px de pantalla quedaban en letra de 6 puntos.
-  const fuente = { family: 'Helvetica, Arial, sans-serif', size: 19, color: '#222' };
+  // Tamanos para papel: la imagen de 1600 px se imprime en 19 cm (A4
+  // vertical), asi que 13 px de pantalla quedaban en letra de 4 puntos.
+  const fuente = { family: 'Helvetica, Arial, sans-serif', size: 25, color: '#222' };
   return {
-    title: { text: titulo, font: { ...fuente, size: 23 }, x: 0.02, xanchor: 'left' },
+    title: { text: titulo, font: { ...fuente, size: 30 }, x: 0.02, xanchor: 'left' },
     paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: fuente,
-    margin: { l: 100, r: 30, t: 60, b: 80 },
+    margin: { l: 130, r: 30, t: 70, b: 100 },
     legend: { orientation: 'h', y: -0.22, font: fuente },
     xaxis: { gridcolor: '#e6e6e6', linecolor: '#cccccc', tickfont: fuente },
     yaxis: {
@@ -65,7 +69,7 @@ async function imagenAlpha(Plotly, { series, casa, cfg, titulo }) {
   return Plotly.toImage({ data, layout: layoutPapel(titulo) },
     // scale 1.2 basta para imprimir; con 1.5 y sin comprimir, ocho graficos
     // hacian un PDF de 40 MB.
-    { format: 'png', width: 1600, height: 480, scale: 1.2 });
+    { format: 'png', width: ANCHO_PX, height: ALTO_PX, scale: 1.2 });
 }
 
 /**
@@ -93,18 +97,19 @@ export async function generarReporte({ cfg, vent }) {
   }));
   const seriesPorGrafico = await Promise.all(pedidos);
 
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  // A4 vertical, como se archiva y se imprime.
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const W = doc.internal.pageSize.getWidth();
-  const M = 12;
+  const M = 10;
 
   // ---- Pagina 1: la tabla relativa -----------------------------------------
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(30);
-  doc.text(latin1(`Reporte de rentabilidad · ${fFecha(fecha)}`), M, 16);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GRIS);
-  doc.text(latin1(
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(30);
+  doc.text(latin1(`Reporte de rentabilidad · ${fFecha(fecha)}`), M, 15);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GRIS);
+  doc.text(doc.splitTextToSize(latin1(
     `Rendimiento relativo · ${casa} contra cada competidora · inicio de mes ${fFecha(vent.fechas.mes)}`
     + ` · M-1 ${fFecha(vent.fechas.mes1)} · inicio de año ${fFecha(vent.fechas.anio)}`
-    + ` · inicio de ejercicio ${fFecha(vent.fechas.fy)}`), M, 22);
+    + ` · inicio de ejercicio ${fFecha(vent.fechas.fy)}`), W - 2 * M), M, 20);
 
   const cols = (vent.cols_rend || []).filter((c) => c[2] !== 'nivel');
   const orden = ordenCasa(cfg, nombres);
@@ -126,13 +131,15 @@ export async function generarReporte({ cfg, vent }) {
     });
   });
   autoTable(doc, {
-    startY: 27, margin: { left: M, right: M },
+    startY: 26, margin: { left: M, right: M },
     head: [['Fondo', 'AFP', ...cols.map((c) => latin1(c[1]))]],
     body, theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 1.5, halign: 'right',
-      lineColor: [225, 225, 225], lineWidth: 0.2, textColor: [40, 40, 40] },
+    // Trece columnas en 19 cm: letra de 6 puntos, la minima que se lee bien
+    // impresa, y celdas justas; la columna AFP ancha para la casa en negrita.
+    styles: { font: 'helvetica', fontSize: 6, cellPadding: 0.9, halign: 'right',
+      lineColor: [225, 225, 225], lineWidth: 0.2, textColor: [40, 40, 40], overflow: 'visible' },
     headStyles: { fillColor: [240, 240, 240], textColor: [60, 60, 60], fontStyle: 'bold' },
-    columnStyles: { 0: { halign: 'left', cellWidth: 16 }, 1: { halign: 'left', cellWidth: 34 } },
+    columnStyles: { 0: { halign: 'left', cellWidth: 11 }, 1: { halign: 'left', cellWidth: 29 } },
     didParseCell: (d) => {
       if (d.section !== 'body') return;
       const m = meta[d.row.index];
@@ -151,7 +158,7 @@ export async function generarReporte({ cfg, vent }) {
       }
     },
   });
-  doc.setFontSize(8); doc.setTextColor(...GRIS);
+  doc.setFontSize(7); doc.setTextColor(...GRIS);
   // Partida al ancho de la pagina: de una pieza se salia por la derecha.
   const nota = doc.splitTextToSize(latin1(
     `Cada fila de competidora es ${casa} menos esa AFP: positivo significa que ${casa}`
@@ -161,12 +168,12 @@ export async function generarReporte({ cfg, vent }) {
 
   // ---- Una pagina por fondo: alpha YTD y FY ----------------------------------
   const anchoImg = W - 2 * M;
-  const altoImg = anchoImg * 480 / 1600;
+  const altoImg = anchoImg * ALTO_PX / ANCHO_PX;
   for (const f of fondos) {
     doc.addPage();
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(30);
-    doc.text(latin1(`Fondo ${f} · alpha acumulado de ${casa} contra cada AFP · al ${fFecha(fecha)}`), M, 14);
-    let y = 20;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30);
+    doc.text(latin1(`Fondo ${f} · alpha acumulado de ${casa} contra cada AFP · al ${fFecha(fecha)}`), M, 15);
+    let y = 22;
     for (const [etiqueta, desde] of ventanas) {
       const g = seriesPorGrafico.find((x) => x.f === f && x.etiqueta === etiqueta);
       const titulo = `${etiqueta} · desde ${fFecha(desde)} · bps`;
@@ -178,10 +185,11 @@ export async function generarReporte({ cfg, vent }) {
         doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GRIS);
         doc.text(latin1(`${titulo}: sin datos suficientes en la ventana.`), M, y + 10);
       }
-      y += altoImg + 8;
+      y += altoImg + 10;
     }
   }
 
-  doc.save(`Reporte de rentabilidad (${fFecha(fecha).replace(/\//g, '-')}).pdf`);
+  // "dd-mm-aaaa": Windows no admite "/" en un nombre de archivo.
+  doc.save(`Reporte de rentabilidad ${fFecha(fecha).replace(/\//g, '-')}.pdf`);
   return { paginas: 1 + fondos.length, graficos: fondos.length * ventanas.length };
 }

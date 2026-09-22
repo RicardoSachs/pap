@@ -66,3 +66,8 @@
 .spp-vent tr.spp-casa td:not(.spp-fondo) {
   background: color-mix(in srgb, var(--brand) 12%, transparent);
 }
+
+/* Titulo de pagina con una accion a la derecha (el reporte PDF). */
+.spp-cabecera-pagina {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+}

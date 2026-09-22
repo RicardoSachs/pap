@@ -424,7 +424,7 @@ export default function SppPanelPage() {
       </div>
 
       <div className="panel">
-        <div className="controls" style={{ justifyContent: 'space-between' }}>
+        <div className="controls" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
           <div className="panel-title">Posiciones mensuales por rendimiento</div>
           <div className="controls" style={{ margin: 0 }}>
             <div className="field"><label>Tipo de fondo</label>

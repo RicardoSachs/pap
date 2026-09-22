@@ -304,21 +304,32 @@ export default function SppPanelPage() {
 
   return (
     <div>
-      <div className="spp-cabecera-pagina">
-        <h1 className="page-title">Valor Cuota SPP</h1>
-        {/* El reporte va arriba de todo, junto al titulo: es lo que se lleva
-            de la pagina, no un filtro mas. Tabla relativa y alpha YTD/FY por
-            fondo a la fecha de control, en PDF armado en el navegador. */}
-        <button className="btn principal" onClick={reportePdf}
-          disabled={generando || !vent?.control}
-          title="Tabla de rendimiento relativo + alpha YTD y FY de cada fondo, a la fecha de control">
-          {generando ? 'Generando…' : '↓ Reporte PDF'}</button>
-      </div>
+      <h1 className="page-title">Valor Cuota SPP</h1>
       <p className="page-sub">
         Valor cuota diario del SPP · fuente SBS
         {estado?.filas ? ` · ${nEnt(estado.filas)} fechas (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})` : ''}
       </p>
-      <SppTabs />
+      <div className="spp-fila-tabs">
+        <SppTabs />
+        {/* El reporte PDF: un solo icono, a la derecha de las pestanas. Es lo
+            que se lleva de la pagina, no un filtro; el texto va en el tooltip
+            y en aria-label. Tabla relativa + alpha YTD/FY por fondo, a la
+            fecha de control, armado en el navegador. */}
+        <button className="btn principal spp-icono" onClick={reportePdf}
+          disabled={generando || !vent?.control}
+          aria-label="Descargar el reporte de rentabilidad en PDF"
+          title={generando ? 'Generando el reporte…'
+            : 'Reporte de rentabilidad (PDF): tabla relativa + alpha YTD y FY de cada fondo, a la fecha de control'}>
+          {generando ? (
+            <span className="spp-girando">…</span>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 2v8" /><path d="M4.5 6.5 8 10l3.5-3.5" /><path d="M2.5 12.5v1h11v-1" />
+            </svg>
+          )}
+        </button>
+      </div>
 
       {/* Un error se muestra COMO BANDA, no reemplazando la página: antes se
           llevaba por delante los controles con los que el operador podría

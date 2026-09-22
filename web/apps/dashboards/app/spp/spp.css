@@ -67,7 +67,8 @@
   background: color-mix(in srgb, var(--brand) 12%, transparent);
 }
 
-/* Titulo de pagina con una accion a la derecha (el reporte PDF). */
-.spp-cabecera-pagina {
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
-}
+/* Fila de pestanas con una accion a la derecha (el reporte PDF). */
+.spp-fila-tabs { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.spp-fila-tabs .spp-tabs { margin-bottom: 0; }
+.btn.spp-icono { padding: 7px 9px; line-height: 0; }
+.spp-girando { display: inline-block; font-size: 14px; line-height: 16px; }

@@ -61,7 +61,9 @@ async function imagenAlpha(Plotly, { series, casa, cfg, titulo }) {
     line: { color: TONOS[orden.indexOf(c.afp) % TONOS.length], width: 2.2 },
   }));
   return Plotly.toImage({ data, layout: layoutPapel(titulo) },
-    { format: 'png', width: 1600, height: 480, scale: 1.5 });
+    // scale 1.2 basta para imprimir; con 1.5 y sin comprimir, ocho graficos
+    // hacian un PDF de 40 MB.
+    { format: 'png', width: 1600, height: 480, scale: 1.2 });
 }
 
 /**
@@ -165,7 +167,8 @@ export async function generarReporte({ cfg, vent }) {
       const titulo = `${etiqueta} · desde ${fFecha(desde)} · bps`;
       const img = g ? await imagenAlpha(Plotly, { series: g.series, casa, cfg, titulo }) : null;
       if (img) {
-        doc.addImage(img, 'PNG', M, y, anchoImg, altoImg);
+        // 'FAST' = Flate: jsPDF guarda el PNG sin comprimir si no se le pide.
+        doc.addImage(img, 'PNG', M, y, anchoImg, altoImg, undefined, 'FAST');
       } else {
         doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GRIS);
         doc.text(latin1(`${titulo}: sin datos suficientes en la ventana.`), M, y + 10);

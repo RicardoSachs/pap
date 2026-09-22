@@ -68,7 +68,9 @@
 }
 
 /* Fila de pestanas con una accion a la derecha (el reporte PDF). */
-.spp-fila-tabs { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+/* El margen inferior que las pestanas traen (16px) pasa a la fila, para
+   que la barra de filtros no quede pegada. */
+.spp-fila-tabs { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 16px; }
 .spp-fila-tabs .spp-tabs { margin-bottom: 0; }
 .btn.spp-icono { padding: 7px 9px; line-height: 0; }
 .spp-girando { display: inline-block; font-size: 14px; line-height: 16px; }

@@ -37,12 +37,14 @@ const GRIS = [90, 90, 90];
 const latin1 = (t) => String(t).replace(/−/g, '-').replace(/→/g, '->');
 
 function layoutPapel(titulo) {
-  const fuente = { family: 'Helvetica, Arial, sans-serif', size: 13, color: '#222' };
+  // Tamanos para papel: la imagen de 1600 px se imprime en 27 cm, asi que
+  // 13 px de pantalla quedaban en letra de 6 puntos.
+  const fuente = { family: 'Helvetica, Arial, sans-serif', size: 19, color: '#222' };
   return {
-    title: { text: titulo, font: { ...fuente, size: 15 }, x: 0.02, xanchor: 'left' },
+    title: { text: titulo, font: { ...fuente, size: 23 }, x: 0.02, xanchor: 'left' },
     paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: fuente,
-    margin: { l: 80, r: 20, t: 46, b: 60 },
-    legend: { orientation: 'h', y: -0.18, font: fuente },
+    margin: { l: 100, r: 30, t: 60, b: 80 },
+    legend: { orientation: 'h', y: -0.22, font: fuente },
     xaxis: { gridcolor: '#e6e6e6', linecolor: '#cccccc', tickfont: fuente },
     yaxis: {
       title: 'Alpha acumulado (bps)', gridcolor: '#e6e6e6', linecolor: '#cccccc',
@@ -150,9 +152,12 @@ export async function generarReporte({ cfg, vent }) {
     },
   });
   doc.setFontSize(8); doc.setTextColor(...GRIS);
-  doc.text(latin1(`Cada fila de competidora es ${casa} menos esa AFP: positivo significa que ${casa}`
+  // Partida al ancho de la pagina: de una pieza se salia por la derecha.
+  const nota = doc.splitTextToSize(latin1(
+    `Cada fila de competidora es ${casa} menos esa AFP: positivo significa que ${casa}`
     + ` rinde más. La fila de ${casa} va en rendimiento absoluto. Hasta meses en puntos básicos;`
-    + ' FY, YTD y año pasado en porcentaje.'), M, doc.lastAutoTable.finalY + 6);
+    + ' FY, YTD y año pasado en porcentaje.'), W - 2 * M);
+  doc.text(nota, M, doc.lastAutoTable.finalY + 6);
 
   // ---- Una pagina por fondo: alpha YTD y FY ----------------------------------
   const anchoImg = W - 2 * M;

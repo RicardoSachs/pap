@@ -48,7 +48,9 @@ function layoutPapel(titulo) {
   return {
     title: { text: titulo, font: { ...fuente, size: 30 }, x: 0.02, xanchor: 'left' },
     paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: fuente,
-    margin: { l: 130, r: 30, t: 70, b: 100 },
+    // l: sitio para "-450 bps" mas el titulo del eje; con 130 se recortaba
+    // el signo en los fondos que se mueven en cientos de bps.
+    margin: { l: 165, r: 30, t: 70, b: 100 },
     legend: { orientation: 'h', y: -0.22, font: fuente },
     xaxis: { gridcolor: '#e6e6e6', linecolor: '#cccccc', tickfont: fuente },
     yaxis: {

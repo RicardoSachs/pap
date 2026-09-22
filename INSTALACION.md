@@ -1,16 +1,19 @@
 # Instalar el tablero SPP en otra computadora
 
-Guía para dejar el tablero de **Valor Cuota SPP** funcionando en una
-máquina de la red interna, **todo por descarga**: sin USB, sin git y
-sin acceso a PyPI.
+Guía para dejar el tablero —**Valor Cuota SPP** y **Tradebook**—
+funcionando en una máquina de la red interna, **todo por descarga**: sin
+USB, sin git y sin acceso a PyPI.
 
 Al terminar tendrás el tablero abriéndose con doble clic, el libro de
-valor cuota completo desde 1993 y la extracción diaria automática a
-las 16:00 (con reintentos a las 16:30 y 17:00).
+valor cuota completo desde 1993, el Tradebook listo para recibir
+operaciones y la extracción diaria automática a las 16:00 (con
+reintentos a las 16:30 y 17:00).
 
 Verificado el 2026-09-14 reproduciendo ese entorno completo (Python
 3.10.6 portable + los wheels de `pypro_packs`): los tests pasan, la
 API levanta, crea el esquema, registra las series y sirve el tablero.
+Los cambios posteriores se prueban en la máquina de desarrollo y
+viajan con el mismo zip; la base se actualiza sola al arrancar.
 
 ---
 
@@ -52,7 +55,12 @@ portable y se usa tal cual.
 ## 2. Descomprimir el proyecto en su lugar definitivo
 
 Extrae el zip y **renombra la carpeta a `pap`**, en la ruta donde va a
-vivir — por ejemplo `C:\Users\<usuario>\Documents\Proyectos\pap`.
+vivir — por ejemplo `C:\Proyectos\pap`.
+
+Que sea una ruta **local y fija**, fuera de `Documentos`: en estas
+máquinas Windows redirige *Documentos* a OneDrive, y una carpeta que se
+sincroniza cambia de sitio sin avisar (ya pasó: la tarea programada
+quedó apuntando a una ruta que dejó de existir).
 
 Muévelo *ahora*, no después: la tarea programada del paso 7 guarda la
 ruta absoluta, y los datos (`data\`) nacen como carpeta hermana del
@@ -103,7 +111,7 @@ PG_PORT=5432
 PG_DBNAME=pap
 PG_USER=postgres
 PG_PASSWORD=<la contraseña de PostgreSQL>
-DATA_DIR=C:\Users\<usuario>\Documents\Proyectos\data
+DATA_DIR=C:\Proyectos\data
 MACHINE_ID=LAPTOP-NUEVA
 SCRAPER_ENABLED=true
 ```
@@ -180,8 +188,10 @@ Si algo falta, el `.bat` lo dice antes de abrir nada (entorno, `.env`,
 dashboard sin compilar). Si la API muere al arrancar, su ventana queda
 abierta con el error.
 
-Comprueba: el Panel muestra los KPIs y el gráfico, y **Libro** trae
-fechas desde 1993.
+Comprueba: el **Panel** muestra el gráfico y las tablas de rentabilidad
+(vacías hasta cargar el histórico), **Libro** trae fechas desde 1993
+una vez cargado, y **Tradebook → Registro y carga** descarga su
+plantilla XLSX.
 
 ## 7. Extracción diaria automática
 
@@ -220,8 +230,9 @@ Otros comandos del mismo archivo: `-Estado` (qué hay registrado),
 |---|---|
 | El libro llega hasta la semana pasada | Pestaña **Libro** |
 | Profuturo aparece en color y el resto en grises | Pestaña **Panel** |
-| La tarea dice *Ready* y una próxima ejecución | **Registro y carga → Valor cuota**, cuadro "Corrida automática" |
+| La tarea dice *Ready*, una próxima ejecución a las 16:00 y "repeticion: cada 30 min" | `scripts\"Programar extraccion SPP.bat" -Estado` |
 | La extracción escribe rastro | `data\spp\extraccion.log` |
+| El reporte PDF se genera | **Panel**, icono de descarga junto a las pestañas |
 
 Prueba opcional de que el código está sano en esta máquina (necesita
 `pytest`, que no viene en el wheelhouse):
@@ -247,8 +258,10 @@ Deben pasar los 121.
 | `ModuleNotFoundError: multipart` o la API no arranca | Falta la descarga de `dependencias-faltantes-py310` (paso 0). Vuelve a correr el instalador con las dos carpetas. |
 | `Could not find a version that satisfies...` al instalar | La carpeta de `pypro_packs` está incompleta, o el Python no es 3.10 de 64 bits. |
 | `there is no unique or exclusion constraint matching the ON CONFLICT specification` | A la base le faltan restricciones que el código necesita, porque la creó una versión anterior. Doble clic en **`scripts\Verificar esquema.bat`**: compara tu base con el esquema del proyecto, dice exactamente qué falta y se ofrece a agregarlo. |
-| El tablero dice que la tarea apunta a otra copia del proyecto | Quedaron dos carpetas del zip. Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
+| `-Estado` muestra una ruta distinta a esta carpeta, o *resultado* `2147942402` | La tarea apunta a una copia vieja del proyecto (dos carpetas del zip, o la carpeta se movió). Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
+| La extracción termina en 0 s con "El libro ya tiene el dd/mm/aaaa completo" | No es un error: la SBS publica t-2 días hábiles y ese día ya estaba cargado. Los reintentos de las 16:30 y 17:00 dicen lo mismo cuando el de las 16:00 acertó. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |
+| Tras actualizar, el tablero sigue con el comportamiento viejo o da 404 en alguna acción | El tablero que estaba abierto sigue corriendo el código anterior: `Tablero SPP.bat` no reemplaza uno que ya responde. Cierra su ventana y vuelve a lanzarlo. |
 
 ## Actualizar el proyecto más adelante
 
@@ -262,6 +275,9 @@ La dinámica es de dos pasos, sin git en esta máquina:
    ```
 
    y descomprimirlo **encima** de la carpeta `pap`, aceptando reemplazar.
+   **Antes, cierra la ventana del tablero** si está abierta: el `.bat`
+   no reemplaza un tablero que ya responde, y uvicorn no recarga el
+   código de Python por sí solo.
 
 `.env`, `.venv\` y la carpeta `data\` sobreviven: los dos primeros
 porque el zip no los trae, la tercera porque vive fuera del proyecto.
@@ -269,7 +285,9 @@ Las librerías tampoco hay que reinstalarlas, salvo que el proyecto
 estrene alguna dependencia nueva.
 Al volver a abrir `Tablero SPP.bat`, la API aplica sola los cambios de
 esquema y registra lo que falte — no hay paso de migración que se pueda
-olvidar, y la base y su contenido no se tocan.
+olvidar, y el contenido del libro no se toca. Si la actualización cambió
+la hora o la lógica de la tarea programada (esta guía lo dirá), vuelve a
+correr `scripts\Programar extraccion SPP.bat`.
 
 Un detalle: descomprimir encima **no borra** los archivos que
 desaparezcan del proyecto. En la práctica solo significa que se van

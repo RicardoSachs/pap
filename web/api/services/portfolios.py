@@ -2,8 +2,11 @@
 # web/api/services/portfolios.py
 # ---------------------------------------------------------------------------
 # Portfolios service : portfolio list + available position dates.
-# dim_portfolio uses `procode` (the house internal-code name); fact_positions
-# uses a `date` column.
+# dim_portfolio uses `procode` (the house internal-code name). Position dates
+# come from fact_portfolio_valuation: one row per (portfolio, date, source),
+# loaded with the holdings snapshot, so it is the cheap index of snapshot
+# dates. Scanning vw_positions_unified (five UNIONed facts, every row of
+# the portfolio) for DISTINCT date cost hundreds of ms per page load.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -33,7 +36,7 @@ def get_position_dates(portfolio_id: int) -> list[str]:
         cur = conn.cursor()
         cur.execute(
             """SELECT DISTINCT date
-               FROM fact_positions
+               FROM fact_portfolio_valuation
                WHERE portfolio_id = %s
                ORDER BY date DESC""",
             (portfolio_id,),

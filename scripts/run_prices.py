@@ -24,6 +24,10 @@
 #
 #   # SBS backfill all file types
 #   python scripts/run_prices.py --source sbs --backfill
+#
+#   # SBS restatement: replace one date (re-download the raw file first
+#   # with acquire_sbs.py --force, then)
+#   python scripts/run_prices.py --source sbs --date 2026-09-21 --force
 # ---------------------------------------------------------------
 
 import argparse
@@ -78,11 +82,20 @@ def main() -> None:
         help="Run in backfill mode: processes all backfill-pending series.",
     )
 
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="SBS only: restate --date. Replaces staging rows for that date and upserts fact_prices.",
+    )
+
     args = parser.parse_args()
 
     # Validate --file-type is only used with --source sbs
     if args.file_type and args.source != "sbs":
         parser.error("--file-type is only valid when --source sbs.")
+    if args.force and (args.source != "sbs" or args.date is None):
+        parser.error("--force requires --source sbs and an explicit --date.")
 
     setup_logging("run_prices")
 
@@ -118,6 +131,7 @@ def main() -> None:
             run_date=args.date,
             series_override=series_override,
             file_type=args.file_type,
+            force=args.force,
         )
 
 

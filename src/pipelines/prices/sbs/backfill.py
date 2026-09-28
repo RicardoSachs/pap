@@ -10,14 +10,16 @@
 #
 #   1. Stage      - read each raw file once, bulk COPY into the
 #                   existing stg_* table (dates already staged are
-#                   skipped unless force=True).
+#                   skipped unless force=True, which REPLACES them:
+#                   DELETE + COPY per date in one transaction).
 #   2. Register   - ONE discover_and_register() call on the distinct
 #                   instruments across the whole staged range (the
 #                   registry's Pass 0 cost is paid once, not per day).
 #   3. Load facts - one INSERT ... SELECT per field, joining stg ->
 #                   dim_entity_identifiers (codigo_sbs) ->
 #                   series_registry, entirely inside Postgres.
-#                   ON CONFLICT (series_id, date) DO NOTHING.
+#                   ON CONFLICT (series_id, date) DO UPDATE, so a
+#                   restated price overwrites; unchanged rows untouched.
 #   4. Metadata   - one UPDATE series_registry sweep: last_loaded_date
 #                   from MAX(date), backfill-pending -> active.
 #   5. Dims       - one fill-only UPDATE dim_security (types that
@@ -29,8 +31,9 @@
 #
 # Staging dedupes intra-file duplicate instruments per date (the
 # row-by-row path relied on ON CONFLICT for this; COPY cannot).
-# Fact SELECTs use DISTINCT ON (..., date) ORDER BY loaded_at DESC so
-# re-staged dates (force=True) resolve to the latest load.
+# Staging holds ONE copy per date (replace semantics); the DISTINCT ON
+# ... ORDER BY loaded_at DESC in the fact SELECTs is a belt-and-braces
+# guard, not a history mechanism.
 #
 # Known quirk preserved: vector_completo maps variacion -> CHG_PRICE
 # but the registry only registers PX_LAST for that file type, so
@@ -277,8 +280,8 @@ def _stage(spec: BackfillSpec, dates_to_stage: list[date]) -> int:
     """
     Extracts each date's raw file and bulk-COPYs all rows into staging
     in one pass. Intra-file duplicate instruments are dropped (COPY has
-    no ON CONFLICT; the PK includes loaded_at so cross-run duplicates
-    are impossible anyway - each run gets a fresh loaded_at).
+    no ON CONFLICT). Dates that yield rows are DELETEd first, in the same
+    transaction as the COPY, so re-staging (force) replaces, never appends.
     """
     if not dates_to_stage:
         return 0
@@ -286,12 +289,14 @@ def _stage(spec: BackfillSpec, dates_to_stage: list[date]) -> int:
     loaded_at = datetime.now(timezone.utc)
     columns = list(spec.stg_columns) + ["date", "loaded_at"]
     rows: list[tuple] = []
+    replaced: list[date] = []
 
     for run_date in dates_to_stage:
         raw = spec.extract(run_date)
         if raw.empty:
             logger.warning(f"backfill [{spec.file_type}]: no rows for {run_date}.")
             continue
+        replaced.append(run_date)
         before = len(raw)
         raw = raw.drop_duplicates(subset=spec.key_columns, keep="first")
         if len(raw) < before:
@@ -316,8 +321,12 @@ def _stage(spec: BackfillSpec, dates_to_stage: list[date]) -> int:
         sql.Identifier(spec.stg_table),
         sql.SQL(", ").join(map(sql.Identifier, columns)),
     )
+    delete_sql = sql.SQL("DELETE FROM {} WHERE date = ANY(%s)").format(
+        sql.Identifier(spec.stg_table)
+    )
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(delete_sql, (replaced,))
             with cur.copy(copy_sql) as copy:
                 for row in rows:
                     copy.write_row(row)
@@ -423,7 +432,9 @@ def _load_facts(spec: BackfillSpec, start: date, end: date) -> dict[str, int]:
                   AND sr.field     = %(field)s
                   AND sr.source    = 'sbs'
                 WHERE s.{col} IS NOT NULL
-                ON CONFLICT (series_id, date) DO NOTHING
+                ON CONFLICT (series_id, date) DO UPDATE
+                    SET price = EXCLUDED.price, source = EXCLUDED.source
+                    WHERE fact_prices.price IS DISTINCT FROM EXCLUDED.price
             """).format(
                 col=sql.Identifier(stg_col),
                 keys=key_idents,
@@ -432,7 +443,7 @@ def _load_facts(spec: BackfillSpec, start: date, end: date) -> dict[str, int]:
             )
             cur = conn.execute(stmt, {"start": start, "end": end, "field": field})
             counts[field] = cur.rowcount
-            logger.info(f"backfill [{spec.file_type}]: {field}: {cur.rowcount} fact rows inserted.")
+            logger.info(f"backfill [{spec.file_type}]: {field}: {cur.rowcount} fact rows written.")
 
     return counts
 

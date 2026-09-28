@@ -10,6 +10,7 @@
 # Config is loaded once and cached via lru_cache.
 # ---------------------------------------------------------------
 
+from src.shared.env import optional
 from src.shared.logging import setup_logging
 from src.shared.paths import CONFIG_DIR
 
@@ -31,32 +32,83 @@ _LOCAL_CONFIG = (
 )
 _BASE_CONFIG = CONFIG_DIR / 'machine_config.yaml'
 
+# ---- The .env as machine configuration --------------------------
+# market_data_config.yaml lives OUTSIDE the repo, so installing this
+# project on another computer meant creating one more file (and three
+# nested folders) beyond the .env that is required anyway. These
+# variables declare the same thing in the .env, which every install
+# already has to write.
+#
+# Precedence: a value present in the .env wins over the yaml. Empty
+# counts as unset (env.optional), and .env.example ships them all
+# blank, so a machine that configures itself through the yaml - every
+# machine that exists today - behaves exactly as before.
+_ENV_TO_KEY = {
+    'MACHINE_ID': 'machine_id',
+    'BLOOMBERG_ENABLED': 'bloomberg_enabled',
+    'FMS_ENABLED': 'fms_enabled',
+    'SCRAPER_ENABLED': 'scraper_enabled',
+    'AUTOMATED_SCRAPER_ENABLED': 'automated_scraper_enabled',
+    'CHROMEDRIVER_PATH': 'chromedriver_path',
+    'TIMEZONE': 'timezone',
+}
+_FLAGS = frozenset({'bloomberg_enabled', 'fms_enabled',
+                       'scraper_enabled', 'automated_scraper_enabled'})
+
+
+def _parse_flag(text: str) -> bool:
+    """Reads a flag written by a person. A bare bool() would call the
+    string 'false' True, which is exactly what someone would type. The
+    Spanish 'si' is accepted because that is what gets typed here."""
+    return str(text).strip().lower() in ('1', 'true', 'si', 'sí', 'yes', 'on')
+
+
+def _from_env() -> dict:
+    """Machine settings declared in the .env, if any."""
+    out = {}
+    for var, key in _ENV_TO_KEY.items():
+        val = optional(var)
+        if val is None:
+            continue
+        out[key] = _parse_flag(val) if key in _FLAGS else val
+    return out
+
+
 @lru_cache(maxsize=1)
 def get_machine_config() -> dict:
     """
-    Loads and caches machine config from local yaml.
+    Loads and caches machine config from the local yaml, with whatever
+    the .env declares layered on top.
     Call this to access raw config dict if needed.
     Prefer the typed accessor functions below.
     
-    :return: Machine config YAML as dictionary
+    :return: Machine config as dictionary
     :rtype: dict
     """
+    from_env = _from_env()
+
     if _LOCAL_CONFIG.exists():
         path = _LOCAL_CONFIG
     else:
         path = _BASE_CONFIG
-        logger.warning(
-            f'{_LOCAL_CONFIG} not found. '
-            'Copy config/machine_config.yaml there and fill in values '
-            'for this machine before running any pipelines'
-        )
+        # Silent when the .env carries the configuration: on a machine
+        # set up that way the yaml is deliberately absent, and warning
+        # about it on every start reads as a missing step.
+        if not from_env:
+            logger.warning(
+                f'{_LOCAL_CONFIG} not found. '
+                'Copy config/machine_config.yaml there (or declare MACHINE_ID / '
+                'SCRAPER_ENABLED / ... in .env) and fill in values for this '
+                'machine before running any pipelines'
+            )
 
     with open(path, encoding='utf-8') as f:
         cfg = yaml.safe_load(f)
 
     if not isinstance(cfg, dict):
         raise ValueError(f'Invalid machine config at {path} - expected a YAML mapping.')
-    
+
+    cfg.update(from_env)
     return cfg
 
 # ---- Typed accessors ------------------------------------------
@@ -144,7 +196,8 @@ def assert_scraper() -> None:
     if not scraper_enabled():
         raise RuntimeError(
             f'Scraper is not enabled on this machine ({machine_id()}). '
-            'Set scraper_enabled: true in market_data_config.yaml.'
+            'Set SCRAPER_ENABLED=true in .env, or scraper_enabled: true in '
+            'market_data_config.yaml.'
         )
     
     driver = chromedriver_path()
@@ -162,5 +215,6 @@ def assert_automated_scraper() -> None:
     if not automated_scraper_enabled():
         raise RuntimeError(
             f'Automated scaper is not enabled on this machine ({machine_id()}). '
-            f'Set automated_scraper_enabled: true in market_data_config.yaml. '
+            'Set AUTOMATED_SCRAPER_ENABLED=true in .env, or '
+            'automated_scraper_enabled: true in market_data_config.yaml.'
         )

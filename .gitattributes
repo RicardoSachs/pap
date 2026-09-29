@@ -1,0 +1,25 @@
+# .gitattributes
+# ---------------------------------------------------------------
+# One line ending in the repository: LF.
+#
+# The dashboards front end was adopted from another repository
+# (dpreque/portfolio_analytics_platform, see
+# web/apps/dashboards/vendor/upstream.json) whose files are LF, while
+# the local tree had them in CRLF. Without this, every copied file
+# showed as changed top to bottom, and comparing a new upstream version
+# with ours was impossible: the diff said "everything changed" when
+# nothing had.
+#
+# Windows script files stay CRLF on purpose: the Task Scheduler and
+# cmd.exe handle them better that way.
+# ---------------------------------------------------------------
+
+* text=auto eol=lf
+
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+*.png  binary
+*.xlsx binary
+*.xls  binary
+*.dump binary

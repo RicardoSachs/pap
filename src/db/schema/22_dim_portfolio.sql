@@ -6,10 +6,14 @@
 --   - own_account       (FMS-sourced accounts we manage)
 --   - regulator_filing  (SBS-sourced filings from peer institutions)
 --   - etf               (Bloomberg or scraped ETF holdings)
+--   - benchmark         (hand-made composite indices, source 'model';
+--                        definitions in dim_benchmark_version, facts
+--                        from src/pipelines/analytics/benchmark/)
 --
 -- The same logical portfolio coming from two sources is two rows
--- (different source values). parent_entity_id links ETF portfolios
--- back to their dim_entity row so price + holdings can be joined.
+-- (different source values). parent_entity_id links ETF and benchmark
+-- portfolios back to their dim_entity row so price + holdings can be
+-- joined.
 --
 -- Status reuses the standard lifecycle:
 --   backfill-pending | active | suspended | inactive | error-hold
@@ -18,8 +22,8 @@
 CREATE TABLE IF NOT EXISTS dim_portfolio (
     portfolio_id     INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     procode          TEXT NOT NULL,
-    source           TEXT NOT NULL,            -- fms | sbs | bloomberg
-    portfolio_type   TEXT NOT NULL,            -- own_account | regulator_filing | etf
+    source           TEXT NOT NULL,            -- fms | sbs | bloomberg | model
+    portfolio_type   TEXT NOT NULL,            -- own_account | regulator_filing | etf | benchmark
     display_name     TEXT,
     base_currency    TEXT,
     parent_entity_id INTEGER,                  -- links ETFs back to dim_entity

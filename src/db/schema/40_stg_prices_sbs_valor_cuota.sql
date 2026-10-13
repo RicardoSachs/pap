@@ -40,5 +40,24 @@ CREATE TABLE IF NOT EXISTS stg_prices_sbs_valor_cuota (
     PRIMARY KEY (afp, fondo, date, loaded_at)
 );
 
+-- ---- Convergence for databases created from the fork ---------------
+-- The fork's version of this table named the provenance column
+-- `fuente`. CREATE TABLE IF NOT EXISTS leaves an existing table as it
+-- is, and the loader inserts into `source`: on such a database every
+-- staging insert would fail. Rename in place when the old column is
+-- there; a no-op everywhere else.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'stg_prices_sbs_valor_cuota' AND column_name = 'fuente'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'stg_prices_sbs_valor_cuota' AND column_name = 'source'
+    ) THEN
+        ALTER TABLE stg_prices_sbs_valor_cuota RENAME COLUMN fuente TO source;
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_stg_prices_sbs_valor_cuota_date
     ON stg_prices_sbs_valor_cuota (date);

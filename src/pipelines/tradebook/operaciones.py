@@ -49,7 +49,7 @@ ORIGENES_TRADER = ("excel", "manual")
 EXIGE_A_MANO = ("precio", "moneda")
 
 # Como puede venir llamada cada columna. La clave es el nombre normalizado
-# por tabular.clave_col (sin tildes, minusculas, sin separadores).
+# por tabular.column_key (sin tildes, minusculas, sin separadores).
 _ALIAS = {
     "fecha": ("fecha", "date", "fechaoperacion", "fechanegociacion", "dia",
               "tradedate"),
@@ -113,7 +113,7 @@ def normalizar_lado(v) -> str:
     operacion, que es el peor error posible en este dato.
     """
     t = (_texto(v) or "").lower()
-    t = tabular.sin_tildes(t)
+    t = tabular.strip_accents(t)
     if t in _COMPRA:
         return "compra"
     if t in _VENTA:
@@ -139,7 +139,7 @@ def _fecha(v, campo: str):
         return v.date()
     if isinstance(v, dt.date):
         return v
-    f = tabular.fecha_flexible(_texto(v) or "")
+    f = tabular.parse_date(_texto(v) or "")
     if f is None:
         raise ValueError(f"No se entiende la {campo} '{_texto(v) or ''}'.")
     return f
@@ -152,7 +152,7 @@ def _numero(v, campo: str, coma_decimal=None, obligatorio=True):
         return None
     if isinstance(v, (int, float)):
         return float(v)
-    n = tabular.num_flexible(str(v), coma_decimal)
+    n = tabular.parse_number(str(v), coma_decimal)
     if n is None:
         raise ValueError(f"No se entiende {campo}: '{v}'.")
     return float(n)
@@ -419,13 +419,13 @@ def leer_archivo(datos, hoja=None, origen: str = "excel",
     """
     if origen not in ORIGENES:
         raise ValueError(f"Origen '{origen}' desconocido.")
-    if tabular.es_excel(datos):
-        filas, nombre_hoja, hojas = tabular.filas_de_excel(datos, hoja)
+    if tabular.is_excel(datos):
+        filas, nombre_hoja, hojas = tabular.rows_from_excel(datos, hoja)
         origen_fmt = "excel"
         textos = [str(c).strip() for f in filas for c in f
                   if isinstance(c, str) and re.fullmatch(r"-?[\d.,\s]+", c.strip())
                   and re.search(r"\d", c)]
-        coma_decimal = tabular.estilo_decimal(textos)
+        coma_decimal = tabular.decimal_style(textos)
         # Mismo criterio que el lector de series: un separador decimal mal
         # supuesto no se nota y multiplica por mil.
         if coma_decimal is None and any("," in t or "." in t for t in textos):
@@ -434,11 +434,11 @@ def leer_archivo(datos, hoja=None, origen: str = "excel",
                 "decimal del archivo. Da formato numerico a las celdas en "
                 "Excel, o exporta a CSV, y vuelve a subirlo.")
     else:
-        filas, _sep, coma_decimal = tabular.filas_de_csv(datos)
+        filas, _sep, coma_decimal = tabular.rows_from_csv(datos)
         origen_fmt, nombre_hoja, hojas = "csv", None, []
 
-    icab = tabular.fila_cabecera(
-        filas, lambda c: tabular.clave_col(c) in _ALIAS["fecha"])
+    icab = tabular.header_row(
+        filas, lambda c: tabular.column_key(c) in _ALIAS["fecha"])
     if icab is None:
         vistas = [str(c) for f in filas[:3] for c in f
                   if str(c).strip() and str(c) != "nan"]
@@ -450,8 +450,8 @@ def leer_archivo(datos, hoja=None, origen: str = "excel",
     if icab:
         avisos.append(f"Los encabezados estaban en la fila {icab + 1}; "
                       "lo anterior se ignoro.")
-    cabecera = tabular.limpiar_cabecera(filas[icab])
-    claves = [tabular.clave_col(c) for c in cabecera]
+    cabecera = tabular.clean_header(filas[icab])
+    claves = [tabular.column_key(c) for c in cabecera]
     icol = {campo: next((i for i, c in enumerate(claves) if c in alias), None)
             for campo, alias in _ALIAS.items()}
 

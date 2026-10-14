@@ -46,7 +46,6 @@
 
 import datetime as dt
 import logging
-from calendar import monthrange
 
 from src.db.queries import update_series_run_metadata
 from src.pipelines.analytics.benchmark import definitions

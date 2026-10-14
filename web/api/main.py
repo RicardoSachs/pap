@@ -1,4 +1,3 @@
-
 # web/api/main.py
 # ---------------------------------------------------------------------------
 # FastAPI app for the analytics dashboards.
@@ -10,62 +9,28 @@
 # The Next.js dev server (port 3000) proxies /api here via next.config rewrites.
 # For an integrated test, build the bundle (npm run build) so out/ exists and is
 # served from / below.
+#
+# The API does not touch the database schema at startup: the schema is
+# applied by scripts/bootstrap_db.py (or scripts/crear_base.py on an office
+# machine) and the SPP series are registered by the pipeline runs.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from web.api.routes import (contribution, formatos, portfolios, positions,
-                            prices, tradebook,
-                            securities, spp, spp_carga)
+from web.api.routes import (benchmarks, contribution, formats, portfolios,
+                            positions, prices, securities, spp, spp_write,
+                            tradebook)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Converges the database on startup: applies the schema files, then
-    registers the SPP series.
-
-    Both steps are idempotent (CREATE TABLE IF NOT EXISTS, plus the
-    convergence ALTERs in 56_spp_migraciones.sql, and 51 upserts), and
-    both exist for the machine that installs this project from a zip:
-    updating means unzipping a newer copy, with no migration step a
-    person could forget. Without the registration, a freshly created
-    database yields a tablero that opens and reads empty but refuses
-    every write with "no hay serie registrada - corre
-    run_sbs_valor_cuota.py --solo-registro", a step nothing in the UI
-    mentions.
-
-    A failure here must NEVER stop the API from starting: the tablero
-    is also how the operator finds out what is wrong, and an API that
-    refuses to boot can only say it through a console they may not be
-    looking at.
-    """
-    try:
-        from src.db.bootstrap import create_schema
-        from src.db.connection import get_connection
-        with get_connection() as conn:
-            create_schema(conn)
-    except Exception as exc:
-        logger.warning(f"schema check skipped at startup: {exc}")
-    try:
-        from src.pipelines.prices.sbs.valor_cuota.run import ensure_registered
-        ensure_registered()
-    except Exception as exc:
-        logger.warning(f"SPP series registration skipped at startup: {exc}")
-    yield
-
-
-app = FastAPI(title="Portfolio Analytics API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Portfolio Analytics API", version="0.1.0")
 
 # Dev convenience: allow the Next dev server (localhost:3000) to call the API
 # directly. In production the bundle is same-origin, so this is harmless.
@@ -82,9 +47,10 @@ app.include_router(portfolios.router)
 app.include_router(positions.router)
 app.include_router(contribution.router)
 app.include_router(spp.router)
-app.include_router(spp_carga.router)
+app.include_router(spp_write.router)
+app.include_router(benchmarks.router)
 app.include_router(tradebook.router)
-app.include_router(formatos.router)
+app.include_router(formats.router)
 
 
 @app.get("/api/health")
@@ -107,13 +73,12 @@ class Bundle(StaticFiles):
     """
 
     def file_response(self, *args, **kwargs):
-        respuesta = super().file_response(*args, **kwargs)
-        ruta = str(getattr(respuesta, "path", "")).replace("\\", "/")
-        inmutable = "/_next/static/" in ruta
-        respuesta.headers["Cache-Control"] = (
-            "public, max-age=31536000, immutable" if inmutable
-            else "no-cache")
-        return respuesta
+        response = super().file_response(*args, **kwargs)
+        path = str(getattr(response, "path", "")).replace("\\", "/")
+        immutable = "/_next/static/" in path
+        response.headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable" if immutable else "no-cache")
+        return response
 
 
 # Serve the built Next.js static export from / when it exists (post-build).
@@ -123,4 +88,3 @@ if _BUNDLE.is_dir():
     logger.info(f"serving static bundle from {_BUNDLE}")
 else:
     logger.info(f"no static bundle at {_BUNDLE} (dev mode -- use the Next dev server)")
-

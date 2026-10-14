@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from src.pipelines.tradebook import operaciones as tb
-from web.api.routes._spp_comun import XLSX, es_si, fecha_iso, leer_archivo
+from web.api.routes._spp_common import XLSX, is_yes, iso_date, read_upload
 from web.api.services import tradebook as svc
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ def get_resumen(desde: str | None = Query(None), hasta: str | None = Query(None)
     """Aggregated activity under the filters the panel is showing."""
     try:
         return JSONResponse(svc.resumen(
-            desde=fecha_iso(desde), hasta=fecha_iso(hasta),
+            desde=iso_date(desde), hasta=iso_date(hasta),
             fondo=_entero(fondo), moneda=moneda or None, lado=lado or None,
             trader=trader or None, origen=origen or None, periodo=periodo))
     except (ValueError, TypeError) as exc:
@@ -76,7 +76,7 @@ def get_operaciones(desde: str | None = Query(None),
                     limite: int = Query(500)) -> JSONResponse:
     try:
         return JSONResponse({"operaciones": tb.leer(
-            desde=fecha_iso(desde), hasta=fecha_iso(hasta), fondo=_entero(fondo),
+            desde=iso_date(desde), hasta=iso_date(hasta), fondo=_entero(fondo),
             lado=lado or None, contraparte=contraparte or None,
             instrumento=instrumento or None, trader=trader or None,
             origen=origen or None, limite=limite)})
@@ -139,10 +139,8 @@ async def post_archivo(archivo: UploadFile = File(...),
     not name one, which is the usual shape of a file that is all one
     person's.
     """
-    crudo, error = await leer_archivo(archivo)
-    if error:
-        return error
-    solo_revisar = es_si(revisar)
+    crudo = await read_upload(archivo)
+    solo_revisar = is_yes(revisar)
     try:
         if solo_revisar:
             informe = tb.leer_archivo(crudo, hoja=hoja.strip() or None,
@@ -181,7 +179,7 @@ def get_exportar(desde: str | None = Query(None), hasta: str | None = Query(None
                  instrumento: str | None = Query(None),
                  trader: str | None = Query(None),
                  origen: str | None = Query(None)) -> Response:
-    datos = tb.exportar(desde=fecha_iso(desde), hasta=fecha_iso(hasta),
+    datos = tb.exportar(desde=iso_date(desde), hasta=iso_date(hasta),
                         fondo=_entero(fondo), lado=lado or None,
                         contraparte=contraparte or None,
                         instrumento=instrumento or None,

@@ -1,14 +1,12 @@
-
 # web/api/routes/spp.py
 # ---------------------------------------------------------------------------
-# /api/spp : read-only routes of the SPP valor cuota tablero (config, estado,
-# series, ventanas, posiciones, libro, CSV export). Write operations (manual
-# registry, uploads, extraction trigger) stay CLI/scheduler-side in phase 1.
+# /api/spp : read routes of the SPP valor cuota tablero (config, status,
+# series, windows, positions, book table, CSV export). Writes live in
+# spp_write.py.
 #
-# URL parameters come from the browser and can be anything: readers clamp
-# integers and validate metrics against the allowlist so a ?limite=-1 or a
-# ?meses=abc never becomes a 500 (df.tail(-1) would return almost the whole
-# book - the opposite of a limit).
+# URL parameters come from the browser and can be anything: integers are
+# clamped by Query bounds and metrics are validated against the allowlist,
+# so a ?limit=-1 or a ?months=abc never becomes a 500.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -16,24 +14,15 @@ import re
 
 from fastapi import APIRouter, Query, Response
 
-from web.api.routes._spp_comun import fecha_iso as _fecha
+from web.api.routes._spp_common import iso_date
 from web.api.services import spp as svc
-from src.pipelines.prices.sbs.valor_cuota import afps as reg
 
 router = APIRouter(prefix="/api/spp", tags=["spp"])
 
 
-def _entero(crudo, por_defecto: int, minimo: int, maximo: int) -> int:
-    try:
-        v = int(str(crudo).strip())
-    except (TypeError, ValueError):
-        return por_defecto
-    return max(minimo, min(maximo, v))
-
-
-def _nombre_seguro(nombre: str, por_defecto: str) -> str:
-    limpio = re.sub(r"[^A-Za-z0-9_.-]", "_", str(nombre or "")).strip("._-")
-    return limpio[:120] or por_defecto
+def _safe_name(name: str, default: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_.-]", "_", str(name or "")).strip("._-")
+    return clean[:120] or default
 
 
 @router.get("/config")
@@ -41,77 +30,57 @@ def get_config() -> dict:
     return svc.config()
 
 
-@router.get("/estado")
-def get_estado() -> dict:
-    return svc.estado()
+@router.get("/status")
+def get_status() -> dict:
+    return svc.status()
 
 
-@router.get("/serie")
-def get_serie(
-    fondo: str = Query("2"),
+@router.get("/series")
+def get_series(
+    fund: int = Query(2, ge=0, le=99),
     afps: str = Query("", description="comma-separated display names"),
-    metrica: str = Query("valor_cuota"),
-    desde: str | None = Query(None),
-    hasta: str | None = Query(None),
+    metric: str = Query("valor_cuota"),
+    date_from: str | None = Query(None, alias="from"),
+    date_to: str | None = Query(None, alias="to"),
 ) -> dict:
-    pedidas = [a.strip().upper() for a in afps.split(",") if a.strip()]
-    return svc.serie(_entero(fondo, 2, 0, 99), pedidas, metrica,
-                     _fecha(desde), _fecha(hasta))
+    requested = [a.strip().upper() for a in afps.split(",") if a.strip()]
+    return svc.series(fund, requested, metric, iso_date(date_from), iso_date(date_to))
 
 
-@router.get("/ventanas")
-def get_ventanas(fecha: str | None = Query(None),
-                 metrica: str = Query("valor_cuota")) -> dict:
-    return svc.ventanas(_fecha(fecha), metrica)
+@router.get("/windows")
+def get_windows(date: str | None = Query(None),
+                metric: str = Query("valor_cuota")) -> dict:
+    return svc.windows(iso_date(date), metric)
 
 
-@router.get("/posiciones")
-def get_posiciones(fecha: str | None = Query(None),
-                   meses: str = Query("24"),
-                   metrica: str = Query("valor_cuota")) -> dict:
-    return svc.posiciones(_fecha(fecha), _entero(meses, 24, 1, 120), metrica)
+@router.get("/positions")
+def get_positions(date: str | None = Query(None),
+                  months: int = Query(24, ge=1, le=120),
+                  metric: str = Query("valor_cuota")) -> dict:
+    return svc.positions(iso_date(date), months, metric)
 
 
-@router.get("/tabla")
-def get_tabla(limite: str = Query("60"),
-              metrica: str = Query("valor_cuota"),
-              fondo: str = Query("todos")) -> dict:
-    crudo = limite.strip().lower()
-    lim = None if crudo in ("todas", "todos") else _entero(crudo, 60, 1, 5000)
-    return svc.tabla(lim, metrica.strip(), fondo.strip().lower())
+@router.get("/table")
+def get_table(limit: int = Query(60, ge=0, le=20000, description="0 = the whole book"),
+              metric: str = Query("valor_cuota"),
+              fund: str = Query("all")) -> dict:
+    return svc.table(limit or None, metric.strip(), fund.strip().lower())
 
 
-@router.get("/indice/{tipo}/tabla")
-def get_indice_tabla(tipo: str, limite: str = Query("60")):
-    """Un indice compuesto (target o benchmark) dia a dia, sobre la rejilla
-    de fechas del libro."""
-    try:
-        t = reg.tipo_indice(tipo)
-    except ValueError as exc:
-        return JSONResponse({"ok": False, "motivo": str(exc)}, status_code=404)
-    crudo = limite.strip().lower()
-    lim = None if crudo in ("todas", "todos") else _entero(crudo, 60, 1, 5000)
-    return svc.tabla_indice(t, lim)
-
-
-@router.get("/exportar")
-def get_exportar(metrica: str = Query("todas"),
-                 fondo: str = Query("todos"),
-                 limite: str = Query(""),
-                 desde: str | None = Query(None),
-                 hasta: str | None = Query(None)) -> Response:
-    crudo = limite.strip().lower()
-    lim = None if crudo in ("", "todas", "todos") else _entero(crudo, 60, 1, 5000)
-    fondo_arg = fondo.strip().lower()
-
-    partes = ["spp",
-              f"F{fondo_arg}" if fondo_arg != "todos" else "todos_los_fondos",
-              metrica.strip(),
-              f"{lim}filas" if lim else "serie_completa"]
-    nombre = _nombre_seguro("_".join(partes), "spp")
-
-    datos = svc.exportar_csv(metrica.strip(), fondo_arg, lim,
-                             _fecha(desde), _fecha(hasta))
+@router.get("/export")
+def get_export(metric: str = Query("all"),
+               fund: str = Query("all"),
+               limit: int = Query(0, ge=0, le=20000, description="0 = the whole book"),
+               date_from: str | None = Query(None, alias="from"),
+               date_to: str | None = Query(None, alias="to")) -> Response:
+    fund_arg = fund.strip().lower()
+    parts = ["spp",
+             f"F{fund_arg}" if fund_arg != "all" else "all_funds",
+             metric.strip(),
+             f"{limit}rows" if limit else "full_series"]
+    name = _safe_name("_".join(parts), "spp")
+    data = svc.export_csv(metric.strip(), fund_arg, limit or None,
+                          iso_date(date_from), iso_date(date_to))
     return Response(
-        content=datos, media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{nombre}.csv"'})
+        content=data, media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})

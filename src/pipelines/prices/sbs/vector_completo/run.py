@@ -22,9 +22,13 @@ logger = logging.getLogger(__name__)
 FILE_TYPE = "vector_completo"
 
 
-def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] = None) -> None:
+def run(
+    run_date: Optional[date] = None,
+    series_override: Optional[list[dict]] = None,
+    force: bool = False,
+) -> None:
     run_date = run_date or date.today()
-    logger.info(f"=== prices/sbs/vector_completo | run_date={run_date} | mode={'backfill' if series_override else 'incremental'} ===")
+    logger.info(f"=== prices/sbs/vector_completo | run_date={run_date} | mode={'force' if force else 'backfill' if series_override else 'incremental'} ===")
 
     if series_override is None and not is_reporting_day(run_date):
         logger.info(f"{run_date} is not an SBS reporting day. Skipping.")
@@ -65,8 +69,13 @@ def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] =
         return
 
     # Step 4: classify
-    securities = _classify(securities, run_date)
-    to_process = [s for s in securities if s.get("start_date")]
+    # force = restatement: every series reloads for run_date regardless of
+    # what fact_prices holds (stg rows replaced, facts upserted below).
+    if force:
+        to_process = [dict(s, start_date=run_date) for s in securities]
+    else:
+        securities = _classify(securities, run_date)
+        to_process = [s for s in securities if s.get("start_date")]
     if not to_process:
         logger.info("All series up to date. Exiting.")
         return
@@ -78,6 +87,8 @@ def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] =
         return
 
     with get_connection() as conn:
+        # Replace semantics: one copy per date, the file is the truth.
+        conn.execute("DELETE FROM stg_prices_sbs_vector_completo WHERE date = %s", (run_date,))
         load_stg(conn, raw_df, run_date)
 
     # Step 6: read stg and transform
@@ -100,7 +111,7 @@ def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] =
         loaded, skipped = load_facts(conn, facts_df)
         load_dims(conn, dims_df)
 
-    logger.info(f"Loaded {loaded} rows, skipped {skipped}.")
+    logger.info(f"Wrote {loaded} rows, {skipped} unchanged.")
     _update_metadata(to_process, facts_df, "success")
 
     if series_override is not None:

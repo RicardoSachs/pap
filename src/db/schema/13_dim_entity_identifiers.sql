@@ -41,6 +41,37 @@ CREATE TABLE IF NOT EXISTS dim_entity_identifiers (
     PRIMARY KEY (entity_id, id_type, source, id_value)
 );
 
+-- ---- Convergence for databases created before release 0.1.8 ----
+-- The CREATE above is a no-op on a table that already exists, so an
+-- older database keeps the 0.1.7 shape: no first/last_seen_date and a
+-- three-column primary key. The view at the end of this file reads
+-- first_seen_date and would fail - and create_schema stops at the first
+-- failing file, so nothing numbered after 13 would be applied. These
+-- guarded statements bring the old shape up to date before anything
+-- else in this file runs; on a fresh database every one of them is a
+-- no-op.
+--
+-- The key swap is done in place: the new key is a superset of the old
+-- one, so existing rows are unique under it, and the new columns start
+-- NULL ("unknown", as the banner says).
+ALTER TABLE dim_entity_identifiers ADD COLUMN IF NOT EXISTS first_seen_date DATE;
+ALTER TABLE dim_entity_identifiers ADD COLUMN IF NOT EXISTS last_seen_date DATE;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'dim_entity_identifiers_pkey'
+          AND conrelid = 'dim_entity_identifiers'::regclass
+          AND array_length(conkey, 1) = 3
+    ) THEN
+        ALTER TABLE dim_entity_identifiers DROP CONSTRAINT dim_entity_identifiers_pkey;
+        ALTER TABLE dim_entity_identifiers
+            ADD CONSTRAINT dim_entity_identifiers_pkey
+            PRIMARY KEY (entity_id, id_type, source, id_value);
+    END IF;
+END $$;
+
 -- Exactly one CURRENT value per (entity, id_type, source)
 CREATE UNIQUE INDEX IF NOT EXISTS uq_entity_identifiers_primary
     ON dim_entity_identifiers (entity_id, id_type, source)

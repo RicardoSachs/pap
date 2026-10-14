@@ -5,7 +5,8 @@
 # so the two can never drift.
 #
 # Each value is the dotted path of a module exposing
-# run(run_date: date | None, series_override: list[dict] | None).
+# run(run_date: date | None, series_override: list[dict] | None,
+#     force: bool).
 # ---------------------------------------------------------------
 
 import importlib
@@ -27,11 +28,14 @@ def run_sbs_pipelines(
     run_date: date | None = None,
     series_override: list[dict] | None = None,
     file_type: str | None = None,
+    force: bool = False,
 ) -> None:
     """
     Runs one SBS sub-pipeline (file_type given) or all of them.
     Each sub-pipeline gates itself on the SBS reporting calendar,
     so calling this on a non-reporting day is a cheap no-op.
+    force=True restates run_date: staging rows for that date are
+    replaced and fact_prices upserted, ignoring last_price_date.
     """
     to_run = (
         {file_type: SBS_PIPELINES[file_type]}
@@ -41,4 +45,4 @@ def run_sbs_pipelines(
     for name, module_path in to_run.items():
         logger.info(f"--- SBS pipeline: {name} ---")
         mod = importlib.import_module(module_path)
-        mod.run(run_date=run_date, series_override=series_override)
+        mod.run(run_date=run_date, series_override=series_override, force=force)

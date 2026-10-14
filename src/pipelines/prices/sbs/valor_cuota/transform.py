@@ -6,9 +6,9 @@
 # rows, one per metric with a value, resolved against series_registry
 # through the (procode, field) map the caller provides.
 #
-# The wide-table problems the monitor had to solve (completar_vacios,
+# The wide-table problems the monitor had to solve (filling gaps,
 # empty cells clobbering data) do not exist here: in long format a
-# missing metric is a row that is not inserted, and a later extraction
+# missing metric is a row that is not inserted, and a later scrape
 # that brings it is a plain INSERT on a new (series_id, date).
 # ---------------------------------------------------------------
 
@@ -16,12 +16,12 @@ import logging
 
 import pandas as pd
 
-from src.pipelines.prices.sbs.valor_cuota.afps import METRICA_FIELD, SOURCE_SBS, procode
+from src.pipelines.prices.sbs.valor_cuota.afps import METRIC_FIELD, SOURCE_SBS, procode
 
 logger = logging.getLogger(__name__)
 
 # staging column -> business metric name
-STG_METRICA = {
+STG_METRIC = {
     "valor_cuota": "valor_cuota",
     "cuotas": "cuotas",
     "fondo_soles": "fondo",
@@ -37,43 +37,43 @@ def transform(stg_df: pd.DataFrame,
 
     series_map: (procode, field) -> series row, from afps.series_map().
     Rows whose (afp, fondo) resolve to no registered series are dropped
-    with a warning - config/afps.yaml is the contract, and a clave the
+    with a warning - config/afps.yaml is the contract, and a key the
     registry does not know should have been caught at staging.
     """
     if stg_df.empty:
         return pd.DataFrame(columns=FACT_COLUMNS)
 
     fact_rows = []
-    sin_serie: set[str] = set()
+    unresolved: set[str] = set()
 
     # Column-wise zip instead of iterrows: the historical XLS brings
     # ~100k staged rows through here inside a request the user waits on,
     # and materializing a Series per row costs ~10x for nothing.
-    columnas = [stg_df["afp"], stg_df["fondo"], stg_df["date"]]
-    columnas += [stg_df[c] for c in STG_METRICA]
-    for afp, fondo, fecha, *metricas in zip(*columnas):
+    columns = [stg_df["afp"], stg_df["fondo"], stg_df["date"]]
+    columns += [stg_df[c] for c in STG_METRIC]
+    for afp, fund, day, *metrics in zip(*columns):
         try:
-            code = procode(afp, int(fondo))
+            code = procode(afp, int(fund))
         except ValueError:
-            sin_serie.add(f"{afp}_f{fondo}")
+            unresolved.add(f"{afp}_f{fund}")
             continue
-        for (stg_col, metrica), val in zip(STG_METRICA.items(), metricas):
+        for (stg_col, metric), val in zip(STG_METRIC.items(), metrics):
             if val is None or pd.isna(val):
                 continue
-            serie = series_map.get((code, METRICA_FIELD[metrica]))
-            if serie is None:
-                sin_serie.add(f"{code}:{METRICA_FIELD[metrica]}")
+            series = series_map.get((code, METRIC_FIELD[metric]))
+            if series is None:
+                unresolved.add(f"{code}:{METRIC_FIELD[metric]}")
                 continue
             fact_rows.append({
-                "series_id": serie["series_id"],
-                "date": fecha,
+                "series_id": series["series_id"],
+                "date": day,
                 "value": float(val),
                 "source": SOURCE_SBS,
             })
 
-    if sin_serie:
-        logger.warning("valor_cuota transform: sin serie registrada para %s",
-                       ", ".join(sorted(sin_serie)))
+    if unresolved:
+        logger.warning(f"valor_cuota transform: no registered series for "
+                       f"{', '.join(sorted(unresolved))}")
 
     facts_df = (pd.DataFrame(fact_rows) if fact_rows
                 else pd.DataFrame(columns=FACT_COLUMNS))

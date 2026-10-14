@@ -14,7 +14,9 @@ def load_facts(conn, df: pd.DataFrame) -> tuple[int, int]:
             """
             INSERT INTO fact_prices (series_id, date, price, source)
             VALUES (%s,%s,%s,%s)
-            ON CONFLICT (series_id, date) DO NOTHING
+            ON CONFLICT (series_id, date) DO UPDATE
+                SET price = EXCLUDED.price, source = EXCLUDED.source
+                WHERE fact_prices.price IS DISTINCT FROM EXCLUDED.price
             """,
             (int(row["series_id"]), row["date"], float(row["value"]), row["source"]),
         )
@@ -22,7 +24,7 @@ def load_facts(conn, df: pd.DataFrame) -> tuple[int, int]:
             loaded += 1
         else:
             skipped += 1
-    logger.info(f"fact_prices (vector_completo): {loaded} loaded, {skipped} skipped.")
+    logger.info(f"fact_prices (vector_completo): {loaded} written, {skipped} unchanged.")
     return loaded, skipped
 
 

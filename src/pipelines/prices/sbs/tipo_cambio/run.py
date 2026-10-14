@@ -35,11 +35,15 @@ FILE_TYPE = "tipo_cambio"
 TC_FIELDS = set(FILE_TYPE_FIELDS[FILE_TYPE])
 
 
-def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] = None) -> None:
+def run(
+    run_date: Optional[date] = None,
+    series_override: Optional[list[dict]] = None,
+    force: bool = False,
+) -> None:
     run_date = run_date or date.today()
     logger.info(
         f"=== prices/sbs/tipo_cambio | run_date={run_date} | "
-        f"mode={'backfill' if series_override else 'incremental'} ==="
+        f"mode={'force' if force else 'backfill' if series_override else 'incremental'} ==="
     )
 
     if series_override is None and not is_reporting_day(run_date):
@@ -79,8 +83,13 @@ def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] =
         return
 
     # Step 4: classify
-    securities = _classify(securities, run_date)
-    to_process = [s for s in securities if s.get("start_date")]
+    # force = restatement: every series reloads for run_date regardless of
+    # what fact_prices holds (stg rows replaced, facts upserted below).
+    if force:
+        to_process = [dict(s, start_date=run_date) for s in securities]
+    else:
+        securities = _classify(securities, run_date)
+        to_process = [s for s in securities if s.get("start_date")]
     if not to_process:
         logger.info("All series up to date. Exiting.")
         return
@@ -92,6 +101,8 @@ def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] =
         return
 
     with get_connection() as conn:
+        # Replace semantics: one copy per date, the file is the truth.
+        conn.execute("DELETE FROM stg_prices_sbs_tipo_cambio WHERE date = %s", (run_date,))
         load_stg(conn, raw_df)
 
     # Step 6: read stg and transform
@@ -114,7 +125,7 @@ def run(run_date: Optional[date] = None, series_override: Optional[list[dict]] =
         loaded, skipped = load_facts(conn, facts_df)
         load_dims(conn, dims_df)
 
-    logger.info(f"Loaded {loaded} rows, skipped {skipped}.")
+    logger.info(f"Wrote {loaded} rows, {skipped} unchanged.")
     _update_metadata(to_process, facts_df, "success")
 
     # Flip backfill-pending → active

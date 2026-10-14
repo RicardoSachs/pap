@@ -5,8 +5,7 @@
 # What is being pinned down:
 #   - one staged (afp, fondo, date) row fans out into one fact row
 #     per metric WITH a value (a NULL metric produces no row - the
-#     long-format property that replaced the monitor's
-#     completar_vacios machinery)
+#     long-format property that replaced the monitor's gap-filling)
 #   - metric -> series_registry field mapping (PX_LAST / CUOTAS /
 #     FONDO_SOLES)
 #   - rows without a registered series are dropped, never raised
@@ -27,7 +26,7 @@ def _stg_row(**overrides):
         "valor_cuota": 25.1234567,
         "cuotas": 1_000_000.25,
         "fondo_soles": 25_123_456.78,
-        "fuente": "extraccion",
+        "source": "daily_page",
         "date": dt.date(2026, 8, 28),
         "loaded_at": dt.datetime(2026, 8, 28, 18, 0, 0),
     }

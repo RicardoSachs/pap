@@ -43,7 +43,7 @@ _BASE_CONFIG = CONFIG_DIR / 'machine_config.yaml'
 # counts as unset (env.optional), and .env.example ships them all
 # blank, so a machine that configures itself through the yaml - every
 # machine that exists today - behaves exactly as before.
-_ENV_A_CLAVE = {
+_ENV_TO_KEY = {
     'MACHINE_ID': 'machine_id',
     'BLOOMBERG_ENABLED': 'bloomberg_enabled',
     'FMS_ENABLED': 'fms_enabled',
@@ -52,25 +52,26 @@ _ENV_A_CLAVE = {
     'CHROMEDRIVER_PATH': 'chromedriver_path',
     'TIMEZONE': 'timezone',
 }
-_BANDERAS = frozenset({'bloomberg_enabled', 'fms_enabled',
+_FLAGS = frozenset({'bloomberg_enabled', 'fms_enabled',
                        'scraper_enabled', 'automated_scraper_enabled'})
 
 
-def _bandera(texto: str) -> bool:
+def _parse_flag(text: str) -> bool:
     """Reads a flag written by a person. A bare bool() would call the
-    string 'false' True, which is exactly what someone would type."""
-    return str(texto).strip().lower() in ('1', 'true', 'si', 'sí', 'yes', 'on')
+    string 'false' True, which is exactly what someone would type. The
+    Spanish 'si' is accepted because that is what gets typed here."""
+    return str(text).strip().lower() in ('1', 'true', 'si', 'sí', 'yes', 'on')
 
 
-def _desde_env() -> dict:
+def _from_env() -> dict:
     """Machine settings declared in the .env, if any."""
-    fuera = {}
-    for var, clave in _ENV_A_CLAVE.items():
+    out = {}
+    for var, key in _ENV_TO_KEY.items():
         val = optional(var)
         if val is None:
             continue
-        fuera[clave] = _bandera(val) if clave in _BANDERAS else val
-    return fuera
+        out[key] = _parse_flag(val) if key in _FLAGS else val
+    return out
 
 
 @lru_cache(maxsize=1)
@@ -84,7 +85,7 @@ def get_machine_config() -> dict:
     :return: Machine config as dictionary
     :rtype: dict
     """
-    desde_env = _desde_env()
+    from_env = _from_env()
 
     if _LOCAL_CONFIG.exists():
         path = _LOCAL_CONFIG
@@ -93,7 +94,7 @@ def get_machine_config() -> dict:
         # Silent when the .env carries the configuration: on a machine
         # set up that way the yaml is deliberately absent, and warning
         # about it on every start reads as a missing step.
-        if not desde_env:
+        if not from_env:
             logger.warning(
                 f'{_LOCAL_CONFIG} not found. '
                 'Copy config/machine_config.yaml there (or declare MACHINE_ID / '
@@ -107,7 +108,7 @@ def get_machine_config() -> dict:
     if not isinstance(cfg, dict):
         raise ValueError(f'Invalid machine config at {path} - expected a YAML mapping.')
 
-    cfg.update(desde_env)
+    cfg.update(from_env)
     return cfg
 
 # ---- Typed accessors ------------------------------------------

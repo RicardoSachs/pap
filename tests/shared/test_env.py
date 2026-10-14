@@ -13,21 +13,21 @@ from src.shared.env import MissingSecret, optional, required
 
 
 def test_optional_empty_falls_back_to_default(monkeypatch):
-    monkeypatch.setenv("PRUEBA_VACIA", "")
-    assert optional("PRUEBA_VACIA", "defecto") == "defecto"
+    monkeypatch.setenv("TEST_EMPTY", "")
+    assert optional("TEST_EMPTY", "default") == "default"
 
 
 def test_optional_unset_falls_back(monkeypatch):
-    monkeypatch.delenv("PRUEBA_AUSENTE", raising=False)
-    assert optional("PRUEBA_AUSENTE", "defecto") == "defecto"
+    monkeypatch.delenv("TEST_UNSET", raising=False)
+    assert optional("TEST_UNSET", "default") == "default"
 
 
 def test_optional_value_wins(monkeypatch):
-    monkeypatch.setenv("PRUEBA_VALOR", "algo")
-    assert optional("PRUEBA_VALOR", "defecto") == "algo"
+    monkeypatch.setenv("TEST_VALUE", "value")
+    assert optional("TEST_VALUE", "default") == "value"
 
 
 def test_required_empty_raises(monkeypatch):
-    monkeypatch.setenv("PRUEBA_SECRETO", "")
+    monkeypatch.setenv("TEST_SECRET", "")
     with pytest.raises(MissingSecret):
-        required("PRUEBA_SECRETO")
+        required("TEST_SECRET")

@@ -8,7 +8,7 @@
 
    Los widgets que este tablero comparte con los demas (pestañas, botones
    segmentados, desplegables, rejilla de dos columnas, tablas de informe,
-   bitacora) se mudaron a app/estilos/tablero.css cuando aparecio el segundo
+   bitacora) se mudaron a app/styles/widgets.css cuando aparecio el segundo
    modulo. Aqui queda lo que no tiene sentido fuera del valor cuota.
    =========================================================================== */
 

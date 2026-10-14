@@ -11,7 +11,7 @@
 // desplegables, la rejilla de dos columnas); tradebook.css, lo propio de este
 // módulo.
 // ---------------------------------------------------------------------------
-import '../estilos/tablero.css';
+import '../styles/widgets.css';
 import './tradebook.css';
 
 export default function TradebookLayout({ children }) {

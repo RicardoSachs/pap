@@ -15,11 +15,11 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import SppSeg from '../../components/SppSeg';
-import DescargaDatos from '../../components/DescargaDatos';
+import DataDownload from '../../components/DataDownload';
 import TradebookTabs from '../../components/TradebookTabs';
-import useVerTodo from '../../components/useVerTodo';
+import useShowAll from '../../components/useShowAll';
 import { apiGet } from '../../lib/api';
-import { fFecha, nEnt } from '../../lib/spp';
+import { fDate, nInt } from '../../lib/spp';
 import { chartTheme, useThemeVersion } from '../../lib/theme';
 
 // plotly.js toca `window` al cargarse, asi que este import NO puede ser
@@ -125,20 +125,20 @@ export default function TradebookPanel() {
     .filter((m) => (!moneda || m.moneda === moneda) && (!l || m.lado === l))
     .reduce((a, m) => a + m.monto, 0);
 
-  const [contrapartes, VerContrapartes] = useVerTodo(
+  const [contrapartes, VerContrapartes] = useShowAll(
     (resumen?.por_contraparte || []).filter((f) => !moneda || f.moneda === moneda), 10);
-  const [instrumentos, VerInstrumentos] = useVerTodo(
+  const [instrumentos, VerInstrumentos] = useShowAll(
     (resumen?.por_instrumento || []).filter((f) => !moneda || f.moneda === moneda), 10);
 
   const vacio = estado && !estado.filas;
 
   return (
-    <div>
+    <div className="tb-page">
       <h1 className="page-title">Tradebook</h1>
       <p className="page-sub">
         Operaciones de la mesa
         {estado?.filas
-          ? ` · ${nEnt(estado.filas)} operaciones (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})`
+          ? ` · ${nInt(estado.filas)} operaciones (${fDate(estado.desde)} a ${fDate(estado.hasta)})`
           : ''}
       </p>
       <TradebookTabs />
@@ -204,8 +204,8 @@ export default function TradebookPanel() {
           <div className="tb-totales">
             <div className="tb-total">
               <div className="rotulo">Operaciones</div>
-              <div className="cifra">{nEnt(total.operaciones || 0)}</div>
-              <div className="pie">{nEnt(total.compras || 0)} compras · {nEnt(total.ventas || 0)} ventas</div>
+              <div className="cifra">{nInt(total.operaciones || 0)}</div>
+              <div className="pie">{nInt(total.compras || 0)} compras · {nInt(total.ventas || 0)} ventas</div>
             </div>
             <div className="tb-total">
               <div className="rotulo">Comprado</div>
@@ -224,13 +224,13 @@ export default function TradebookPanel() {
             </div>
             <div className="tb-total">
               <div className="rotulo">Contrapartes</div>
-              <div className="cifra">{nEnt(total.contrapartes || 0)}</div>
-              <div className="pie">{nEnt(total.instrumentos || 0)} instrumentos</div>
+              <div className="cifra">{nInt(total.contrapartes || 0)}</div>
+              <div className="pie">{nInt(total.instrumentos || 0)} instrumentos</div>
             </div>
             {libro !== 'fms' && (
               <div className="tb-total">
                 <div className="rotulo">Traders</div>
-                <div className="cifra">{nEnt(total.traders || 0)}</div>
+                <div className="cifra">{nInt(total.traders || 0)}</div>
                 <div className="pie">con operaciones en el rango</div>
               </div>
             )}
@@ -239,8 +239,8 @@ export default function TradebookPanel() {
           <div className="panel">
             <div className="controls" style={{ justifyContent: 'space-between' }}>
               <div className="panel-title">Volumen operado · por {periodo}</div>
-              <DescargaDatos trazas={traces} ejeX="periodo"
-                nombre={`volumen-operado-por-${periodo}${moneda ? '-' + moneda : ''}`} />
+              <DataDownload traces={traces} xAxis="periodo"
+                name={`volumen-operado-por-${periodo}${moneda ? '-' + moneda : ''}`} />
             </div>
             {traces.length ? (
               <PlotlyChart
@@ -321,7 +321,7 @@ function Composicion({ titulo, filas, Ver, etiqueta, moneda, conMoneda = false }
                   <span style={{ width: `${Math.max(2, (f.monto / tope) * 100)}%` }} />
                 </span></td>
                 <td className="num">{fMonto(f.monto, conMoneda ? null : moneda)}</td>
-                <td className="num">{nEnt(f.operaciones)}</td>
+                <td className="num">{nInt(f.operaciones)}</td>
               </tr>
             )) : (
               <tr><td colSpan={conMoneda ? 5 : 4} className="dim">Sin datos.</td></tr>

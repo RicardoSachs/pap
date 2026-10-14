@@ -2,38 +2,38 @@
 // ---------------------------------------------------------------------------
 // SPP tablero · Libro: the stored series, day by day.
 //
-// Three books, one on screen at a time: the AFPs' valor cuota (filtered by
-// metric / fund / row count, with a CSV of exactly what is shown), and the
-// two composite indices - the TARGET and the BENCHMARK. They are separate
-// tables on purpose: side by side they would be one wide grid where nothing
-// reads well.
+// Several books, one on screen at a time: the AFPs' valor cuota (filtered
+// by metric / fund / row count, with a CSV of exactly what is shown), and
+// one per benchmark declared in the database. They are separate tables on
+// purpose: side by side they would be one wide grid where nothing reads
+// well.
 //
-// An index table is laid over the SAME date grid as the book, because the
-// question it answers is "which days is the index missing": listing only the
-// days it has would hide exactly what one is looking for.
+// A benchmark table is laid over the SAME date grid as the book, because
+// the question it answers is "which days is the index missing": listing
+// only the days it has would hide exactly what one is looking for.
 //
-// The index books are not written here: the list comes from the config
-// (tipos_indice), so adding a third index would not touch this file.
+// The benchmark books are not written here: the list comes from the config
+// (cfg.benchmarks), so declaring another benchmark does not touch this file.
 // ---------------------------------------------------------------------------
 'use client';
 
 import { useEffect, useState } from 'react';
 import { apiGet } from '../../../lib/api';
-import { apiUrl, fFecha, fmtMetrica, metricasDe, nEnt, nombreMetrica } from '../../../lib/spp';
+import { apiUrl, fDate, fmtMetric, metricsOf, nInt, metricName } from '../../../lib/spp';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
 
-const LIMITES = [['60', '60'], ['250', '250'], ['1000', '1000'], ['Todas', 'todas']];
-const RESPALDO_INDICES = [['Target', 'target'], ['Benchmark', 'benchmark']];
+// 0 asks the API for the whole book.
+const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['Todas', 0]];
 
 export default function SppLibroPage() {
   const [cfg, setCfg] = useState(null);
-  const [libro, setLibro] = useState('vc');
-  const [metrica, setMetrica] = useState('valor_cuota');
-  const [fondo, setFondo] = useState('todos');
-  const [limite, setLimite] = useState('60');
+  const [book, setBook] = useState('vc');
+  const [metric, setMetric] = useState('valor_cuota');
+  const [fund, setFund] = useState('all');
+  const [limit, setLimit] = useState(60);
   const [data, setData] = useState(null);
-  const [indice, setIndice] = useState(null);
+  const [index, setIndex] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -41,13 +41,10 @@ export default function SppLibroPage() {
     apiGet('/api/spp/config').then(setCfg).catch((e) => setError(e.message));
   }, []);
 
-  const indices = cfg?.tipos_indice?.length
-    ? cfg.tipos_indice.map((t) => [t.etiqueta, t.clave])
-    : RESPALDO_INDICES;
-  const LIBROS = [['Valor cuota', 'vc'], ...indices];
-  const esIndice = libro !== 'vc';
-  const etiquetaIndice = (indices.find(([, v]) => v === libro) || [libro])[0];
-  const nombreIndice = etiquetaIndice.toLowerCase();
+  const benchmarks = (cfg?.benchmarks || []).map((b) => [b.display_name, b.procode]);
+  const BOOKS = [['Valor cuota', 'vc'], ...benchmarks];
+  const isIndex = book !== 'vc';
+  const indexLabel = (benchmarks.find(([, v]) => v === book) || [book])[0];
 
   useEffect(() => {
     setLoading(true); setError(null);
@@ -55,75 +52,75 @@ export default function SppLibroPage() {
     // "60" comes back instantly, so a late reply for a previous selection
     // could land on top of the current one - thousands of rows under a
     // segment that says 60, with nothing to signal the mismatch.
-    let vigente = true;
-    const ruta = esIndice
-      ? `/api/spp/indice/${libro}/tabla?${new URLSearchParams({ limite })}`
-      : `/api/spp/tabla?${new URLSearchParams({ limite, metrica, fondo })}`;
-    apiGet(ruta)
-      .then((d) => { if (vigente) (esIndice ? setIndice : setData)(d); })
-      .catch((e) => { if (vigente) setError(e.message); })
-      .finally(() => { if (vigente) setLoading(false); });
-    return () => { vigente = false; };
+    let current = true;
+    const path = isIndex
+      ? `/api/benchmarks/${encodeURIComponent(book)}/table?${new URLSearchParams({ limit })}`
+      : `/api/spp/table?${new URLSearchParams({ limit, metric, fund })}`;
+    apiGet(path)
+      .then((d) => { if (current) (isIndex ? setIndex : setData)(d); })
+      .catch((e) => { if (current) setError(e.message); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [libro, metrica, fondo, limite]);
+  }, [book, metric, fund, limit]);
 
-  const actual = esIndice ? indice : data;
-  const columnas = actual?.columnas || [];
-  const filas = actual?.filas || [];
+  const shown = isIndex ? index : data;
+  const columns = shown?.columns || [];
+  const rows = shown?.rows || [];
 
-  const urlDescarga = esIndice
-    ? apiUrl(`/api/spp/indice/${libro}/exportar`)
-    : apiUrl(`/api/spp/exportar?${new URLSearchParams({ metrica, fondo, limite })}`);
+  const downloadUrl = isIndex
+    ? apiUrl(`/api/benchmarks/${encodeURIComponent(book)}/export`)
+    : apiUrl(`/api/spp/export?${new URLSearchParams({ metric, fund, limit })}`);
 
-  const cab = (c) => {
-    if (esIndice) return `Fondo ${c.fondo}`;
-    const base = `${c.afp} F${c.fondo}`;
-    return metrica === 'todas' ? `${base} · ${nombreMetrica(cfg, c.metrica)}` : base;
+  const header = (c) => {
+    if (isIndex) return c.label;
+    const base = `${c.afp} F${c.fund}`;
+    return metric === 'all' ? `${base} · ${metricName(cfg, c.metric)}` : base;
   };
 
-  const resumen = () => {
-    if (!filas.length) return '—';
-    if (!esIndice) return `${nEnt(filas.length)} filas en pantalla`;
-    const faltan = indice?.faltantes || 0;
-    return faltan
-      ? `${nEnt(filas.length)} fechas · ${nEnt(faltan)} sin ${nombreIndice} completo`
-      : `${nEnt(filas.length)} fechas · sin huecos`;
+  const summary = () => {
+    if (!rows.length) return '—';
+    if (!isIndex) return `${nInt(rows.length)} filas en pantalla`;
+    const missing = index?.missing || 0;
+    return missing
+      ? `${nInt(rows.length)} fechas · ${nInt(missing)} sin ${indexLabel}`
+      : `${nInt(rows.length)} fechas · sin huecos`;
   };
 
   return (
-    <div>
+    <div className="spp-page">
       <h1 className="page-title">Valor Cuota SPP</h1>
       <p className="page-sub">
-        Libro {esIndice ? `del ${nombreIndice}` : 'de valores cuota'} · {resumen()}
+        Libro {isIndex ? `de ${indexLabel}` : 'de valores cuota'} · {summary()}
       </p>
       <SppTabs />
 
       <div className="panel">
         <div className="controls spp-controls">
           <div className="field"><label>Libro</label>
-            <SppSeg items={LIBROS} value={libro} onChange={setLibro} /></div>
-          {!esIndice && (
+            <SppSeg items={BOOKS} value={book} onChange={setBook} /></div>
+          {!isIndex && (
             <>
               <div className="field"><label>Métrica</label>
-                <SppSeg items={[...metricasDe(cfg), ['Todas', 'todas']]}
-                  value={metrica} onChange={setMetrica} /></div>
+                <SppSeg items={[...metricsOf(cfg), ['Todas', 'all']]}
+                  value={metric} onChange={setMetric} /></div>
               <div className="field"><label>Tipo de fondo</label>
-                <SppSeg items={[...(cfg?.fondos || []).map((f) => [`Fondo ${f}`, String(f)]),
-                  ['Todos', 'todos']]}
-                  value={fondo} onChange={setFondo} /></div>
+                <SppSeg items={[...(cfg?.funds || []).map((f) => [`Fondo ${f}`, String(f)]),
+                  ['Todos', 'all']]}
+                  value={fund} onChange={setFund} /></div>
             </>
           )}
           <div className="field"><label>Filas</label>
-            <SppSeg items={LIMITES} value={limite} onChange={setLimite} /></div>
+            <SppSeg items={LIMITS} value={limit} onChange={setLimit} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>
-            <a className="btn" href={urlDescarga}>
-              {esIndice ? `↓ Bajar el ${nombreIndice} · XLSX` : '↓ Bajar lo que veo · CSV'}</a></div>
+            <a className="btn" href={downloadUrl}>
+              {isIndex ? `↓ Bajar ${indexLabel} · XLSX` : '↓ Bajar lo que veo · CSV'}</a></div>
         </div>
-        {esIndice && (
+        {isIndex && (
           <p className="page-sub dim" style={{ marginTop: 10, marginBottom: 0 }}>
-            Las fechas son las del libro de valor cuota: así un día sin {nombreIndice}
-            se ve como un hueco en vez de desaparecer de la lista. El {nombreIndice} lo
-            produce el recálculo de la canasta, en <b>Registro y carga → {etiquetaIndice}</b>.
+            Las fechas son las del libro de valor cuota: así un día sin nivel se ve como
+            un hueco en vez de desaparecer de la lista. El nivel lo produce el recálculo
+            de la canasta, en <b>Registro y carga → Benchmarks</b>.
           </p>
         )}
       </div>
@@ -135,30 +132,28 @@ export default function SppLibroPage() {
           <div className="table-wrap spp-vent">
             <table>
               <thead>
-                <tr><th>Fecha</th>{columnas.map((c) => <th key={c.col} className="num">{cab(c)}</th>)}</tr>
+                <tr><th>Fecha</th>{columns.map((c) => <th key={c.col} className="num">{header(c)}</th>)}</tr>
               </thead>
               <tbody>
-                {filas.map((f) => (
-                  <tr key={f.fecha}>
-                    <td>{fFecha(f.fecha)}</td>
-                    {f.valores.map((v, i) => (
-                      <td key={columnas[i]?.col || i} className={`num ${v == null ? 'dim' : ''}`}>
+                {rows.map((r) => (
+                  <tr key={r.date}>
+                    <td>{fDate(r.date)}</td>
+                    {r.values.map((v, i) => (
+                      <td key={columns[i]?.col || i} className={`num ${v == null ? 'dim' : ''}`}>
                         {v == null ? '—'
-                          : esIndice
-                            // Niveles de índice: nunca abreviados. fmtMetrica en
-                            // modo compacto convertiría 1.500 puntos en "1,50 M".
+                          : isIndex
+                            // Index levels: never abbreviated. fmtMetric in
+                            // compact mode would turn 1,500 points into "1,50 M".
                             ? Number(v).toLocaleString('es-PE',
                               { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-                            : fmtMetrica(v, columnas[i]?.metrica || metrica, true)}
+                            : fmtMetric(v, columns[i]?.metric || metric, true)}
                       </td>
                     ))}
                   </tr>
                 ))}
-                {!filas.length && (
-                  <tr><td colSpan={columnas.length + 1} className="dim">
-                    {esIndice
-                      ? 'No hay fechas en el libro todavía.'
-                      : 'El libro está vacío.'}</td></tr>
+                {!rows.length && (
+                  <tr><td colSpan={columns.length + 1} className="dim">
+                    {isIndex ? 'No hay fechas en el libro todavía.' : 'El libro está vacío.'}</td></tr>
                 )}
               </tbody>
             </table>

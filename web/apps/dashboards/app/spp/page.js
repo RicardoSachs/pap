@@ -1,10 +1,9 @@
-
 // web/apps/dashboards/app/spp/page.js
 // ---------------------------------------------------------------------------
-// SPP tablero · Panel: KPIs, historic series, close-by-AFP, performance
-// windows (levels / absolute / relative) and monthly rank positions.
-// Ported from the monitor's vista 01 onto the pap stack: Plotly instead of
-// hand-built SVG, pap panels/KPI bar, and the /api/spp/* contract.
+// SPP tablero · Panel: historic series, performance windows (levels /
+// absolute / relative) and monthly rank positions. Ported from the
+// monitor's view 01 onto the pap stack: Plotly instead of hand-built SVG,
+// pap panels, and the /api/spp/* contract.
 //
 // The interface names no AFP: names, colors, the house and which funds each
 // one operates all come from /api/spp/config, loaded before anything else.
@@ -15,125 +14,123 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  GRIS_COMPETIDOR, VENTANAS, alphaDe, colorDe, desdeVentana, fFecha, fmtRend,
-  grisLinea, nEnt, nombreMetrica, opera as operaCfg, ordenCasa, signo,
-  valorMostrado,
+  COMPETITOR_GRAY, WINDOWS, alphaOf, colorOf, windowStart, fDate, fmtReturn,
+  grayLine, nInt, metricName, operates as operatesCfg, houseFirst, sign,
+  shownValue,
 } from '../../lib/spp';
 import SppSeg from '../../components/SppSeg';
 import SppTabs from '../../components/SppTabs';
-import DescargaDatos from '../../components/DescargaDatos';
-import { generarReporte } from './reporte';
+import DataDownload from '../../components/DataDownload';
+import { generateReport } from './report';
 import { chartTheme } from '../../lib/theme';
 
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
 
 export default function SppPanelPage() {
   const [cfg, setCfg] = useState(null);
-  const [estado, setEstado] = useState(null);
+  const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
 
-  // The panel reads ONE metric: the price. Fondo (S/) and cuotas are
-  // still stored and the Libro still offers them; here they are the
-  // closing table's columns, not a series worth a chart.
-  const metrica = 'valor_cuota';
-  const [fondo, setFondo] = useState(2);
-  const [ventana, setVentana] = useState(1);
+  // The panel reads ONE metric: the price. Fondo (S/) and cuotas are still
+  // stored and the Libro still offers them; here they are the closing
+  // table's columns, not a series worth a chart.
+  const metric = 'valor_cuota';
+  const [fund, setFund] = useState(2);
+  const [window_, setWindow] = useState(1);
   // Base 100 by default: it is the only reading in which four funds that
   // started on different dates and bases can share one chart.
-  const [escala, setEscala] = useState('base');
-  const [afpsSel, setAfpsSel] = useState([]);
+  const [scale, setScale] = useState('base');
+  const [selectedAfps, setSelectedAfps] = useState([]);
 
-  const [serieData, setSerieData] = useState(null);
-  const [vent, setVent] = useState(null);
+  const [seriesData, setSeriesData] = useState(null);
+  const [win, setWin] = useState(null);
   const [pos, setPos] = useState(null);
-  // La fecha de control manda en TODO el panel: grafico, ventanas y
-  // posiciones. Nace en la ultima fecha con valor cuota COMPLETO (todas las
-  // AFP y fondos publicados); cuotas y fondo no cuentan para eso.
-  const [fechaControl, setFechaControl] = useState('');
-  const [generando, setGenerando] = useState(false);
-  const [fondoPos, setFondoPos] = useState(2);
-  const [vistaPos, setVistaPos] = useState('tabla');
+  // The control date governs the WHOLE panel: chart, windows and positions.
+  // It starts at the last date with COMPLETE valor cuota (every AFP and
+  // fund published); cuotas and fondo do not count for that.
+  const [controlDate, setControlDate] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [posFund, setPosFund] = useState(2);
+  const [posView, setPosView] = useState('table');
 
   // Config first: without it we don't know how many AFPs exist.
   useEffect(() => {
     apiGet('/api/spp/config')
-      .then((c) => { setCfg(c); setAfpsSel(c.afps.map((a) => a.nombre)); })
+      .then((c) => { setCfg(c); setSelectedAfps(c.afps.map((a) => a.name)); })
       .catch((e) => setError(e.message));
-    apiGet('/api/spp/estado').then(setEstado).catch((e) => setError(e.message));
+    apiGet('/api/spp/status').then(setStatus).catch((e) => setError(e.message));
   }, []);
 
-  const nombres = useMemo(() => (cfg?.afps || []).map((a) => a.nombre), [cfg]);
-  const casa = cfg?.casa;
+  const names = useMemo(() => (cfg?.afps || []).map((a) => a.name), [cfg]);
+  const house = cfg?.house;
 
   useEffect(() => {
-    if (estado?.hasta_completa && !fechaControl) setFechaControl(estado.hasta_completa);
+    if (status?.to_complete && !controlDate) setControlDate(status.to_complete);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estado?.hasta_completa]);
-  const opera = (afp, f) => operaCfg(cfg, afp, f);
+  }, [status?.to_complete]);
+  const operates = (afp, f) => operatesCfg(cfg, afp, f);
 
   // Historic series follows the metric/fund/window/AFP selection - and the
   // reference dates, which is what MTD/YTD actually start from. Leaving
-  // vent?.fechas out of the deps meant the chart kept the previous month's
+  // win?.dates out of the deps meant the chart kept the previous month's
   // base after a change of control date, disagreeing with the windows
   // tables right beside it, and never adopted the true prior close the
   // first time it loaded (it used the calendar fallback instead).
   useEffect(() => {
-    if (!cfg || !afpsSel.length || !fechaControl) return;
+    if (!cfg || !selectedAfps.length || !controlDate) return;
     setError(null);
-    // Las ventanas de años (1A, 3A...) cuentan hacia atras desde la fecha
-    // de control, no desde el ultimo dato del libro.
-    const desde = desdeVentana(ventana, { hasta: fechaControl }, vent?.fechas);
-    // En Alpha la casa es el punto de referencia de cada linea: se pide
-    // siempre, aunque el operador la haya apagado en "AFP en pantalla".
-    const afps = (escala === 'alpha' && casa && !afpsSel.includes(casa))
-      ? [casa, ...afpsSel] : afpsSel;
+    // Year windows (1A, 3A...) count back from the control date, not from
+    // the book's last date.
+    const from = windowStart(window_, { to: controlDate }, win?.dates);
+    // In Alpha the house is every line's reference: it is always requested,
+    // even when the operator switched it off in "AFP en pantalla".
+    const afps = (scale === 'alpha' && house && !selectedAfps.includes(house))
+      ? [house, ...selectedAfps] : selectedAfps;
     const q = new URLSearchParams({
-      fondo: String(fondo), afps: afps.join(','), metrica, desde, hasta: fechaControl,
+      fund: String(fund), afps: afps.join(','), metric, from, to: controlDate,
     });
-    apiGet(`/api/spp/serie?${q}`).then(setSerieData).catch((e) => setError(e.message));
+    apiGet(`/api/spp/series?${q}`).then(setSeriesData).catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, fechaControl, metrica, fondo, ventana, afpsSel, escala === 'alpha',
-      vent?.fechas?.mes, vent?.fechas?.anio, vent?.fechas?.fy]);
+  }, [cfg, controlDate, metric, fund, window_, selectedAfps, scale === 'alpha',
+      win?.dates?.month, win?.dates?.year, win?.dates?.fy]);
 
   // Windows + positions follow metric and control date.
   useEffect(() => {
-    if (!cfg || !fechaControl) return;
+    if (!cfg || !controlDate) return;
     setError(null);
-    const q = new URLSearchParams({ metrica });
-    if (fechaControl) q.set('fecha', fechaControl);
-    apiGet(`/api/spp/ventanas?${q}`).then(setVent).catch((e) => setError(e.message));
-    const q2 = new URLSearchParams({ metrica, meses: '12' });
-    if (fechaControl) q2.set('fecha', fechaControl);
-    apiGet(`/api/spp/posiciones?${q2}`).then(setPos).catch((e) => setError(e.message));
-  }, [cfg, metrica, fechaControl]);
+    const q = new URLSearchParams({ metric, date: controlDate });
+    apiGet(`/api/spp/windows?${q}`).then(setWin).catch((e) => setError(e.message));
+    const q2 = new URLSearchParams({ metric, months: '12', date: controlDate });
+    apiGet(`/api/spp/positions?${q2}`).then(setPos).catch((e) => setError(e.message));
+  }, [cfg, metric, controlDate]);
 
   // ---- Chart traces ------------------------------------------------------
   // The house AFP stands out in its brand color; competitors render in a
   // gray scale of decreasing weight (the monitor's positions-chart design):
   // one glance says how the house is doing without losing who it competes
   // against. Grays are spread over however many competitors are on screen.
-  const grisDe = (afp, enPantalla) => {
-    const otras = enPantalla.filter((a) => a !== casa);
-    const i = otras.indexOf(afp);
-    const alpha = otras.length < 2 ? 0.8 : 0.85 - (0.5 * i) / (otras.length - 1);
-    return grisLinea(alpha.toFixed(2));
+  const grayOf = (afp, onScreen) => {
+    const others = onScreen.filter((a) => a !== house);
+    const i = others.indexOf(afp);
+    const alpha = others.length < 2 ? 0.8 : 0.85 - (0.5 * i) / (others.length - 1);
+    return grayLine(alpha.toFixed(2));
   };
 
-  // La MISMA tinta en todas partes: lineas, chips del selector, puntos de las
-  // tablas. El color dice "esta es la casa", no "esta es tal AFP" - si cada
-  // competidora lleva su color de marca, con un tema rojo Habitat (#c50331) y
-  // Prima (#ca3f04) compiten visualmente con Profuturo en vez de quedar
-  // detras. `lista` decide el reparto de la escala de grises.
-  const tintaDe = (afp, lista) =>
-    (afp === casa ? colorDe(cfg, afp, true) : grisDe(afp, lista));
+  // The SAME ink everywhere: lines, selector chips, table dots. The color
+  // says "this is the house", not "this is such AFP" - if every competitor
+  // wore its brand color, with a red theme Habitat (#c50331) and Prima
+  // (#ca3f04) would compete visually with Profuturo instead of staying
+  // behind. `list` decides how the gray scale is spread.
+  const inkOf = (afp, list) =>
+    (afp === house ? colorOf(cfg, afp, true) : grayOf(afp, list));
 
-  const series = serieData?.series || [];
+  const series = seriesData?.series || [];
 
-  // Lo que dice la etiqueta al pasar el cursor: por AFP, cuanto lleva desde
-  // el inicio de la ventana y cuanto se movio ese dia, cada cifra en el
-  // color de su signo. Van como texto ya armado en customdata porque el
-  // color depende del valor y la plantilla del hover no sabe de condiciones.
-  const conSigno = (v, fmt) => {
+  // What the hover label says: per AFP, how much since the start of the
+  // window and how much it moved that day, each figure in the color of its
+  // sign. They travel as pre-built text in customdata because the color
+  // depends on the value and the hover template knows no conditions.
+  const withSign = (v, fmt) => {
     if (v == null || !Number.isFinite(v)) return '<span style="opacity:0.6">—</span>';
     const t = chartTheme();
     const color = v > 0 ? t.positive : v < 0 ? t.negative : t.muted;
@@ -141,38 +138,38 @@ export default function SppPanelPage() {
   };
   const pct = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
   const bps = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} bps`;
-  const acumYDiaria = (ys, fmt, acumDe) => ys.map((y, i) => [
-    conSigno(acumDe(y), fmt),
-    conSigno(i > 0 ? y - ys[i - 1] : null, fmt),
+  const cumulativeAndDaily = (ys, fmt, cumulativeOf) => ys.map((y, i) => [
+    withSign(cumulativeOf(y), fmt),
+    withSign(i > 0 ? y - ys[i - 1] : null, fmt),
   ]);
 
-  // Alpha: cuanto le ha ganado la casa a CADA competidora desde el inicio
-  // de la ventana, en puntos basicos. Es la resta de las dos curvas de
-  // Base 100 - casa menos la otra - asi que positivo es la casa delante y
-  // la pendiente de cada dia es lo que ese dia abrio o cerro la brecha.
-  // Una linea por competidora, ninguna para la casa: la casa es el cero.
-  const trazasAlpha = () => {
-    const conDatos = series.filter((s) => s.puntos.length);
-    const enPantalla = conDatos.map((s) => s.afp);
-    // Sin linea de casa, los grises ya no dicen "esta no es la casa": son
-    // lineas iguales. Misma tinta, pero los tonos abiertos de punta a punta
-    // (el reparto normal los junta para que la casa destaque), y todas
-    // continuas: los trazos a rayas se leian como datos con huecos.
-    const orden = ordenCasa(cfg, enPantalla).filter((a) => a !== casa);
-    const tonoDe = (afp) => {
-      const i = orden.indexOf(afp);
-      const a = orden.length < 2 ? 0.9 : 0.95 - (0.6 * i) / (orden.length - 1);
-      return grisLinea(a.toFixed(2));
+  // Alpha: how much the house has gained over EACH competitor since the
+  // start of the window, in basis points. It is the difference of the two
+  // Base 100 curves - house minus the other - so positive is the house
+  // ahead and each day's slope is what that day opened or closed the gap.
+  // One line per competitor, none for the house: the house is the zero.
+  const alphaTraces = () => {
+    const withData = series.filter((s) => s.points.length);
+    const onScreen = withData.map((s) => s.afp);
+    // Without a house line the grays no longer say "this is not the house":
+    // they are equal lines. Same ink, but the tones spread end to end (the
+    // normal spread bunches them so the house stands out), and all solid:
+    // dashed strokes read as data with holes.
+    const order = houseFirst(cfg, onScreen).filter((a) => a !== house);
+    const toneOf = (afp) => {
+      const i = order.indexOf(afp);
+      const a = order.length < 2 ? 0.9 : 0.95 - (0.6 * i) / (order.length - 1);
+      return grayLine(a.toFixed(2));
     };
-    return alphaDe(series, casa).map((c) => {
-      const color = tonoDe(c.afp);
+    return alphaOf(series, house).map((c) => {
+      const color = toneOf(c.afp);
       return {
-        // Solo la AFP: el titulo ya dice que todo es contra la casa.
+        // Only the AFP: the title already says everything is against the house.
         x: c.x, y: c.y, type: 'scatter', mode: 'lines', name: c.afp,
-        legendrank: ordenCasa(cfg, enPantalla).indexOf(c.afp) + 1,
+        legendrank: houseFirst(cfg, onScreen).indexOf(c.afp) + 1,
         line: { color, width: 2 },
-        // En bps el acumulado ES el valor de la linea; el diario, su paso.
-        customdata: acumYDiaria(c.y, bps, (y) => y),
+        // In bps the cumulative IS the line's value; the daily, its step.
+        customdata: cumulativeAndDaily(c.y, bps, (y) => y),
         hovertemplate: `<b>${c.afp}</b><br>Alpha acumulado  %{customdata[0]}`
           + '<br>Del día  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
@@ -181,32 +178,32 @@ export default function SppPanelPage() {
   };
 
   const traces = useMemo(() => {
-    if (escala === 'alpha') return trazasAlpha();
-    const conDatos = series.filter((s) => s.puntos.length);
-    let baseFecha = null;
-    if (escala === 'base' && conDatos.length) {
+    if (scale === 'alpha') return alphaTraces();
+    const withData = series.filter((s) => s.points.length);
+    let baseDate = null;
+    if (scale === 'base' && withData.length) {
       // First date with data in every AFP on screen: the only start that
       // makes the rebased lines comparable.
-      const inicios = conDatos.map((s) => s.puntos[0][0]);
-      baseFecha = inicios.reduce((m, f) => (f > m ? f : m), inicios[0]);
+      const starts = withData.map((s) => s.points[0][0]);
+      baseDate = starts.reduce((m, d) => (d > m ? d : m), starts[0]);
     }
-    const enPantalla = conDatos.map((s) => s.afp);
-    return conDatos.map((s) => {
-      const esCasa = s.afp === casa;
-      const color = tintaDe(s.afp, enPantalla);
-      let pts = s.puntos;
+    const onScreen = withData.map((s) => s.afp);
+    return withData.map((s) => {
+      const isHouse = s.afp === house;
+      const color = inkOf(s.afp, onScreen);
+      let pts = s.points;
       let base = null;
-      if (escala === 'base') {
-        pts = s.puntos.filter((p) => p[0] >= baseFecha);
+      if (scale === 'base') {
+        pts = s.points.filter((p) => p[0] >= baseDate);
         base = pts.length ? pts[0][1] : null;
       }
-      // Rentabilidad acumulada desde el primer punto en pantalla y variacion
-      // del dia, sobre el valor cuota crudo: es lo mismo en Nivel y Base 100.
-      const crudos = pts.map((p) => p[1]);
-      const inicio = crudos[0];
-      const rent = crudos.map((v, i) => [
-        conSigno(inicio ? v / inicio - 1 : null, pct),
-        conSigno(i > 0 && crudos[i - 1] ? v / crudos[i - 1] - 1 : null, pct),
+      // Cumulative return since the first point on screen and the day's
+      // change, on the raw valor cuota: the same in Nivel and Base 100.
+      const raw = pts.map((p) => p[1]);
+      const start = raw[0];
+      const returns = raw.map((v, i) => [
+        withSign(start ? v / start - 1 : null, pct),
+        withSign(i > 0 && raw[i - 1] ? v / raw[i - 1] - 1 : null, pct),
       ]);
       return {
         x: pts.map((p) => p[0]),
@@ -214,90 +211,90 @@ export default function SppPanelPage() {
         type: 'scatter', mode: 'lines', name: s.afp,
         // legendrank puts the house first in the LEGEND while the trace
         // order (house last) keeps its line drawn on top of the grays.
-        legendrank: ordenCasa(cfg, enPantalla).indexOf(s.afp) + 1,
-        line: { color, width: esCasa ? 2.8 : 1.6 },
-        customdata: rent,
+        legendrank: houseFirst(cfg, onScreen).indexOf(s.afp) + 1,
+        line: { color, width: isHouse ? 2.8 : 1.6 },
+        customdata: returns,
         hovertemplate: `<b>${s.afp}</b><br>Rent. acumulada  %{customdata[0]}`
           + '<br>Rent. diaria  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [series, escala, cfg, casa]);
+  }, [series, scale, cfg, house]);
 
   const ct = chartTheme();
 
-  const reportePdf = async () => {
-    if (!cfg || !vent?.control) return;
-    setGenerando(true); setError(null);
+  const pdfReport = async () => {
+    if (!cfg || !win?.control) return;
+    setGenerating(true); setError(null);
     try {
-      await generarReporte({ cfg, vent });
+      await generateReport({ cfg, windows: win });
     } catch (e) {
       setError(`No se pudo generar el reporte: ${e.message}`);
     } finally {
-      setGenerando(false);
+      setGenerating(false);
     }
   };
 
-  const etiquetaVentana = (VENTANAS.find(([, v]) => v === ventana) || ['—'])[0];
-  // Titulo corto - el lector ya sabe que es la serie del valor cuota - y
-  // al pie del grafico en que esta expresado. La ventana y el resto de la
-  // seleccion estan a la vista en la barra de arriba.
-  const tituloSerie = escala === 'alpha' ? `Alpha F${fondo}` : `Evolución F${fondo}`;
-  const pieSerie = escala === 'alpha'
-    ? `Expresado en puntos básicos: ${casa} menos cada AFP`
-    : escala === 'base' ? 'Expresado en base 100'
-      : `Expresado en ${nombreMetrica(cfg, metrica).toLowerCase()}`;
-  // "Evolución F2 · Expresado en base 100 · 1A" -> un nombre de archivo
-  const archivoDe = (t) => t.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const windowLabel = (WINDOWS.find(([, v]) => v === window_) || ['—'])[0];
+  // Short title - the reader already knows it is the valor cuota series -
+  // and under the chart what it is expressed in. The window and the rest
+  // of the selection are visible in the bar above.
+  const seriesTitle = scale === 'alpha' ? `Alpha F${fund}` : `Evolución F${fund}`;
+  const seriesFooter = scale === 'alpha'
+    ? `Expresado en puntos básicos: ${house} menos cada AFP`
+    : scale === 'base' ? 'Expresado en base 100'
+      : `Expresado en ${metricName(cfg, metric).toLowerCase()}`;
+  // "Evolución F2 · Expresado en base 100 · 1A" -> a file name
+  const fileNameOf = (t) => t.toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-  // ---- Ventanas tables ---------------------------------------------------
-  const ordenRel = ordenCasa(cfg, nombres);
+  // ---- Windows tables ----------------------------------------------------
+  const relativeOrder = houseFirst(cfg, names);
 
-  function TablaVentanas({ cols, filas, conUnidad, orden }) {
-    // Un bloque por FONDO y dentro una fila por AFP: la pregunta de la mesa
-    // es "en el fondo 2, como vamos contra cada una", y asi las cuatro
-    // respuestas quedan juntas. El fondo va en una columna a la izquierda,
-    // una celda que abarca sus filas (rowSpan), no en una fila propia: cada
-    // fila de titulo era una linea menos de datos en pantalla. La casa va
-    // primero y en su color; las competidoras, neutras.
-    const ordenAfp = orden || ordenRel;
-    const fondos = (cfg?.fondos || []).filter((f) => filas.some((r) => r.fondo === f));
+  function WindowsTable({ cols, rows, withUnit, order }) {
+    // One block per FUND and inside it one row per AFP: the desk's question
+    // is "in fund 2, how are we doing against each one", and so the four
+    // answers stay together. The fund goes in a column on the left, one
+    // cell spanning its rows (rowSpan), not in a row of its own: each title
+    // row was one line of data less on screen. The house goes first and in
+    // its color; competitors, neutral.
+    const afpOrder = order || relativeOrder;
+    const funds = (cfg?.funds || []).filter((f) => rows.some((r) => r.fund === f));
     return (
       <div className="table-wrap spp-vent">
         <table>
           <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
           <tbody>
-            {fondos.map((f) => {
-              const delFondo = filas.filter((r) => r.fondo === f)
-                .sort((x, y) => ordenAfp.indexOf(x.afp) - ordenAfp.indexOf(y.afp));
-              return delFondo.map((r, i) => {
-                  const esCasa = r.afp === casa;
-                  // La fila de la casa va en negrita ENTERA - nombre y cifras -
-                  // conservando el color de signo de cada cifra: destaca por
-                  // peso, no por color.
-                  return (
-                    <tr key={`f${f}-${r.afp}`}
-                      className={`${i === 0 ? 'spp-bloque' : ''} ${esCasa ? 'spp-casa' : ''}`.trim()}>
-                      {i === 0 && (
-                        <td rowSpan={delFondo.length} className="spp-fondo">Fondo {f}</td>
-                      )}
-                      {/* Con el fondo delante, esta ya no es la primera celda de la
-                          fila y la hoja global la alinearia a la derecha. */}
-                      <td className="spp-afp"
-                        style={esCasa ? { color: colorDe(cfg, r.afp, true) } : undefined}>
-                        {r.afp}</td>
-                      {cols.map((c) => {
-                        const unidad = conUnidad ? c[2] : 'nivel';
-                        const v = r.valores[c[0]];
-                        const clase = unidad === 'nivel' ? 'num' : `num ${signo(valorMostrado(v, unidad))}`;
-                        return <td key={c[0]} className={v == null ? 'num dim' : clase}>{fmtRend(v, unidad, metrica)}</td>;
-                      })}
-                    </tr>
-                  );
-                });
+            {funds.map((f) => {
+              const ofFund = rows.filter((r) => r.fund === f)
+                .sort((x, y) => afpOrder.indexOf(x.afp) - afpOrder.indexOf(y.afp));
+              return ofFund.map((r, i) => {
+                const isHouse = r.afp === house;
+                // The house row is bold THROUGHOUT - name and figures -
+                // keeping each figure's sign color: it stands out by
+                // weight, not by color.
+                return (
+                  <tr key={`f${f}-${r.afp}`}
+                    className={`${i === 0 ? 'spp-bloque' : ''} ${isHouse ? 'spp-casa' : ''}`.trim()}>
+                    {i === 0 && (
+                      <td rowSpan={ofFund.length} className="spp-fondo">Fondo {f}</td>
+                    )}
+                    {/* With the fund in front this is no longer the row's
+                        first cell and the global sheet would right-align it. */}
+                    <td className="spp-afp"
+                      style={isHouse ? { color: colorOf(cfg, r.afp, true) } : undefined}>
+                      {r.afp}</td>
+                    {cols.map((c) => {
+                      const unit = withUnit ? c[2] : 'level';
+                      const v = r.values[c[0]];
+                      const cls = unit === 'level' ? 'num' : `num ${sign(shownValue(v, unit))}`;
+                      return <td key={c[0]} className={v == null ? 'num dim' : cls}>{fmtReturn(v, unit, metric)}</td>;
+                    })}
+                  </tr>
+                );
+              });
             })}
           </tbody>
         </table>
@@ -305,51 +302,51 @@ export default function SppPanelPage() {
     );
   }
 
-  // ---- Posiciones --------------------------------------------------------
-  const periodos = pos?.periodos || [];
-  const compitenPos = nombres.filter((a) => opera(a, fondoPos));
-  const totalPos = Math.max(2, compitenPos.length);
-  const trazasPos = useMemo(() => nombres.map((afp) => {
-    const fila = (pos?.filas || []).find((r) => r.fondo === fondoPos && r.afp === afp);
-    if (!fila) return null;
+  // ---- Positions ---------------------------------------------------------
+  const periods = pos?.periods || [];
+  const posCompeting = names.filter((a) => operates(a, posFund));
+  const posTotal = Math.max(2, posCompeting.length);
+  const posTraces = useMemo(() => names.map((afp) => {
+    const row = (pos?.rows || []).find((r) => r.fund === posFund && r.afp === afp);
+    if (!row) return null;
     const xs = []; const ys = [];
-    periodos.forEach((p) => {
-      const q = fila.puestos[p.clave];
-      if (q) { xs.push(p.etiqueta); ys.push(q); }
+    periods.forEach((p) => {
+      const rank = row.ranks[p.key];
+      if (rank) { xs.push(p.label); ys.push(rank); }
     });
     if (!xs.length) return null;
-    const esCasa = afp === casa;
+    const isHouse = afp === house;
     // Same house-vs-grays scheme as the historic series chart.
-    const color = tintaDe(afp, compitenPos);
+    const color = inkOf(afp, posCompeting);
     return {
       x: xs, y: ys, type: 'scatter', mode: 'lines+markers', name: afp,
-      legendrank: ordenCasa(cfg, compitenPos).indexOf(afp) + 1,
-      line: { color, width: esCasa ? 3.2 : 2 },
-      marker: { size: esCasa ? 9 : 7 },
+      legendrank: houseFirst(cfg, posCompeting).indexOf(afp) + 1,
+      line: { color, width: isHouse ? 3.2 : 2 },
+      marker: { size: isHouse ? 9 : 7 },
       hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }).filter(Boolean), [pos, fondoPos, cfg, casa, nombres, periodos]);
+  }).filter(Boolean), [pos, posFund, cfg, house, names, periods]);
 
   return (
-    <div>
+    <div className="spp-page">
       <h1 className="page-title">Valor Cuota SPP</h1>
       <p className="page-sub">
         Valor cuota diario del SPP · fuente SBS
-        {estado?.filas ? ` · ${nEnt(estado.filas)} fechas (${fFecha(estado.desde)} a ${fFecha(estado.hasta)})` : ''}
+        {status?.rows ? ` · ${nInt(status.rows)} fechas (${fDate(status.from)} a ${fDate(status.to)})` : ''}
       </p>
       <div className="spp-fila-tabs">
         <SppTabs />
-        {/* El reporte PDF: un solo icono, a la derecha de las pestanas. Es lo
-            que se lleva de la pagina, no un filtro; el texto va en el tooltip
-            y en aria-label. Tabla relativa + alpha YTD/FY por fondo, a la
-            fecha de control, armado en el navegador. */}
-        <button className="btn principal spp-icono" onClick={reportePdf}
-          disabled={generando || !vent?.control}
+        {/* The PDF report: a single icon, to the right of the tabs. It is
+            what one takes away from the page, not a filter; the text goes
+            in the tooltip and in aria-label. Relative table + alpha YTD/FY
+            per fund, at the control date, built in the browser. */}
+        <button className="btn principal spp-icono" onClick={pdfReport}
+          disabled={generating || !win?.control}
           aria-label="Descargar el reporte de rentabilidad en PDF"
-          title={generando ? 'Generando el reporte…'
+          title={generating ? 'Generando el reporte…'
             : 'Reporte de rentabilidad (PDF): tabla relativa + alpha YTD y FY de cada fondo, a la fecha de control'}>
-          {generando ? (
+          {generating ? (
             <span className="spp-girando">…</span>
           ) : (
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
@@ -360,37 +357,37 @@ export default function SppPanelPage() {
         </button>
       </div>
 
-      {/* Un error se muestra COMO BANDA, no reemplazando la página: antes se
-          llevaba por delante los controles con los que el operador podría
-          corregir la selección que lo causó, y nada lo limpiaba salvo F5. */}
+      {/* An error shows AS A BAND, not replacing the page: it used to take
+          away the controls with which the operator could fix the selection
+          that caused it, and nothing cleared it but F5. */}
       {error && <div className="panel error">Error: {error}</div>}
 
       <div className="panel">
         <div className="controls spp-controls">
           <div className="field"><label>Fecha de control</label>
-            <input className="date-input" type="date" value={fechaControl}
-              max={estado?.hasta || undefined}
-              onChange={(e) => e.target.value && setFechaControl(e.target.value)} /></div>
+            <input className="date-input" type="date" value={controlDate}
+              max={status?.to || undefined}
+              onChange={(e) => e.target.value && setControlDate(e.target.value)} /></div>
           <div className="field"><label>Tipo de fondo</label>
-            <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
-              value={fondo}
+            <SppSeg items={(cfg?.funds || []).map((f) => [`Fondo ${f}`, f])}
+              value={fund}
               onChange={(v) => {
-                setFondo(v);
-                const validas = afpsSel.filter((a) => opera(a, v));
-                setAfpsSel(validas.length ? validas : nombres.filter((a) => opera(a, v)));
+                setFund(v);
+                const valid = selectedAfps.filter((a) => operates(a, v));
+                setSelectedAfps(valid.length ? valid : names.filter((a) => operates(a, v)));
               }} /></div>
           <div className="field"><label>Ventana</label>
-            <SppSeg items={VENTANAS} value={ventana} onChange={setVentana} /></div>
+            <SppSeg items={WINDOWS} value={window_} onChange={setWindow} /></div>
           <div className="field"><label>Escala</label>
-            <SppSeg items={[['Nivel', 'nivel'], ['Base 100', 'base'], ['Alpha', 'alpha']]}
-              value={escala} onChange={setEscala} /></div>
+            <SppSeg items={[['Nivel', 'level'], ['Base 100', 'base'], ['Alpha', 'alpha']]}
+              value={scale} onChange={setScale} /></div>
           <div className="field"><label>AFP en pantalla</label>
-            <SppSeg multi items={nombres.filter((a) => opera(a, fondo)).map((a) => [a, a])}
-              value={afpsSel}
-              // Sobre la lista COMPLETA del fondo, no sobre la seleccion: asi
-              // el tono de cada AFP no cambia al encender o apagar a otra.
-              colorOf={(a) => tintaDe(a, nombres.filter((x) => opera(x, fondo)))}
-              onChange={(v) => setAfpsSel((prev) => {
+            <SppSeg multi items={names.filter((a) => operates(a, fund)).map((a) => [a, a])}
+              value={selectedAfps}
+              // Over the fund's COMPLETE list, not the selection: so each
+              // AFP's tone does not change when another is toggled.
+              colorOf={(a) => inkOf(a, names.filter((x) => operates(x, fund)))}
+              onChange={(v) => setSelectedAfps((prev) => {
                 const next = prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v];
                 return next.length ? next : [v];
               })} /></div>
@@ -398,46 +395,46 @@ export default function SppPanelPage() {
       </div>
 
       <div className="panel">
-        {/* El titulo dice lo que hay en pantalla - escala, fondo y ventana -
-            porque los filtros quedan arriba y el grafico se mira solo. */}
+        {/* The title says what is on screen - scale, fund and window -
+            because the filters stay above and the chart is looked at alone. */}
         <div className="spp-cabecera-grafico">
           <span />
-          <div className="panel-title" style={{ margin: 0 }}>{tituloSerie}</div>
-          {/* El CSV lleva la vista tal cual: nivel, base 100 o alpha en bps.
-              El nombre del archivo repite el titulo, que es lo que se lee
-              cuando el archivo aparece dias despues en una carpeta. */}
-          <DescargaDatos trazas={traces}
-            nombre={archivoDe(`${tituloSerie} · ${pieSerie} · ${etiquetaVentana}`)} />
+          <div className="panel-title" style={{ margin: 0 }}>{seriesTitle}</div>
+          {/* The CSV carries the view as is: level, base 100 or alpha in bps.
+              The file name repeats the title, which is what is read when the
+              file shows up days later in a folder. */}
+          <DataDownload traces={traces}
+            name={fileNameOf(`${seriesTitle} · ${seriesFooter} · ${windowLabel}`)} />
         </div>
         {traces.length ? (
           <PlotlyChart
             data={traces}
             layout={{
-              // " bps" alarga las etiquetas del eje: sin el margen extra el
-              // signo menos se recorta y -200 se lee como 200.
-              margin: { l: escala === 'alpha' ? 95 : 70, r: 20, t: 10, b: 60 },
-              // Una sola etiqueta por fecha con un bloque por AFP, como la
-              // tarjeta del visor de precios: la fecha arriba y, debajo,
-              // cada AFP con su acumulado y su dia.
+              // " bps" lengthens the axis labels: without the extra margin
+              // the minus sign is clipped and -200 reads as 200.
+              margin: { l: scale === 'alpha' ? 95 : 70, r: 20, t: 10, b: 60 },
+              // One label per date with a block per AFP, like the price
+              // viewer's card: the date on top and, below, each AFP with
+              // its cumulative and its day.
               hovermode: 'x unified',
               xaxis: { hoverformat: '%d %b %Y' },
               yaxis: {
                 type: 'linear',
-                title: escala === 'alpha' ? 'Alpha acumulado (bps)'
-                  : escala === 'base' ? 'Base 100' : nombreMetrica(cfg, metrica),
-                // En Alpha el cero ES la casa: la linea que lo marca es la
-                // referencia de lectura, no ruido.
-                zeroline: escala === 'alpha',
+                title: scale === 'alpha' ? 'Alpha acumulado (bps)'
+                  : scale === 'base' ? 'Base 100' : metricName(cfg, metric),
+                // In Alpha the zero IS the house: the line marking it is the
+                // reading reference, not noise.
+                zeroline: scale === 'alpha',
                 zerolinecolor: ct.muted, zerolinewidth: 1.5,
-                ticksuffix: escala === 'alpha' ? ' bps' : '',
+                ticksuffix: scale === 'alpha' ? ' bps' : '',
               },
             }}
           />
-        ) : serieData == null
+        ) : seriesData == null
           ? <div className="loading">Cargando…</div>
           : <p className="page-sub dim">Sin datos para esta selección.</p>}
         {traces.length > 0 && (
-          <p className="page-sub dim" style={{ textAlign: 'center', margin: '6px 0 0' }}>{pieSerie}</p>
+          <p className="page-sub dim" style={{ textAlign: 'center', margin: '6px 0 0' }}>{seriesFooter}</p>
         )}
       </div>
 
@@ -453,36 +450,36 @@ export default function SppPanelPage() {
         <div className="controls" style={{ justifyContent: 'space-between' }}>
           <div>
             <div className="panel-title">Ventanas de rendimiento</div>
-            {vent?.control && (
+            {win?.control && (
               <p className="page-sub" style={{ margin: '4px 0 0' }}>
-                Control {fFecha(vent.fechas.t)} · inicio de mes {fFecha(vent.fechas.mes)} ·
-                M-1 {fFecha(vent.fechas.mes1)} · inicio de año {fFecha(vent.fechas.anio)} ·
-                inicio de ejercicio {fFecha(vent.fechas.fy)}
+                Control {fDate(win.dates.t)} · inicio de mes {fDate(win.dates.month)} ·
+                M-1 {fDate(win.dates.month1)} · inicio de año {fDate(win.dates.year)} ·
+                inicio de ejercicio {fDate(win.dates.fy)}
               </p>
             )}
           </div>
         </div>
 
-        {vent?.control ? (
+        {win?.control ? (
           <>
             <details className="spp-desplegable" open>
-              <summary>Rendimiento relativo · {casa} contra cada competidora</summary>
-              <TablaVentanas cols={(vent.cols_rend || []).filter((c) => c[2] !== 'nivel')}
-                filas={vent.relativos} conUnidad orden={ordenRel} />
+              <summary>Rendimiento relativo · {house} contra cada competidora</summary>
+              <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
+                rows={win.relative} withUnit order={relativeOrder} />
             </details>
             <details className="spp-desplegable">
               <summary>Rendimiento absoluto</summary>
-              <TablaVentanas cols={vent.cols_rend} filas={vent.absolutos} conUnidad />
+              <WindowsTable cols={win.return_columns} rows={win.absolute} withUnit />
               <p className="page-sub">Hasta meses en puntos básicos; FY, YTD y año pasado en
                 porcentaje. FY es el ejercicio, del 31/10 al 31/10.
                 Las columnas diarias son el movimiento de ese día, no acumulados.</p>
             </details>
             <details className="spp-desplegable">
               <summary>Valor cuota en cada fecha base</summary>
-              <TablaVentanas cols={vent.cols_nivel} filas={vent.niveles} conUnidad={false} />
+              <WindowsTable cols={win.level_columns} rows={win.levels} withUnit={false} />
             </details>
           </>
-        ) : vent == null
+        ) : win == null
           ? <div className="loading">Cargando…</div>
           : <div className="page-sub dim">Sin datos en el libro.</div>}
       </div>
@@ -492,64 +489,64 @@ export default function SppPanelPage() {
           <div className="panel-title">Posiciones mensuales por rendimiento</div>
           <div className="controls" style={{ margin: 0 }}>
             <div className="field"><label>Tipo de fondo</label>
-              <SppSeg items={(cfg?.fondos || []).map((f) => [`Fondo ${f}`, f])}
-                value={fondoPos} onChange={setFondoPos} /></div>
+              <SppSeg items={(cfg?.funds || []).map((f) => [`Fondo ${f}`, f])}
+                value={posFund} onChange={setPosFund} /></div>
             <div className="field"><label>Vista</label>
-              <SppSeg items={[['Tabla', 'tabla'], ['Gráfico', 'grafico']]}
-                value={vistaPos} onChange={setVistaPos} /></div>
+              <SppSeg items={[['Tabla', 'table'], ['Gráfico', 'chart']]}
+                value={posView} onChange={setPosView} /></div>
             <div className="field"><label aria-hidden="true">&nbsp;</label>
-              {/* Tabla y grafico son los mismos puestos: un solo CSV para ambas. */}
-              <DescargaDatos trazas={trazasPos} ejeX="periodo"
-                nombre={`posiciones-fondo-${fondoPos}`} /></div>
+              {/* Table and chart are the same ranks: one CSV for both. */}
+              <DataDownload traces={posTraces} xAxis="periodo"
+                name={`posiciones-fondo-${posFund}`} /></div>
           </div>
         </div>
         {/* One space, two readings of the same ranks: the heat table says
             WHO was where each month; the lines say how each one MOVED.
             Both at once said it twice, and the panel was two screens tall. */}
-        {vistaPos === 'grafico' && (trazasPos.length ? (
+        {posView === 'chart' && (posTraces.length ? (
           <PlotlyChart
-            data={trazasPos}
+            data={posTraces}
             style={{ height: '300px' }}
             layout={{
               margin: { l: 50, r: 20, t: 10, b: 50 },
               yaxis: {
-                autorange: 'reversed', dtick: 1, range: [totalPos + 0.5, 0.5],
+                autorange: 'reversed', dtick: 1, range: [posTotal + 0.5, 0.5],
                 title: 'Puesto', zeroline: false,
               },
               xaxis: { type: 'category' },
             }}
           />
         ) : <div className="dim">Sin meses cerrados suficientes.</div>)}
-        {vistaPos === 'tabla' && (
+        {posView === 'table' && (
         <div className="table-wrap spp-vent">
           <table>
-            <thead><tr><th>AFP</th>{periodos.map((p) => <th key={p.clave}>{p.etiqueta}</th>)}</tr></thead>
+            <thead><tr><th>AFP</th>{periods.map((p) => <th key={p.key}>{p.label}</th>)}</tr></thead>
             <tbody>
               {/* House row first (it is the question this table answers),
                   heat in its brand ramp; competitors share ONE gray ramp so
                   intensity reads as rank everywhere, not as identity. */}
-              {ordenCasa(cfg, compitenPos).map((afp) => {
-                const fila = (pos?.filas || []).find((r) => r.fondo === fondoPos && r.afp === afp);
-                if (!fila) return null;
-                const esCasa = afp === casa;
-                const base = esCasa ? colorDe(cfg, afp, true) : GRIS_COMPETIDOR;
+              {houseFirst(cfg, posCompeting).map((afp) => {
+                const row = (pos?.rows || []).find((r) => r.fund === posFund && r.afp === afp);
+                if (!row) return null;
+                const isHouse = afp === house;
+                const base = isHouse ? colorOf(cfg, afp, true) : COMPETITOR_GRAY;
                 return (
                   <tr key={afp}>
                     <td><span className="spp-chip"
-                      style={{ background: tintaDe(afp, compitenPos) }} />
-                      <b style={{ color: esCasa ? colorDe(cfg, afp, true) : 'inherit' }}>{afp}</b></td>
-                    {periodos.map((p) => {
-                      const q = fila.puestos[p.clave];
-                      if (!q) return <td key={p.clave} className="num dim">—</td>;
-                      const t = totalPos < 2 ? 1 : 1 - (q - 1) / (totalPos - 1);
-                      const pct = Math.round(7 + 93 * t);
+                      style={{ background: inkOf(afp, posCompeting) }} />
+                      <b style={{ color: isHouse ? colorOf(cfg, afp, true) : 'inherit' }}>{afp}</b></td>
+                    {periods.map((p) => {
+                      const rank = row.ranks[p.key];
+                      if (!rank) return <td key={p.key} className="num dim">—</td>;
+                      const t = posTotal < 2 ? 1 : 1 - (rank - 1) / (posTotal - 1);
+                      const share = Math.round(7 + 93 * t);
                       return (
-                        <td key={p.clave} className="num spp-puesto"
+                        <td key={p.key} className="num spp-puesto"
                           style={{
-                            background: `color-mix(in srgb, ${base} ${pct}%, transparent)`,
-                            color: pct >= 60 ? '#fff' : 'inherit',
-                            fontWeight: q === 1 ? 700 : 500,
-                          }}>{q}</td>
+                            background: `color-mix(in srgb, ${base} ${share}%, transparent)`,
+                            color: share >= 60 ? '#fff' : 'inherit',
+                            fontWeight: rank === 1 ? 700 : 500,
+                          }}>{rank}</td>
                       );
                     })}
                   </tr>
@@ -559,9 +556,9 @@ export default function SppPanelPage() {
           </table>
         </div>
         )}
-        <p className="page-sub">Puesto 1 al {totalPos} por rendimiento del mes, dentro de cada tipo
-          de fondo{vistaPos === 'tabla' ? ' — más intenso = mejor puesto; la fila en color es ' : '; la línea gruesa es '}
-          {casa}. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
+        <p className="page-sub">Puesto 1 al {posTotal} por rendimiento del mes, dentro de cada tipo
+          de fondo{posView === 'table' ? ' — más intenso = mejor puesto; la fila en color es ' : '; la línea gruesa es '}
+          {house}. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
       </div>
     </div>
   );

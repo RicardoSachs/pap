@@ -16,13 +16,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import Eco from '../../../components/Eco';
-import CargaArchivo from '../../../components/CargaArchivo';
+import Echo from '../../../components/Echo';
+import FileUpload from '../../../components/FileUpload';
 import SppSeg from '../../../components/SppSeg';
 import TradebookTabs from '../../../components/TradebookTabs';
-import useVerTodo from '../../../components/useVerTodo';
-import { apiGet } from '../../../lib/api';
-import { apiSend, apiUrl, fFecha, nEnt } from '../../../lib/spp';
+import useShowAll from '../../../components/useShowAll';
+import { apiGet, apiSend } from '../../../lib/api';
+import { apiUrl, fDate, nInt } from '../../../lib/spp';
 
 const LADOS = [['Compra', 'compra'], ['Venta', 'venta']];
 // Sin `referencia`: es el id del sistema ORIGEN, y quien captura a mano no
@@ -46,12 +46,12 @@ export default function TradebookCarga() {
   const deFms = estado?.origenes?.fms || 0;
 
   return (
-    <div>
+    <div className="tb-page">
       <h1 className="page-title">Tradebook</h1>
       <p className="page-sub">
         Registro y carga
         {estado?.filas
-          ? ` · ${nEnt(estado.filas)} operaciones (${nEnt(deTraders)} de traders, ${nEnt(deFms)} de FMS)`
+          ? ` · ${nInt(estado.filas)} operaciones (${nInt(deTraders)} de traders, ${nInt(deFms)} de FMS)`
           : ' · el libro está vacío'}
       </p>
       <TradebookTabs />
@@ -94,14 +94,14 @@ function PorArchivo({ alCargar, origen, traders }) {
     fd.append('trader', deTraders ? trader : '');
     const r = await apiSend('/api/tradebook/archivo', 'POST', fd, true);
     setOcupado(false);
-    if (!r.ok) { setEco({ ok: false, texto: r.data.motivo }); return; }
+    if (!r.ok) { setEco({ ok: false, text: r.data.detail }); return; }
     const i = r.data.informe;
     setInforme(i);
     if (soloRevisar) {
-      setEco({ ok: true, texto: `Revisado: ${i.leidas} operación(es) legibles, `
+      setEco({ ok: true, text: `Revisado: ${i.leidas} operación(es) legibles, `
         + `${i.descartadas.length} descartada(s). Nada se ha guardado todavía.` });
     } else {
-      setEco({ ok: true, texto: `Cargadas ${i.guardadas} operación(es): `
+      setEco({ ok: true, text: `Cargadas ${i.guardadas} operación(es): `
         + `${i.insertadas} nuevas y ${i.actualizadas} que ya estaban y se actualizaron.` });
       setArchivo(null);
       if (input.current) input.current.value = '';
@@ -109,21 +109,21 @@ function PorArchivo({ alCargar, origen, traders }) {
     }
   };
 
-  const [descartadas, VerDescartadas] = useVerTodo(informe?.descartadas || [], 8);
-  const [muestra, VerMuestra] = useVerTodo(informe?.muestra || [], 10);
+  const [descartadas, VerDescartadas] = useShowAll(informe?.descartadas || [], 8);
+  const [muestra, VerMuestra] = useShowAll(informe?.muestra || [], 10);
 
   return (
-    <CargaArchivo
+    <FileUpload
       ref={input}
-      titulo={deTraders ? 'Carga por archivo · registro del trader' : 'Carga del reporte de FMS'}
-      descripcion={<>
+      title={deTraders ? 'Carga por archivo · registro del trader' : 'Carga del reporte de FMS'}
+      description={<>
         Excel o CSV. Se reconoce por el contenido, no por la extensión, y las
         columnas por su nombre en varios idiomas. Obligatorias: fecha, fondo,
         lado, instrumento, cantidad, y monto o precio
         {deTraders ? ', más el trader de cada fila.' : '.'}
       </>}
-      formato={deTraders ? 'tradebook_traders' : 'tradebook_fms'}
-      plantilla={`/api/tradebook/plantilla?origen=${origen}`}
+      format={deTraders ? 'tradebook_traders' : 'tradebook_fms'}
+      template={`/api/tradebook/plantilla?origen=${origen}`}
       accept=".xlsx,.xls,.csv,.txt"
       onChange={(e) => { setArchivo(e.target.files?.[0] || null); invalidar(); }}
       extra={deTraders && (
@@ -143,32 +143,32 @@ function PorArchivo({ alCargar, origen, traders }) {
           </p>
         </div>
       )}
-      acciones={<>
+      actions={<>
         <button className="btn" disabled={!archivo || ocupado}
           onClick={() => enviar(true)}>Revisar</button>
         <button className="btn principal" disabled={!archivo || ocupado || !informe?.leidas}
           onClick={() => enviar(false)}>Cargar lo revisado</button>
       </>}
-      eco={eco}
-      previaEstado={informe && (informe.guardadas != null
-        ? `${informe.archivo} · ${nEnt(informe.guardadas)} operación(es) cargadas en el libro de ${informe.origen === 'fms' ? 'FMS' : 'los traders'}.`
-        : `${informe.archivo} · ${nEnt(informe.leidas)} operación(es) legibles. Nada se ha guardado todavía.`)}
-      previa={informe && (
+      echo={eco}
+      previewStatus={informe && (informe.guardadas != null
+        ? `${informe.archivo} · ${nInt(informe.guardadas)} operación(es) cargadas en el libro de ${informe.origen === 'fms' ? 'FMS' : 'los traders'}.`
+        : `${informe.archivo} · ${nInt(informe.leidas)} operación(es) legibles. Nada se ha guardado todavía.`)}
+      preview={informe && (
         <>
           <table className="spp-informe">
             <tbody>
               <tr><td>Va al libro de</td><td className="num">
                 {informe.origen === 'fms' ? 'FMS' : 'los traders'}</td></tr>
-              <tr><td>Operaciones legibles</td><td className="num">{nEnt(informe.leidas)}</td></tr>
-              <tr><td>Descartadas</td><td className="num">{nEnt(informe.descartadas?.length || 0)}</td></tr>
+              <tr><td>Operaciones legibles</td><td className="num">{nInt(informe.leidas)}</td></tr>
+              <tr><td>Descartadas</td><td className="num">{nInt(informe.descartadas?.length || 0)}</td></tr>
               {informe.resumen?.desde && (
                 <tr><td>Rango</td><td className="num">
-                  {fFecha(informe.resumen.desde)} a {fFecha(informe.resumen.hasta)}</td></tr>
+                  {fDate(informe.resumen.desde)} a {fDate(informe.resumen.hasta)}</td></tr>
               )}
               {informe.resumen && (
                 <>
                   <tr><td>Compras / ventas</td><td className="num">
-                    {nEnt(informe.resumen.compras)} / {nEnt(informe.resumen.ventas)}</td></tr>
+                    {nInt(informe.resumen.compras)} / {nInt(informe.resumen.ventas)}</td></tr>
                   <tr><td>Fondos</td><td className="num">{informe.resumen.fondos.join(', ') || '—'}</td></tr>
                   <tr><td>Monedas</td><td className="num">{informe.resumen.monedas.join(', ') || '—'}</td></tr>
                   {deTraders && (
@@ -178,7 +178,7 @@ function PorArchivo({ alCargar, origen, traders }) {
                   {/* Sin referencia no hay forma de distinguir una recarga del
                       mismo archivo de dos operaciones idénticas de verdad. */}
                   <tr><td>Con referencia propia</td><td className="num">
-                    {nEnt(informe.resumen.con_referencia)} de {nEnt(informe.leidas)}</td></tr>
+                    {nInt(informe.resumen.con_referencia)} de {nInt(informe.leidas)}</td></tr>
                 </>
               )}
             </tbody>
@@ -186,7 +186,7 @@ function PorArchivo({ alCargar, origen, traders }) {
 
           {informe.resumen && informe.resumen.con_referencia < informe.leidas && (
             <p className="page-sub" style={{ marginTop: 10 }}>
-              {nEnt(informe.leidas - informe.resumen.con_referencia)} fila(s) no
+              {nInt(informe.leidas - informe.resumen.con_referencia)} fila(s) no
               traen una columna de referencia. Esas se insertan siempre: no hay
               manera de saber si repetir el archivo es una recarga o dos
               operaciones iguales de verdad.
@@ -198,7 +198,7 @@ function PorArchivo({ alCargar, origen, traders }) {
 
           {!!descartadas.length && (
             <details className="spp-desplegable" open>
-              <summary>Filas descartadas · {nEnt(informe.descartadas.length)}</summary>
+              <summary>Filas descartadas · {nInt(informe.descartadas.length)}</summary>
               <div className="table-wrap">
                 <table>
                   <thead><tr><th className="num">Fila</th><th>Motivo</th><th>Contenido</th></tr></thead>
@@ -228,12 +228,12 @@ function PorArchivo({ alCargar, origen, traders }) {
                   </tr></thead>
                   <tbody>{muestra.map((o, i) => (
                     <tr key={i}>
-                      <td>{fFecha(o.fecha)}</td>
+                      <td>{fDate(o.fecha)}</td>
                       <td className="num">{o.fondo}</td>
                       <td><span className={`tb-lado ${o.lado}`}>{o.lado}</span></td>
                       <td>{o.instrumento}</td>
-                      <td className="num">{nEnt(Math.round(o.cantidad))}</td>
-                      <td className="num">{nEnt(Math.round(o.monto))}</td>
+                      <td className="num">{nInt(Math.round(o.cantidad))}</td>
+                      <td className="num">{nInt(Math.round(o.monto))}</td>
                       <td>{o.moneda}</td>
                       <td>{o.operador || '—'}</td>{deTraders && <td>{o.trader || '—'}</td>}
                       <td>{o.contraparte || '—'}</td>
@@ -268,8 +268,8 @@ function AMano({ alCargar, traders }) {
     const r = await apiSend('/api/tradebook/operaciones', 'POST', form);
     if (r.ok) {
       const o = r.data.operacion;
-      setEco({ ok: true, texto: `Registrada: ${o.lado} de ${nEnt(Math.round(o.cantidad))} `
-        + `${o.instrumento} el ${fFecha(o.fecha)}, por ${o.trader}.` });
+      setEco({ ok: true, text: `Registrada: ${o.lado} de ${nInt(Math.round(o.cantidad))} `
+        + `${o.instrumento} el ${fDate(o.fecha)}, por ${o.trader}.` });
       // La fecha, el fondo, la moneda, la contraparte y el TRADER se
       // conservan: quien captura a mano suele cargar varias seguidas suyas
       // del mismo día.
@@ -277,7 +277,7 @@ function AMano({ alCargar, traders }) {
                         contraparte: f.contraparte, trader: f.trader,
                         operador: f.operador }));
       alCargar();
-    } else setEco({ ok: false, texto: r.data.motivo });
+    } else setEco({ ok: false, text: r.data.detail });
   };
 
   // Lo mismo que exige el backend, calculado aquí para poder DECIR qué falta
@@ -358,7 +358,7 @@ function AMano({ alCargar, traders }) {
                 devengado y cantidad x precio no es lo que se pagó. */}
             <div className="field"><label>Monto</label>
               <input className="text-input" style={{ width: 140 }}
-                placeholder={montoCalc != null ? nEnt(Math.round(montoCalc)) : 'cantidad × precio'}
+                placeholder={montoCalc != null ? nInt(Math.round(montoCalc)) : 'cantidad × precio'}
                 value={form.monto} onChange={set('monto')} /></div>
           </div>
         </div>
@@ -378,7 +378,7 @@ function AMano({ alCargar, traders }) {
             Registrar operación</button>
           <button className="btn" onClick={() => { setForm(VACIO); setEco(''); }}>Limpiar</button>
         </div>
-        <Eco eco={eco} />
+        <Echo echo={eco} />
       </div>
 
       {/* La misma disposición que la carga por archivo: a la derecha, lo que
@@ -395,14 +395,14 @@ function AMano({ alCargar, traders }) {
               <th className="num">Monto</th><th>Moneda</th><th>Operador</th><th>Book</th>
             </tr></thead>
             <tbody><tr>
-              <td>{form.fecha ? fFecha(form.fecha) : vacio}</td>
+              <td>{form.fecha ? fDate(form.fecha) : vacio}</td>
               <td className="num">{form.fondo || vacio}</td>
               <td><span className={`tb-lado ${form.lado}`}>{form.lado}</span></td>
               <td>{form.instrumento.trim() || vacio}</td>
-              <td className="num">{num(form.cantidad) != null ? nEnt(Math.round(num(form.cantidad))) : vacio}</td>
+              <td className="num">{num(form.cantidad) != null ? nInt(Math.round(num(form.cantidad))) : vacio}</td>
               <td className="num">{num(form.precio) != null
                 ? num(form.precio).toLocaleString('es-PE', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) : vacio}</td>
-              <td className="num">{montoCalc != null ? nEnt(Math.round(montoCalc)) : vacio}</td>
+              <td className="num">{montoCalc != null ? nInt(Math.round(montoCalc)) : vacio}</td>
               <td>{form.moneda.trim().toUpperCase() || vacio}</td>
               <td>{form.operador.trim() || vacio}</td>
               <td>{form.trader.trim() || vacio}</td>
@@ -437,15 +437,15 @@ function Libro({ estado, alCambiar }) {
                      filtro.origen, estado?.filas]);
 
   const borrar = async (o) => {
-    if (!window.confirm(`¿Anular la ${o.lado} de ${o.instrumento} del ${fFecha(o.fecha)}?`)) return;
+    if (!window.confirm(`¿Anular la ${o.lado} de ${o.instrumento} del ${fDate(o.fecha)}?`)) return;
     const r = await apiSend(`/api/tradebook/operaciones/${o.operacion_id}`, 'DELETE');
     setEco(r.ok
-      ? { ok: true, texto: `Operación anulada: ${o.lado} de ${o.instrumento}.` }
-      : { ok: false, texto: r.data.motivo });
+      ? { ok: true, text: `Operación anulada: ${o.lado} de ${o.instrumento}.` }
+      : { ok: false, text: r.data.detail });
     alCambiar(); cargar();
   };
 
-  const [filas, VerFilas] = useVerTodo(ops || [], 20);
+  const [filas, VerFilas] = useShowAll(ops || [], 20);
   const exportar = new URLSearchParams();
   Object.entries(filtro).forEach(([k, v]) => { if (v) exportar.set(k, v); });
 
@@ -471,7 +471,7 @@ function Libro({ estado, alCambiar }) {
         <a className="btn" style={{ alignSelf: 'end' }}
           href={apiUrl(`/api/tradebook/exportar?${exportar}`)}>↓ Exportar · XLSX</a>
       </div>
-      <Eco eco={eco} />
+      <Echo echo={eco} />
       <div className="table-wrap">
         <table>
           <thead><tr>
@@ -483,14 +483,14 @@ function Libro({ estado, alCambiar }) {
           <tbody>
             {filas.length ? filas.map((o) => (
               <tr key={o.operacion_id}>
-                <td>{fFecha(o.fecha)}</td>
+                <td>{fDate(o.fecha)}</td>
                 <td className="num">{o.fondo}</td>
                 <td><span className={`tb-lado ${o.lado}`}>{o.lado}</span></td>
                 <td>{o.instrumento}</td>
-                <td className="num">{nEnt(Math.round(o.cantidad))}</td>
+                <td className="num">{nInt(Math.round(o.cantidad))}</td>
                 <td className="num">{o.precio == null ? '—' : o.precio.toLocaleString('es-PE',
                   { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</td>
-                <td className="num">{nEnt(Math.round(o.monto))}</td>
+                <td className="num">{nInt(Math.round(o.monto))}</td>
                 <td>{o.moneda}</td>
                 <td>{o.contraparte || '—'}</td>
                 <td>{o.operador || <span className="dim">—</span>}</td>

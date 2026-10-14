@@ -10,9 +10,9 @@
 // sobrevive.
 //
 // Son dos hojas: la de widgets, que este tablero comparte con el Tradebook,
-// y la suya propia.
+// y la suya propia (styles/widgets.css + spp.css).
 // ---------------------------------------------------------------------------
-import '../estilos/tablero.css';
+import '../styles/widgets.css';
 import './spp.css';
 
 export default function SppLayout({ children }) {

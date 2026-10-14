@@ -12,7 +12,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 // NUESTRO: nuestros tableros tienen sub-rutas (/spp/libro, /tradebook/carga)
 // y la comparacion exacta dejaria el menu apagado dentro de ellas.
-import { rutaActiva } from '../lib/rutas';
+import { activeRoute } from '../lib/routes';
 
 const ITEMS = [
   { href: '/prices/', label: 'Prices', icon: '↗' },
@@ -33,7 +33,7 @@ export default function Sidebar({ expanded, onToggle }) {
   const params = useSearchParams();
   const qs = params.toString();
   const q = qs ? `?${qs}` : '';
-  const isActive = (href) => rutaActiva(path, href);   // NUESTRO: incluye sub-rutas
+  const isActive = (href) => activeRoute(path, href);   // NUESTRO: incluye sub-rutas
 
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : ''}`}>

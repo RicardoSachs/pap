@@ -6,8 +6,8 @@
 # OLD standalone monitor's database - it exists to import history that
 # already lived somewhere else. On a second machine that database does
 # not exist, and re-scraping cannot rebuild what only lives here:
-# hand corrections (fact_prices.source = 'manual') and the target and
-# benchmark compositions. So the
+# hand corrections (fact_prices.source = 'manual') and the benchmark
+# definitions (dim_benchmark_version / benchmark_constituent). So the
 # way to replicate this project is to carry the database itself.
 #
 # Usage:
@@ -43,8 +43,9 @@ from src.shared.paths import DATA_DIR
 
 # Tables that only exist here: named so the summary can prove the dump
 # carried the SPP work, not just the upstream pipelines.
-TABLAS_SPP = ("fact_prices", "series_registry", "dim_entity",
-              "benchmark", "benchmark_composicion")
+TABLAS_SPP = ("fact_prices", "series_registry", "dim_entity", "dim_portfolio",
+              "dim_benchmark_version", "benchmark_constituent",
+              "fact_positions_model", "fact_portfolio_valuation")
 
 
 def _herramienta(nombre: str) -> str:

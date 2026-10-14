@@ -82,8 +82,14 @@ def main() -> int:
             "WHERE table_schema = 'public'").fetchone()["n"]
     print(f"Listo: {tablas} tablas.")
     print()
-    print("Siguiente paso: abre el tablero con 'Tablero SPP.bat'.")
-    print("Al arrancar registra las series y ya puedes cargar el historico.")
+    # The API no longer touches the schema or the registry at startup: this
+    # script is the one step that leaves a new or updated base ready.
+    print("Registrando las series del SPP...")
+    from src.pipelines.prices.sbs.valor_cuota.run import ensure_registered
+    ensure_registered()
+    print("Listo.")
+    print()
+    print("Siguiente paso: abre el tablero con 'Tablero SPP.bat' y carga el historico.")
     return 0
 
 

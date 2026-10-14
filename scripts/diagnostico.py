@@ -162,8 +162,8 @@ def main() -> int:
                                  "cree el esquema.")
             for tabla, etiqueta in (("series_registry", "series registradas"),
                                     ("fact_prices", "observaciones del libro"),
-                                    ("benchmark", "indices declarados (target/benchmark)"),
-                                    ("benchmark_composicion", "filas de composicion")):
+                                    ("dim_benchmark_version", "versiones de benchmark"),
+                                    ("benchmark_constituent", "componentes de benchmark")):
                 n = intentar(lambda t=tabla: conn.execute(
                     f"SELECT count(*) AS n FROM {t}").fetchone()["n"], "-")
                 print(f"           {etiqueta:<28} {n}")
@@ -190,10 +190,10 @@ def main() -> int:
     # ---- 9. Ultima extraccion -------------------------------------------
     titulo("Extraccion automatica")
     def _ultima():
-        from src.pipelines.prices.sbs.valor_cuota.run import ultima_corrida
-        return ultima_corrida()
+        from src.pipelines.prices.sbs.valor_cuota.run import last_run
+        return last_run()
     rastro = intentar(_ultima, "")
-    if isinstance(rastro, dict) and rastro.get("inicio"):
+    if isinstance(rastro, dict) and rastro.get("started"):
         estado = "correcta" if rastro.get("ok") else "FALLO"
         print(f"{OK}ultima corrida: {rastro.get('inicio')} - {estado}")
         if rastro.get("error"):

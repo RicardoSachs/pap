@@ -8,11 +8,11 @@ rem el operador veia "running scripts is disabled on this system" y se
 rem quedaba sin extraccion automatica. Este .bat llama al mismo guion
 rem con -ExecutionPolicy Bypass, que solo aplica a este proceso.
 rem
-rem Admite los mismos argumentos:
-rem   "Programar extraccion SPP.bat" -Hora 19:30
-rem   "Programar extraccion SPP.bat" -Estado
-rem   "Programar extraccion SPP.bat" -Probar
-rem   "Programar extraccion SPP.bat" -Quitar
+rem Admite los mismos argumentos que scripts\schedule_sbs_valor_cuota.ps1:
+rem   "Programar extraccion SPP.bat" -Time 19:30
+rem   "Programar extraccion SPP.bat" -Status
+rem   "Programar extraccion SPP.bat" -Test
+rem   "Programar extraccion SPP.bat" -Remove
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Programar extraccion SPP.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0schedule_sbs_valor_cuota.ps1" %*
 pause

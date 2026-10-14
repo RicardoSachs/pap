@@ -13,7 +13,8 @@ Verificado el 2026-09-14 reproduciendo ese entorno completo (Python
 3.10.6 portable + los wheels de `pypro_packs`): los tests pasan, la
 API levanta, crea el esquema, registra las series y sirve el tablero.
 Los cambios posteriores se prueban en la máquina de desarrollo y
-viajan con el mismo zip; la base se actualiza sola al arrancar.
+viajan con el mismo zip; la base se pone al día con `Crear base.bat`
+(sección «Actualizar el proyecto»).
 
 ---
 
@@ -128,8 +129,8 @@ BLOOMBERG_ENABLED=true
 ```
 
 para los pipelines de precios del repositorio base. El tablero SPP no lo
-necesita: el target y el benchmark se componen de series del propio libro
-de precios (y, más adelante, de una tabla externa).
+necesita: los benchmarks se componen de series del propio libro de
+precios.
 
 `DATA_DIR` es opcional pero conviene fijarlo: vacío significa "la
 carpeta `data` hermana del proyecto", y si algún día mueves la carpeta
@@ -138,8 +139,10 @@ se te quedan atrás el rastro de las extracciones y el perfil de Chrome.
 ## 5. Crear la base y llenarla
 
 Doble clic en **`scripts\Crear base.bat`**. Lee el `.env`, crea la base
-con ese nombre si no existe y le aplica el esquema. Si ya existe no la
-toca, y se puede repetir sin miedo.
+con ese nombre si no existe, le aplica el esquema y registra las series
+del SPP. Si ya existe no borra nada: solo agrega lo que falte, y se puede
+repetir sin miedo. Es también el paso que se corre **después de cada
+actualización** del proyecto.
 
 <details>
 <summary>A mano, si prefieres</summary>
@@ -156,8 +159,8 @@ así que conviene la ruta completa):
 ```
 
 Te pedirá la contraseña del usuario `postgres`. El nombre tiene que ser
-el mismo que pusiste en `PG_DBNAME`. El esquema se crea solo al abrir el
-tablero.
+el mismo que pusiste en `PG_DBNAME`. El esquema lo aplica después
+`Crear base.bat` (o `.venv\Scripts\python.exe scripts\crear_base.py`).
 </details>
 
 El libro de valor cuota **se reconstruye desde la fuente**, que es
@@ -173,11 +176,10 @@ Eso deja el libro completo desde 1993. La extracción diaria se encarga
 del resto.
 
 > Lo que no viaja por esta vía es lo que solo existe en la otra
-> computadora: las correcciones hechas a mano y las composiciones del
-> target y del benchmark. Son
-> pocas y se vuelven a declarar desde el tablero en minutos. Si algún
-> día quieres moverlas tal cual y tienes cómo pasar un archivo, está
-> `scripts\respaldo_spp.py --exportar` / `--importar`.
+> computadora: las correcciones hechas a mano y las versiones de los
+> benchmarks. Son pocas y se vuelven a declarar desde el tablero en
+> minutos. Si algún día quieres moverlas tal cual y tienes cómo pasar un
+> archivo, está `scripts\respaldo_spp.py --exportar` / `--importar`.
 
 ## 6. Abrir el tablero
 
@@ -202,12 +204,12 @@ proyecto. La SBS publica el valor cuota de **t-2 días hábiles**; cada
 intento mira primero si el libro ya lo tiene y, si es así, no abre
 Chrome. Si a las 17:00 la SBS aún no publicó, se queda así hasta el
 día siguiente. No hay cuadro en el tablero: el rastro está en
-`data\spp\extraccion.log`.
+`data\spp\scrape.log`.
 
 Y ahora lo importante, **la primera vez en esta máquina**:
 
 ```
-scripts\"Programar extraccion SPP.bat" -Probar
+scripts\"Programar extraccion SPP.bat" -Test
 ```
 
 Quédate mirando. Se abre Chrome; si el WAF de la SBS muestra una
@@ -215,8 +217,8 @@ verificación, resuélvela a mano. Esa cookie queda guardada en el perfil
 y las corridas siguientes trabajan solas. Mientras no hagas esto, la
 tarea de las 16:00 fallará contra el WAF.
 
-Otros comandos del mismo archivo: `-Estado` (qué hay registrado),
-`-Hora 19:30` (cambiar la hora), `-Quitar`.
+Otros comandos del mismo archivo: `-Status` (qué hay registrado),
+`-Time 19:30` (cambiar la hora), `-Remove`.
 
 > La SBS exige un Chrome **visible**, así que la sesión de Windows debe
 > estar iniciada a esa hora. Con el equipo apagado la corrida se pospone
@@ -230,18 +232,19 @@ Otros comandos del mismo archivo: `-Estado` (qué hay registrado),
 |---|---|
 | El libro llega hasta la semana pasada | Pestaña **Libro** |
 | Profuturo aparece en color y el resto en grises | Pestaña **Panel** |
-| La tarea dice *Ready*, una próxima ejecución a las 16:00 y "repeticion: cada 30 min" | `scripts\"Programar extraccion SPP.bat" -Estado` |
-| La extracción escribe rastro | `data\spp\extraccion.log` |
+| La tarea dice *Ready*, una próxima ejecución a las 16:00 y "repeating every PT30M" | `scripts\"Programar extraccion SPP.bat" -Status` |
+| La extracción escribe rastro | `data\spp\scrape.log` |
 | El reporte PDF se genera | **Panel**, icono de descarga junto a las pestañas |
 
 Prueba opcional de que el código está sano en esta máquina (necesita
 `pytest`, que no viene en el wheelhouse):
 
 ```
-.venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook -q
+.venv\Scripts\python.exe -m pytest tests\prices tests\shared tests\web tests\tradebook tests\analytics -q
 ```
 
-Deben pasar los 121.
+Deben pasar los 132 (siete más se saltan: piden una base de pruebas
+que aquí no hace falta).
 
 ---
 
@@ -258,8 +261,9 @@ Deben pasar los 121.
 | `ModuleNotFoundError: multipart` o la API no arranca | Falta la descarga de `dependencias-faltantes-py310` (paso 0). Vuelve a correr el instalador con las dos carpetas. |
 | `Could not find a version that satisfies...` al instalar | La carpeta de `pypro_packs` está incompleta, o el Python no es 3.10 de 64 bits. |
 | `there is no unique or exclusion constraint matching the ON CONFLICT specification` | A la base le faltan restricciones que el código necesita, porque la creó una versión anterior. Doble clic en **`scripts\Verificar esquema.bat`**: compara tu base con el esquema del proyecto, dice exactamente qué falta y se ofrece a agregarlo. |
-| `-Estado` muestra una ruta distinta a esta carpeta, o *resultado* `2147942402` | La tarea apunta a una copia vieja del proyecto (dos carpetas del zip, o la carpeta se movió). Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
-| La extracción termina en 0 s con "El libro ya tiene el dd/mm/aaaa completo" | No es un error: la SBS publica t-2 días hábiles y ese día ya estaba cargado. Los reintentos de las 16:30 y 17:00 dicen lo mismo cuando el de las 16:00 acertó. |
+| `-Status` muestra una ruta distinta a esta carpeta, o *resultado* `2147942402` | La tarea apunta a una copia vieja del proyecto (dos carpetas del zip, o la carpeta se movió). Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
+| La extracción termina en 0 s con "The book already holds aaaa-mm-dd ... the SBS is not scraped" | No es un error: la SBS publica t-2 días hábiles y ese día ya estaba cargado. Los reintentos de las 16:30 y 17:00 dicen lo mismo cuando el de las 16:00 acertó. |
+| Al registrar un valor: `No series registered for ...` | La base es nueva o se actualizó sin correr **`scripts\Crear base.bat`**, que registra las series del SPP. Córrelo y reinicia el tablero. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |
 | Tras actualizar, el tablero sigue con el comportamiento viejo o da 404 en alguna acción | El tablero que estaba abierto sigue corriendo el código anterior: `Tablero SPP.bat` no reemplaza uno que ya responde. Cierra su ventana y vuelve a lanzarlo. |
 
@@ -283,11 +287,24 @@ La dinámica es de dos pasos, sin git en esta máquina:
 porque el zip no los trae, la tercera porque vive fuera del proyecto.
 Las librerías tampoco hay que reinstalarlas, salvo que el proyecto
 estrene alguna dependencia nueva.
-Al volver a abrir `Tablero SPP.bat`, la API aplica sola los cambios de
-esquema y registra lo que falte — no hay paso de migración que se pueda
-olvidar, y el contenido del libro no se toca. Si la actualización cambió
-la hora o la lógica de la tarea programada (esta guía lo dirá), vuelve a
-correr `scripts\Programar extraccion SPP.bat`.
+Después de descomprimir, **doble clic en `scripts\Crear base.bat`**:
+aplica a la base los cambios de esquema que traiga la versión nueva y
+registra las series que falten. El contenido del libro no se toca. Luego
+vuelve a abrir `Tablero SPP.bat`.
+
+Dos pasos más, solo **al pasar a la versión de octubre de 2026** (la que
+reorganizó el pipeline y los benchmarks):
+
+1. La tarea programada cambió de comando (`--scheduled`): vuelve a
+   correr `scripts\Programar extraccion SPP.bat`.
+2. Si la base la creó una versión anterior (tiene las tablas `benchmark`
+   y `benchmark_composicion`), conviértela una sola vez:
+
+   ```
+   .venv\Scripts\python.exe scripts\migrate\migrate_fork_benchmarks.py --apply --drop-legacy
+   ```
+
+   Sin `--apply` solo muestra lo que haría.
 
 Un detalle: descomprimir encima **no borra** los archivos que
 desaparezcan del proyecto. En la práctica solo significa que se van

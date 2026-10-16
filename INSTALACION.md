@@ -7,7 +7,7 @@ USB, sin git y sin acceso a PyPI.
 Al terminar tendrás el tablero abriéndose con doble clic, el libro de
 valor cuota completo desde 1993, el Tradebook listo para recibir
 operaciones y la extracción diaria automática a las 16:00 (con
-reintentos a las 16:30 y 17:00).
+reintentos a las 16:30 y 17:00), a cargo del scheduler del proyecto.
 
 Verificado el 2026-09-14 reproduciendo ese entorno completo (Python
 3.10.6 portable + los wheels de `pypro_packs`): los tests pasan, la
@@ -63,7 +63,7 @@ máquinas Windows redirige *Documentos* a OneDrive, y una carpeta que se
 sincroniza cambia de sitio sin avisar (ya pasó: la tarea programada
 quedó apuntando a una ruta que dejó de existir).
 
-Muévelo *ahora*, no después: la tarea programada del paso 7 guarda la
+Muévelo *ahora*, no después: la tarea de Windows del paso 7 guarda la
 ruta absoluta, y los datos (`data\`) nacen como carpeta hermana del
 proyecto.
 
@@ -87,7 +87,7 @@ Las rutas pueden tener espacios (`Program Files`, `Mis Documentos`) y
 pueden ser de red (`\\servidor\...`). Las librerías desde la red van
 bien: pip las copia dentro del `.venv`. El **Python** conviene tenerlo
 en local — el `.venv` recuerda dónde está su intérprete y lo necesita en
-cada arranque, también en la tarea programada de las 16:00. Y si la
+cada arranque, también en el scheduler que corre al iniciar sesión. Y si la
 carpeta venía con un `.venv` de otra máquina, bórralo antes: un entorno
 no se puede copiar, sigue apuntando al Python de donde nació.
 
@@ -197,32 +197,47 @@ plantilla XLSX.
 
 ## 7. Extracción diaria automática
 
-Doble clic en **`scripts\Programar extraccion SPP.bat`**. Registra la
-tarea de Windows *Profuturo - Valor cuota SPP*, todos los días a las
-16:00 con reintentos a las 16:30 y 17:00, apuntando a esta copia del
-proyecto. La SBS publica el valor cuota de **t-2 días hábiles**; cada
-intento mira primero si el libro ya lo tiene y, si es así, no abre
-Chrome. Si a las 17:00 la SBS aún no publicó, se queda así hasta el
-día siguiente. No hay cuadro en el tablero: el rastro está en
-`data\spp\scrape.log`.
+La extracción no es una tarea propia: es un trabajo (`acquire_spp`) del
+**scheduler** del proyecto, `scripts\scheduler.py`, el mismo proceso que
+en la oficina corre Bloomberg, la adquisición SBS y FMS. Qué trabajos
+corre cada máquina lo deciden las banderas de su `.env`
+(`SCRAPER_ENABLED=true` habilita el valor cuota); a qué hora, el archivo
+`config\schedules.yaml`: 16:00 con reintentos a las 16:30 y 17:00, de
+lunes a viernes. La SBS publica el valor cuota de **t-2 días hábiles**;
+cada intento mira primero si el libro ya lo tiene y, si es así, no abre
+Chrome. Si a las 17:00 la SBS aún no publicó, se queda así hasta el día
+siguiente.
+
+Doble clic en **`scripts\Programar scheduler.bat`**. Registra la tarea
+de Windows *pgetl scheduler*, que arranca el scheduler al iniciar sesión
+y lo reinicia si muere, y lo arranca en ese momento. Queda una ventana
+abierta llamada *scheduler*: es el proceso, no la cierres.
+
+Si esta máquina solo hace el valor cuota (no tiene chromedriver ni ve la
+carpeta de red de la adquisición SBS), agrega al `.env`:
+
+```
+AUTOMATED_SCRAPER_ENABLED=false
+```
 
 Y ahora lo importante, **la primera vez en esta máquina**:
 
 ```
-scripts\"Programar extraccion SPP.bat" -Test
+.venv\Scripts\python.exe scripts\run_sbs_valor_cuota.py --scheduled
 ```
 
 Quédate mirando. Se abre Chrome; si el WAF de la SBS muestra una
 verificación, resuélvela a mano. Esa cookie queda guardada en el perfil
-y las corridas siguientes trabajan solas. Mientras no hagas esto, la
-tarea de las 16:00 fallará contra el WAF.
+y las corridas siguientes trabajan solas. Mientras no hagas esto, el
+trabajo de las 16:00 fallará contra el WAF.
 
-Otros comandos del mismo archivo: `-Status` (qué hay registrado),
-`-Time 19:30` (cambiar la hora), `-Remove`.
+Otros comandos del mismo archivo: `-Estado` (la tarea, la última señal
+de vida del scheduler y las últimas corridas) y `-Quitar`.
 
 > La SBS exige un Chrome **visible**, así que la sesión de Windows debe
-> estar iniciada a esa hora. Con el equipo apagado la corrida se pospone
-> y se recupera al volver.
+> estar iniciada a esa hora. Con el equipo apagado el scheduler arranca
+> al volver a iniciar sesión y recupera la corrida perdida si está dentro
+> de la ventana de gracia (25 minutos).
 
 ---
 
@@ -232,8 +247,8 @@ Otros comandos del mismo archivo: `-Status` (qué hay registrado),
 |---|---|
 | El libro llega hasta la semana pasada | Pestaña **Libro** |
 | Profuturo aparece en color y el resto en grises | Pestaña **Panel** |
-| La tarea dice *Ready*, una próxima ejecución a las 16:00 y "repeating every PT30M" | `scripts\"Programar extraccion SPP.bat" -Status` |
-| La extracción escribe rastro | `data\spp\scrape.log` |
+| El scheduler late (visto hace menos de 10 minutos) y lista `acquire_spp` | `scripts\"Programar scheduler.bat" -Estado` |
+| Cada corrida queda registrada | la misma pantalla, o `SELECT * FROM job_runs ORDER BY started_at DESC` |
 | El reporte PDF se genera | **Panel**, icono de descarga junto a las pestañas |
 
 Prueba opcional de que el código está sano en esta máquina (necesita
@@ -261,8 +276,9 @@ que aquí no hace falta).
 | `ModuleNotFoundError: multipart` o la API no arranca | Falta la descarga de `dependencias-faltantes-py310` (paso 0). Vuelve a correr el instalador con las dos carpetas. |
 | `Could not find a version that satisfies...` al instalar | La carpeta de `pypro_packs` está incompleta, o el Python no es 3.10 de 64 bits. |
 | `there is no unique or exclusion constraint matching the ON CONFLICT specification` | A la base le faltan restricciones que el código necesita, porque la creó una versión anterior. Doble clic en **`scripts\Verificar esquema.bat`**: compara tu base con el esquema del proyecto, dice exactamente qué falta y se ofrece a agregarlo. |
-| `-Status` muestra una ruta distinta a esta carpeta, o *resultado* `2147942402` | La tarea apunta a una copia vieja del proyecto (dos carpetas del zip, o la carpeta se movió). Vuelve a correr `scripts\Programar extraccion SPP.bat` desde la definitiva. |
-| La extracción termina en 0 s con "The book already holds aaaa-mm-dd ... the SBS is not scraped" | No es un error: la SBS publica t-2 días hábiles y ese día ya estaba cargado. Los reintentos de las 16:30 y 17:00 dicen lo mismo cuando el de las 16:00 acertó. |
+| `-Estado` dice que ningún scheduler ha latido, o la tarea apunta a otra carpeta | El scheduler no corre, o corre desde una copia vieja del proyecto. Vuelve a correr `scripts\Programar scheduler.bat` desde la carpeta definitiva. |
+| En `job_runs` el trabajo `acquire_spp` termina en segundos con "The book already holds aaaa-mm-dd ... the SBS is not scraped" en el log | No es un error: la SBS publica t-2 días hábiles y ese día ya estaba cargado. Los reintentos de las 16:30 y 17:00 dicen lo mismo cuando el de las 16:00 acertó. |
+| A las 08:30 suena un pitido y `job_runs` registra `acquire_sbs` con error | Esta máquina no hace la adquisición SBS del extranet: pon `AUTOMATED_SCRAPER_ENABLED=false` en el `.env` y reinicia el scheduler. |
 | Al registrar un valor: `No series registered for ...` | La base es nueva o se actualizó sin correr **`scripts\Crear base.bat`**, que registra las series del SPP. Córrelo y reinicia el tablero. |
 | La página se ve vieja tras actualizar el proyecto | Ctrl+F5 una vez. (La API ya pide revalidar el HTML; solo pasa si el navegador guardó algo de antes de esta versión.) |
 | Tras actualizar, el tablero sigue con el comportamiento viejo o da 404 en alguna acción | El tablero que estaba abierto sigue corriendo el código anterior: `Tablero SPP.bat` no reemplaza uno que ya responde. Cierra su ventana y vuelve a lanzarlo. |
@@ -295,8 +311,10 @@ vuelve a abrir `Tablero SPP.bat`.
 Dos pasos más, solo **al pasar a la versión de octubre de 2026** (la que
 reorganizó el pipeline y los benchmarks):
 
-1. La tarea programada cambió de comando (`--scheduled`): vuelve a
-   correr `scripts\Programar extraccion SPP.bat`.
+1. La extracción ya no es una tarea propia sino un trabajo del
+   scheduler: quita la tarea vieja *Profuturo - Valor cuota SPP*
+   (`schtasks /Delete /TN "Profuturo - Valor cuota SPP" /F`) y corre
+   `scripts\Programar scheduler.bat`.
 2. Si la base la creó una versión anterior (tiene las tablas `benchmark`
    y `benchmark_composicion`), conviértela una sola vez:
 

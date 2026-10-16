@@ -25,7 +25,7 @@ import re
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from src.pipelines.prices.sbs.valor_cuota.afps import key_of, operates
+from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_SBS_SPP, key_of, operates
 from src.shared import tabular
 
 logger = logging.getLogger(__name__)
@@ -38,12 +38,13 @@ PAGE_METRICS = ["cuotas", "fondo_soles", "valor_cuota"]
 
 HISTORY_SHEET = "Valor cuota diario"
 
-# Staging `source` values: which of the two SBS publications a row came from.
-SOURCE_DAILY = "daily_page"
-SOURCE_HISTORY = "history_xls"
+# Staging `channel` values: which of the two SBS publications a row came
+# from. `source` is the feed's source value (afps.SOURCE_SBS_SPP).
+CHANNEL_DAILY = "daily_page"
+CHANNEL_HISTORY = "history_xls"
 
 STG_COLUMNS = ["afp", "fondo", "valor_cuota", "cuotas", "fondo_soles",
-               "source", "date", "loaded_at"]
+               "source", "channel", "date", "loaded_at"]
 
 
 def _num(value) -> float | None:
@@ -186,7 +187,7 @@ def parse_history(content: bytes,
     return df
 
 
-def prepare_stg(df: pd.DataFrame, source: str) -> pd.DataFrame:
+def prepare_stg(df: pd.DataFrame, channel: str) -> pd.DataFrame:
     """Fills the staging metadata columns on a parsed DataFrame."""
     if df.empty:
         return pd.DataFrame(columns=STG_COLUMNS)
@@ -194,7 +195,8 @@ def prepare_stg(df: pd.DataFrame, source: str) -> pd.DataFrame:
     for col in ("valor_cuota", "cuotas", "fondo_soles"):
         if col not in out.columns:
             out[col] = None
-    out["source"] = source
+    out["source"] = SOURCE_SBS_SPP
+    out["channel"] = channel
     out["loaded_at"] = dt.datetime.now()
     return out[STG_COLUMNS]
 
@@ -202,8 +204,8 @@ def prepare_stg(df: pd.DataFrame, source: str) -> pd.DataFrame:
 STG_INSERT = """
     INSERT INTO stg_prices_sbs_valor_cuota (
         afp, fondo, valor_cuota, cuotas, fondo_soles,
-        source, date, loaded_at
-    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        source, channel, date, loaded_at
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (afp, fondo, date, loaded_at) DO NOTHING
 """
 
@@ -221,7 +223,7 @@ def load_stg(conn, df: pd.DataFrame) -> int:
             (row["afp"], int(row["fondo"]),
              _float(row.get("valor_cuota")), _float(row.get("cuotas")),
              _float(row.get("fondo_soles")),
-             row.get("source"), row["date"], row["loaded_at"]),
+             row.get("source"), row.get("channel"), row["date"], row["loaded_at"]),
         )
         if cur.rowcount > 0:
             inserted += 1

@@ -41,7 +41,7 @@ def _stg_df(rows):
 def _series_map(*specs):
     """specs: (procode, field, series_id)"""
     return {(p, f): {"series_id": sid, "entity_id": sid, "field": f,
-                     "source": "sbs", "procode": p, "name": p}
+                     "source": "sbs_spp", "procode": p, "name": p}
             for p, f, sid in specs}
 
 
@@ -63,7 +63,7 @@ def test_one_row_fans_out_into_three_facts():
     out = transform(_stg_df([_stg_row()]), FULL_MAP)
     assert len(out) == 3
     assert set(out["series_id"]) == {1, 2, 3}
-    assert (out["source"] == "sbs").all()
+    assert (out["source"] == "sbs_spp").all()
     assert (out["date"] == dt.date(2026, 8, 28)).all()
 
 

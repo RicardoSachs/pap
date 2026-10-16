@@ -41,7 +41,7 @@ from src.db.connection import get_connection
 from src.db.queries import update_series_run_metadata
 from src.pipelines.prices.sbs.valor_cuota import afps
 from src.pipelines.prices.sbs.valor_cuota.extract import (
-    SOURCE_DAILY, SOURCE_HISTORY, load_stg, parse_daily, parse_history,
+    CHANNEL_DAILY, CHANNEL_HISTORY, load_stg, parse_daily, parse_history,
     prepare_stg)
 from src.pipelines.prices.sbs.valor_cuota.loader import load_facts
 from src.pipelines.prices.sbs.valor_cuota.transform import transform
@@ -136,7 +136,7 @@ def _run_daily(run_date: date | None, force: bool) -> dict:
 
     html = scraper.fetch_daily_html(run_date)
     raw_df = parse_daily(html)
-    stg_df = prepare_stg(raw_df, source=SOURCE_DAILY)
+    stg_df = prepare_stg(raw_df, channel=CHANNEL_DAILY)
 
     # Staging in its own transaction, committed before the fact step: a
     # later fact failure must not discard the staged rows.
@@ -189,7 +189,7 @@ def load_history(content: bytes, mode: str = "missing") -> dict:
     raw_df = raw_df[raw_df["date"] <= date.today()].reset_index(drop=True)
     if raw_df.empty:
         raise ValueError("Every date in the file is in the future.")
-    stg_df = prepare_stg(raw_df, source=SOURCE_HISTORY)
+    stg_df = prepare_stg(raw_df, channel=CHANNEL_HISTORY)
 
     with get_connection() as conn:
         load_stg(conn, stg_df)
@@ -254,7 +254,7 @@ def review_history(content: bytes) -> dict:
             WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
               AND sr.source = %s AND sr.field = 'PX_LAST'
             """,
-            (afps.SOURCE_SBS,))
+            (afps.SOURCE_SBS_SPP,))
         rows = cur.fetchall()
     book: dict[tuple, float] = {}
     book_dates: set = set()
@@ -370,7 +370,7 @@ def book_has_date(day: date) -> bool:
             WHERE sr.source = %s AND sr.field = %s
               AND e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
             """,
-            (day, afps.SOURCE_SBS, afps.METRIC_FIELD["valor_cuota"]))
+            (day, afps.SOURCE_SBS_SPP, afps.METRIC_FIELD["valor_cuota"]))
         row = cur.fetchone()
     return bool(row) and row["series"] > 0 and row["with_data"] == row["series"]
 

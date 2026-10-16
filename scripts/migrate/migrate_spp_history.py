@@ -12,7 +12,7 @@
 #
 #   spp.valor_cuota_diario   48 wide columns ({key}_f{n}[ _cuotas |
 #                            _fondo ]) -> melted into fact_prices via
-#                            series_registry (source 'sbs').
+#                            series_registry (source 'sbs_spp').
 #
 # The monitor's composite benchmark levels are not carried: the
 # composite indices are redesigned in the analytics layer (pending
@@ -75,7 +75,7 @@ def src_connection(args) -> psycopg.Connection:
 
 def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int, int]:
     """Melts spp.valor_cuota_diario into fact_prices. Returns (read, loaded)."""
-    from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_SBS, procode
+    from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_SBS_SPP, procode
     from src.pipelines.prices.sbs.valor_cuota.loader import upsert_fact
 
     cur = src.cursor()
@@ -105,7 +105,7 @@ def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int
             if dry_run:
                 loaded += 1
                 continue
-            if upsert_fact(dest, series["series_id"], day, float(value), SOURCE_SBS):
+            if upsert_fact(dest, series["series_id"], day, float(value), SOURCE_SBS_SPP):
                 loaded += 1
     if unresolved:
         logger.warning(f"Book columns with no destination series (check afps.yaml): "

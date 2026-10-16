@@ -12,7 +12,7 @@
 #
 #   spp.valor_cuota_diario   48 wide columns ({key}_f{n}[ _cuotas |
 #                            _fondo ]) -> melted into fact_prices via
-#                            series_registry (source 'sbs').
+#                            series_registry (source 'sbs_spp').
 #
 # The monitor's composite benchmark levels are not carried: the
 # composite indices are redesigned in the analytics layer (pending
@@ -54,6 +54,10 @@ RE_COL = re.compile(r"^(?P<key>[a-z0-9_]+?)_f(?P<fund>\d+)(?P<suffix>_cuotas|_fo
 SUFFIX_FIELD = {None: "PX_LAST", "_cuotas": "CUOTAS", "_fondo": "FONDO_SOLES"}
 
 
+class _DryRun(Exception):
+    """Raised out of the connection block so get_connection() rolls back."""
+
+
 def src_connection(args) -> psycopg.Connection:
     password = args.src_password or os.getenv("SPP_SRC_PASSWORD", "")
     try:
@@ -75,7 +79,7 @@ def src_connection(args) -> psycopg.Connection:
 
 def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int, int]:
     """Melts spp.valor_cuota_diario into fact_prices. Returns (read, loaded)."""
-    from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_SBS, procode
+    from src.pipelines.prices.sbs.valor_cuota.afps import SOURCE_SBS_SPP, procode
     from src.pipelines.prices.sbs.valor_cuota.loader import upsert_fact
 
     cur = src.cursor()
@@ -105,7 +109,7 @@ def migrate_book(src, dest, schema: str, series_map, dry_run: bool) -> tuple[int
             if dry_run:
                 loaded += 1
                 continue
-            if upsert_fact(dest, series["series_id"], day, float(value), SOURCE_SBS):
+            if upsert_fact(dest, series["series_id"], day, float(value), SOURCE_SBS_SPP):
                 loaded += 1
     if unresolved:
         logger.warning(f"Book columns with no destination series (check afps.yaml): "
@@ -132,40 +136,44 @@ def main() -> int:
     from src.db.connection import get_connection
     from src.pipelines.prices.sbs.valor_cuota import afps
 
-    with src_connection(args) as src, get_connection() as dest:
-        # Registering the series universe is a write, and --dry-run promises
-        # "write nothing": the rollback below undoes it, so a dry run reports
-        # what WOULD be registered instead of quietly registering it.
-        registered = afps.register_series(dest)
-        series_map = afps.series_map(dest)
-        if args.dry_run and registered:
-            logger.info(f"registry: {registered} series would be registered.")
+    try:
+        with src_connection(args) as src, get_connection() as dest:
+            # Registering the series universe is a write, and --dry-run promises
+            # "write nothing": the _DryRun raised at the end undoes it, so a dry
+            # run reports what WOULD be registered instead of quietly registering
+            # it.
+            registered = afps.register_series(dest)
+            series_map = afps.series_map(dest)
+            if args.dry_run and registered:
+                logger.info(f"registry: {registered} series would be registered.")
 
-        read, loaded = migrate_book(src, dest, args.src_schema, series_map, args.dry_run)
-        logger.info(f"valor_cuota_diario: {read:,} cells read, "
-                    f"{loaded:,} {'to load' if args.dry_run else 'loaded'}.")
+            read, loaded = migrate_book(src, dest, args.src_schema, series_map, args.dry_run)
+            logger.info(f"valor_cuota_diario: {read:,} cells read, "
+                        f"{loaded:,} {'to load' if args.dry_run else 'loaded'}.")
 
-        # Verification: destination totals for the migrated source.
-        if not args.dry_run:
-            cur = dest.cursor()
-            cur.execute(
-                """
-                SELECT sr.source, COUNT(*) AS rows
-                FROM fact_prices fp
-                JOIN series_registry sr ON sr.series_id = fp.series_id
-                JOIN dim_entity e ON e.entity_id = sr.entity_id
-                WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
-                GROUP BY sr.source
-                """
-            )
-            for t in cur.fetchall():
-                logger.info(f"fact_prices [{t['source']}]: {t['rows']:,} rows in total.")
+            # Verification: destination totals for the migrated source.
+            if not args.dry_run:
+                cur = dest.cursor()
+                cur.execute(
+                    """
+                    SELECT sr.source, COUNT(*) AS rows
+                    FROM fact_prices fp
+                    JOIN series_registry sr ON sr.series_id = fp.series_id
+                    JOIN dim_entity e ON e.entity_id = sr.entity_id
+                    WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
+                    GROUP BY sr.source
+                    """
+                )
+                for t in cur.fetchall():
+                    logger.info(f"fact_prices [{t['source']}]: {t['rows']:,} rows in total.")
 
-        if args.dry_run:
-            # get_connection commits on a clean exit, so "write nothing"
-            # has to be said explicitly before leaving the block.
-            dest.rollback()
-            logger.info("dry-run: nothing was written to the destination.")
+            if args.dry_run:
+                # get_connection() commits on a clean exit: leaving the block
+                # through an exception is how "write nothing" is said, and the
+                # context manager does the rollback.
+                raise _DryRun
+    except _DryRun:
+        logger.info("dry-run: nothing was written to the destination.")
     return 0
 
 

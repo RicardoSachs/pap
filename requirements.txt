@@ -9,12 +9,13 @@ python-dotenv
 pyyaml
 selenium
 beautifulsoup4
+# SPP valor cuota scrape (src/scrapers/spp.py): drives the installed Chrome
+# through the Imperva WAF; the driver ships inside the wheel (decision 10).
+playwright
+# pandas engine for the SBS history workbook, an xlsx inside a .xls name
+# (src/shared/tabular.py, valor_cuota/extract.py).
+openpyxl
 exchange_calendars
 apscheduler<4
-lxml
-openpyxl
-requests
-# SPP valor cuota scraper: real Chrome through the SBS WAF (see src/scrapers/spp.py)
-playwright
 # FastAPI file uploads (bulk Bloomberg series registration)
 python-multipart

@@ -16,7 +16,7 @@ import logging
 
 import pandas as pd
 
-from src.pipelines.prices.sbs.valor_cuota.afps import METRIC_FIELD, SOURCE_SBS, procode
+from src.pipelines.prices.sbs.valor_cuota.afps import METRIC_FIELD, SOURCE_SBS_SPP, procode
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def transform(stg_df: pd.DataFrame,
                 "series_id": series["series_id"],
                 "date": day,
                 "value": float(val),
-                "source": SOURCE_SBS,
+                "source": SOURCE_SBS_SPP,
             })
 
     if unresolved:

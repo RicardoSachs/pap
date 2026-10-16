@@ -187,20 +187,37 @@ def main() -> int:
     except Exception:
         print(f"{AVISO}no responde (normal si el tablero no esta abierto en este momento)")
 
-    # ---- 9. Ultima extraccion -------------------------------------------
+    # ---- 9. Ultima extraccion (job acquire_spp del scheduler) -----------
     titulo("Extraccion automatica")
     def _ultima():
-        from src.pipelines.prices.sbs.valor_cuota.run import last_run
-        return last_run()
+        from src.db.connection import get_connection
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT job_id, machine_id, status, run_date, started_at, error "
+                "FROM job_runs WHERE job_id LIKE 'acquire_spp%%' "
+                "ORDER BY started_at DESC LIMIT 1")
+            ultima = cur.fetchone()
+            cur.execute("SELECT machine_id, last_seen, registered_jobs FROM scheduler_heartbeat")
+            return {"ultima": ultima, "latidos": cur.fetchall()}
     rastro = intentar(_ultima, "")
-    if isinstance(rastro, dict) and rastro.get("started"):
-        estado = "correcta" if rastro.get("ok") else "FALLO"
-        print(f"{OK}ultima corrida: {rastro.get('inicio')} - {estado}")
-        if rastro.get("error"):
-            print(f"           motivo: {str(rastro['error'])[:150]}")
-            problemas.append(f"La ultima extraccion fallo: {str(rastro['error'])[:120]}")
-    else:
-        print(f"{AVISO}todavia no hay ninguna corrida registrada")
+    if isinstance(rastro, dict):
+        for h in rastro["latidos"]:
+            print(f"{OK}scheduler en {h['machine_id']}: visto {h['last_seen']:%Y-%m-%d %H:%M}; "
+                  f"jobs: {h['registered_jobs']}")
+        if not rastro["latidos"]:
+            print(f"{AVISO}ningun scheduler ha latido en esta base (scripts\Programar scheduler.bat)")
+            problemas.append("El scheduler no esta corriendo: la extraccion de las 16:00 no va a ocurrir.")
+        u = rastro["ultima"]
+        if u:
+            estado = "correcta" if u["status"] == "success" else u["status"].upper()
+            print(f"{OK}ultima corrida de {u['job_id']}: {u['started_at']:%Y-%m-%d %H:%M} - "
+                  f"{estado} (fecha {u['run_date']})")
+            if u["error"]:
+                print(f"           motivo: {str(u['error'])[:150]}")
+                problemas.append(f"La ultima extraccion fallo: {str(u['error'])[:120]}")
+        else:
+            print(f"{AVISO}todavia no hay ninguna corrida registrada")
 
     # ---- Resumen ---------------------------------------------------------
     print()

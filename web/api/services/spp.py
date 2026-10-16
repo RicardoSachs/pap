@@ -128,7 +128,7 @@ def _last_date():
             JOIN dim_entity e ON e.entity_id = sr.entity_id
             WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
               AND sr.source = %s
-            """, (afps.SOURCE_SBS,))
+            """, (afps.SOURCE_SBS_SPP,))
         row = cur.fetchone()
     return row["last_date"] if row else None
 
@@ -154,7 +154,7 @@ def read(metrics: list[str] | None = None,
           AND sr.source = %s
           AND sr.field = ANY(%s)
     """
-    params: list = [afps.SOURCE_SBS, fields]
+    params: list = [afps.SOURCE_SBS_SPP, fields]
     if date_from:
         sql += " AND fp.date >= %s::date"
         params.append(str(date_from))
@@ -654,7 +654,7 @@ def _recent_cut(metrics: list[str], n: int, date_to=None):
         WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
           AND sr.source = %s AND sr.field = ANY(%s)
     """
-    params: list = [afps.SOURCE_SBS, fields]
+    params: list = [afps.SOURCE_SBS_SPP, fields]
     if date_to:
         sql += " AND fp.date <= %s::date"
         params.append(str(date_to))

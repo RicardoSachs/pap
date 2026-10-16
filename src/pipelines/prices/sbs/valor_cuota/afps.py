@@ -15,9 +15,13 @@
 #
 # Series mapping (one entity per AFP x fund, three series each):
 #   procode  SPP_{KEY}_F{fund}                 entity_type 'fund'
-#   PX_LAST      valor cuota   domain 'prices'         source 'sbs'
-#   CUOTAS       units         domain 'fundamentals'   source 'sbs'
-#   FONDO_SOLES  fund value    domain 'fundamentals'   source 'sbs'
+#   PX_LAST      valor cuota   domain 'prices'         source 'sbs_spp'
+#   CUOTAS       units         domain 'fundamentals'   source 'sbs_spp'
+#   FONDO_SOLES  fund value    domain 'fundamentals'   source 'sbs_spp'
+# The source is 'sbs_spp', not 'sbs': 'sbs' is the extranet vector files
+# and the feeds on main own every 'sbs' series; the SPP segment of the
+# public portal is a different channel and gets its own value (the peer
+# filings of pending item 6 will share it).
 # PX_LAST for the NAV is deliberate: the Price Viewer charts PX_LAST
 # across sources, so the funds show up there for free. Units and fund
 # value are balance-sheet facts, not prices, hence 'fundamentals'
@@ -39,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 AFPS_CONFIG = CONFIG_DIR / "afps.yaml"
 
-SOURCE_SBS = "sbs"
+SOURCE_SBS_SPP = "sbs_spp"
 
 # metric name (as the SBS publishes it) -> series_registry field
 METRIC_FIELD = {
@@ -243,7 +247,7 @@ def register_series(conn) -> int:
                     ) VALUES (%s, %s, %s, %s, 'daily', %s, 'active')
                     ON CONFLICT (entity_id, field, source) DO NOTHING
                     """,
-                    (entity_id, field, domain, SOURCE_SBS, DEFAULT_START),
+                    (entity_id, field, domain, SOURCE_SBS_SPP, DEFAULT_START),
                 )
                 if cur.rowcount > 0:
                     inserted += 1
@@ -254,7 +258,7 @@ def register_series(conn) -> int:
                     WHERE entity_id = %s AND field = %s AND source = %s
                       AND domain <> %s
                     """,
-                    (domain, entity_id, field, SOURCE_SBS, domain),
+                    (domain, entity_id, field, SOURCE_SBS_SPP, domain),
                 )
 
     if inserted:
@@ -277,6 +281,6 @@ def series_map(conn) -> dict[tuple[str, str], dict]:
         WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
           AND sr.source = %s
         """,
-        (SOURCE_SBS,),
+        (SOURCE_SBS_SPP,),
     )
     return {(r["procode"], r["field"]): r for r in cur.fetchall()}

@@ -11,13 +11,14 @@ rem que es ademas lo que exige la SBS (Chrome visible).
 rem
 rem Argumentos:
 rem   (ninguno)   registra y arranca
-rem   -Estado     muestra la tarea y la ultima senal de vida en la base
+rem   -Estado     muestra la tarea y corre el diagnostico (senal de vida
+rem               del scheduler, ultimas corridas)
 rem   -Quitar     elimina la tarea (el proceso que este corriendo sigue
 rem               hasta que se cierre su ventana)
 rem
 rem Resultado de cada corrida: tabla job_runs; senal de vida:
 rem scheduler_heartbeat (cada 5 min). Los logs quedan en
-rem data\logs\etl\scheduler_AAAAMMDD.log.
+rem data\logs\scheduler_AAAAMMDD.log.
 
 setlocal
 set "TAREA=pgetl scheduler"
@@ -34,16 +35,16 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 
-schtasks /Create /TN "%TAREA%" /SC ONLOGON /TR "\"%CD%\scripts\bat\scheduler.bat\"" /F
+rem Registro con PowerShell y no con "schtasks /Create /SC ONLOGON": sin
+rem derechos de administrador ese comando responde "Acceso denegado"; la
+rem tarea de usuario (sesion interactiva) si se puede crear y arrancar.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $a = New-ScheduledTaskAction -Execute '%CD%\scripts\bat\scheduler.bat' -WorkingDirectory '%CD%'; try { $t = New-ScheduledTaskTrigger -AtLogOn -User $sid } catch { $t = New-ScheduledTaskTrigger -AtLogOn }; $p = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive; $s = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable; Register-ScheduledTask -TaskName '%TAREA%' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; Start-ScheduledTask -TaskName '%TAREA%'"
 if errorlevel 1 (
   echo No se pudo registrar la tarea.
   pause
   exit /b 1
 )
-rem Ajustes que schtasks no expone: reintentar si muere, sin limite de duracion.
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$s = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable; Set-ScheduledTask -TaskName '%TAREA%' -Settings $s | Out-Null"
-schtasks /Run /TN "%TAREA%" >nul
 echo.
 echo Tarea "%TAREA%" registrada (al iniciar sesion) y arrancada.
 echo Se abre una ventana "scheduler": es el proceso; no la cierres.
@@ -56,8 +57,7 @@ pause
 exit /b 0
 
 :estado
-schtasks /Query /TN "%TAREA%" /FO LIST /V 2>nul | findstr /C:"Nombre de tarea" /C:"TaskName" /C:"Estado" /C:"Status" /C:"Tiempo de" /C:"Last Run" /C:"Resultado" /C:"Last Result"
-if errorlevel 1 echo No hay una tarea "%TAREA%" registrada.
+powershell -NoProfile -Command "$t = Get-ScheduledTask -TaskName '%TAREA%' -ErrorAction SilentlyContinue; if ($t) { 'Tarea: ' + $t.TaskName + ' | estado: ' + $t.State + ' | accion: ' + $t.Actions[0].Execute } else { 'No hay una tarea \"%TAREA%\" registrada.' }"
 rem La senal de vida y las ultimas corridas las muestra el diagnostico.
 .venv\Scripts\python.exe scripts\diagnostico.py
 pause

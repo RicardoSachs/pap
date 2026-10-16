@@ -14,10 +14,13 @@
 import csv as _csv
 import datetime as dt
 import io
+import logging
 import re
 import unicodedata
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def strip_accents(text: str) -> str:

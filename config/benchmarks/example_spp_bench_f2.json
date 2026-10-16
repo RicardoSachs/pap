@@ -10,8 +10,8 @@
     "support_doc": null,
     "recorded_by": "example",
     "constituents": [
-      {"label": "Habitat F2",  "series": {"procode": "SPP_HABITAT_F2",  "field": "PX_LAST", "source": "sbs"}, "weight": 50},
-      {"label": "Integra F2",  "series": {"procode": "SPP_INTEGRA_F2",  "field": "PX_LAST", "source": "sbs"}, "weight": 50}
+      {"label": "Habitat F2",  "series": {"procode": "SPP_HABITAT_F2",  "field": "PX_LAST", "source": "sbs_spp"}, "weight": 50},
+      {"label": "Integra F2",  "series": {"procode": "SPP_INTEGRA_F2",  "field": "PX_LAST", "source": "sbs_spp"}, "weight": 50}
     ]
   }
 }

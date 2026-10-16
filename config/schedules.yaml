@@ -18,6 +18,9 @@
 #   09:00 check_sbs         gate: files arrived on network share
 #   09:15 ingest_sbs        SBS staging -> fact
 #   13:00 positions_fms     four FMS feeds + contribution, prev NYSE-or-XLIM day
+#   16:00 acquire_spp       SPP valor cuota through a visible Chrome,
+#         16:30 / 17:00     retries (each skips when the book already
+#                           holds t-2 reporting days)
 #   17:30 prices_bloomberg  America/New_York — DST-proof "after
 #                           NYSE close" regardless of season
 # ---------------------------------------------------------------
@@ -55,3 +58,27 @@ jobs:
     day_of_week: mon-fri
     hour: 13
     minute: 0
+
+  # The SBS publishes the valor cuota during the afternoon with no fixed
+  # hour: three attempts, Lima time; each one returns without opening
+  # Chrome when the book already holds the expected day.
+  acquire_spp:
+    day_of_week: mon-fri
+    hour: 16
+    minute: 0
+    timezone: America/Lima
+    misfire_grace_time: 1500
+
+  acquire_spp_retry_1:
+    day_of_week: mon-fri
+    hour: 16
+    minute: 30
+    timezone: America/Lima
+    misfire_grace_time: 1500
+
+  acquire_spp_retry_2:
+    day_of_week: mon-fri
+    hour: 17
+    minute: 0
+    timezone: America/Lima
+    misfire_grace_time: 1500

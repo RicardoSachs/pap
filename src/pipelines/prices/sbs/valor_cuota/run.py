@@ -16,13 +16,14 @@
 #                       nothing.
 #   load_history()      second half: write the reviewed bytes in the
 #                       chosen mode ('missing' | 'replace').
-#   run_scheduled()     run_daily with a trail (scrape.log / scrape.json
-#                       under data/spp/) for the Windows task. Skips the
-#                       scrape when the book already holds the day the
-#                       SBS publishes (t-2 business days): the task
-#                       fires at 16:00 and retries at 16:30 and 17:00,
-#                       and only the first attempt that finds something
-#                       should touch the SBS.
+#   run_scheduled()     the body of the scheduler job acquire_spp
+#                       (scripts/scheduler.py; fire times in
+#                       config/schedules.yaml). Skips the scrape when the
+#                       book already holds the day the SBS publishes (t-2
+#                       reporting days): the job fires at 16:00 and again
+#                       at 16:30 and 17:00, and only the first attempt
+#                       that finds something should touch the SBS. Its
+#                       outcome lands in job_runs like every other job.
 #
 # Unlike the file-driven SBS feeds this one does not use the
 # backfill-pending dance: the series universe is closed and declared
@@ -51,13 +52,9 @@ logger = logging.getLogger(__name__)
 
 LOAD_MODES = ("missing", "replace")
 
-# Trail of the unattended run, for the Windows task (and anything that
-# wants to know how the last one went).
+# The cross-process scrape lock lives next to the browser profile's data.
 SPP_DIR = DATA_DIR / "spp"
-TRAIL_LOG = SPP_DIR / "scrape.log"
-TRAIL_STATE = SPP_DIR / "scrape.json"
 LOCK_FILE = SPP_DIR / "scrape.lock"
-TRAIL_LINES = 400
 
 
 def ensure_registered() -> None:
@@ -330,30 +327,17 @@ def _file_sample(df: pd.DataFrame, rows: int = 15) -> dict:
     }
 
 
-# ---- Unattended run (Windows task) ----------------------------------
-
-def _trim_trail(lines: int = TRAIL_LINES) -> None:
-    """The log must not grow forever: keep the last lines."""
-    try:
-        text = TRAIL_LOG.read_text(encoding="utf-8").splitlines()
-        if len(text) > lines * 2:
-            TRAIL_LOG.write_text("\n".join(text[-lines:]) + "\n", encoding="utf-8")
-    except OSError:
-        pass
-
+# ---- The scheduler job (acquire_spp) --------------------------------
 
 def expected_date(today: date | None = None) -> date:
-    """The day the SBS page is expected to have published by now:
-    two business days back (weekdays; the SBS calendar has no other
-    holes this feed would wait for)."""
-    from datetime import timedelta
-    d = today or date.today()
-    business_days = 0
-    while business_days < 2:
-        d -= timedelta(days=1)
-        if d.weekday() < 5:
-            business_days += 1
-    return d
+    """
+    The day the SBS page is expected to have published by now: two
+    reporting days back on the SBS calendar (NYSE or Lima open), so a
+    holiday on both exchanges does not make the retries open Chrome for
+    a day that will never be published.
+    """
+    from src.calendars.calendar_sbs import prev_reporting_day
+    return prev_reporting_day(prev_reporting_day(today or date.today()))
 
 
 def book_has_date(day: date) -> bool:
@@ -375,90 +359,25 @@ def book_has_date(day: date) -> bool:
     return bool(row) and row["series"] > 0 and row["with_data"] == row["series"]
 
 
-def run_scheduled(force: bool = False) -> dict:
+def run_scheduled(force: bool = False) -> date:
     """
-    run_daily with a written trail. Does not propagate the exception:
-    the exit code already distinguishes success from failure, and what
-    matters is that the failure and its reason are recorded - a run
-    that fails in silence is worse than no run.
+    The body of the scheduler job acquire_spp (and of the CLI's
+    --scheduled): when the book already holds the day the SBS publishes
+    (t-2 reporting days) for every AFP, nothing is scraped and no Chrome
+    opens - the 16:30 and 17:00 attempts land here when 16:00 already
+    brought the day. Otherwise run_daily(). Returns the expected date;
+    raises on failure so the job_runs row records the error.
     """
-    import datetime as dt
-    import json
-    import time
-
     from src.configs.machine_config import machine_id, scraper_enabled
 
-    SPP_DIR.mkdir(parents=True, exist_ok=True)
-    started = dt.datetime.now()
-    # Each line keeps ITS OWN timestamp: a run can span hours when the
-    # machine suspends mid-scrape, and stamping everything with the
-    # start time turned the trail into a flat wall that hid where the
-    # time actually went.
-    lines: list[tuple[float, str]] = []
-
-    class _Recorder(logging.Handler):
-        def emit(self, record):
-            lines.append((record.created, record.getMessage()))
-
-    handler = _Recorder()
-    logging.getLogger("src").addHandler(handler)
-
-    state = {"started": started.isoformat(timespec="seconds"),
-             "action": "scheduled scrape", "force": bool(force)}
-    try:
-        # The machine gate lives INSIDE the trail on purpose: an
-        # unattended run that dies before writing anything is
-        # indistinguishable from one that never fired, and this is the
-        # first thing to fail on a machine whose .env never declared
-        # SCRAPER_ENABLED.
-        if not scraper_enabled():
-            raise RuntimeError(
-                f"The scraper is not enabled on this machine ({machine_id()}). "
-                "Set SCRAPER_ENABLED=true in the project's .env.")
-        expected = expected_date()
-        if not force and book_has_date(expected):
-            # The 16:30 and 17:00 retries land here when 16:00 already
-            # brought the day: nothing to fetch, no Chrome, a one-line
-            # trail that says so.
-            lines.append((time.time(),
-                          f"The book already holds {expected:%Y-%m-%d} (t-2 business "
-                          "days) for every AFP: the SBS is not scraped."))
-            state.update(ok=True, error=None, scrape_skipped=True,
-                         expected=str(expected), dates=0, loaded=0, skipped=0)
-        else:
-            result = run_daily(force=force)
-            state.update(ok=True, error=None, scrape_skipped=False,
-                         expected=str(expected), **result)
-    except Exception as exc:
-        state.update(ok=False, error=str(exc)[:400], dates=0, loaded=0, skipped=0)
-        lines.append((time.time(), f"ERROR: {exc}"))
-    finally:
-        logging.getLogger("src").removeHandler(handler)
-
-    finished = dt.datetime.now()
-    state["finished"] = finished.isoformat(timespec="seconds")
-    state["seconds"] = round((finished - started).total_seconds(), 1)
-
-    with open(TRAIL_LOG, "a", encoding="utf-8") as f:
-        for when, line in lines:
-            f.write(f"{dt.datetime.fromtimestamp(when):%Y-%m-%d %H:%M:%S}  {line}\n")
-        f.write(f"{finished:%Y-%m-%d %H:%M:%S}  "
-                f"--- end ({'ok' if state['ok'] else 'ERROR'} "
-                f"in {state['seconds']} s) ---\n")
-    _trim_trail()
-
-    try:
-        TRAIL_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2),
-                               encoding="utf-8")
-    except OSError:
-        pass
-    return state
-
-
-def last_run() -> dict:
-    """Result of the last unattended run, or empty if it never ran."""
-    import json
-    try:
-        return json.loads(TRAIL_STATE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    if not scraper_enabled():
+        raise RuntimeError(
+            f"The scraper is not enabled on this machine ({machine_id()}). "
+            "Set SCRAPER_ENABLED=true in the project's .env.")
+    expected = expected_date()
+    if not force and book_has_date(expected):
+        logger.info(f"The book already holds {expected} (t-2 reporting days) for "
+                    "every AFP: the SBS is not scraped.")
+        return expected
+    run_daily(force=force)
+    return expected

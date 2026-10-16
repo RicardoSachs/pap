@@ -5,9 +5,10 @@
 # Not part of scripts/run_prices.py on purpose: the other SBS feeds
 # read files already on disk, while this one opens a VISIBLE Chrome
 # window through the Imperva WAF - it must never launch as a side
-# effect of "run all SBS". Schedule it as a Windows task with an
-# interactive logon (scripts/schedule_sbs_valor_cuota.ps1): the WAF
-# blocks headless browsers and locked sessions.
+# effect of "run all SBS". Scheduled, it is the job acquire_spp of
+# scripts/scheduler.py (fire times in config/schedules.yaml), which runs
+# in the scraper machine's interactive session: the WAF blocks headless
+# browsers and locked sessions.
 #
 # Usage:
 #   # Daily scrape (last 7 business days, three metrics)
@@ -22,9 +23,8 @@
 #   # Download the XLS from the SBS index and load it
 #   python scripts/run_sbs_valor_cuota.py --download-history
 #
-#   # Unattended daily run (what the Windows task executes): same as
-#   # the default but leaves a trail in data/spp/scrape.log/.json and
-#   # never raises - the exit code carries the result
+#   # The scheduler job body, once, by hand: skips the scrape when the
+#   # book already holds the expected day, scrapes otherwise
 #   python scripts/run_sbs_valor_cuota.py --scheduled
 #
 #   # Only (re)register the AFP series universe
@@ -55,7 +55,8 @@ def main() -> int:
     parser.add_argument("--force", action="store_true",
                         help="Restatement: replace figures already in fact_prices.")
     parser.add_argument("--scheduled", action="store_true",
-                        help="Unattended daily run with a written trail; never raises.")
+                        help="Run the acquire_spp job body once: skip when the book "
+                             "already holds the expected day, scrape otherwise.")
     parser.add_argument("--register-only", action="store_true",
                         help="Only register the series universe and exit.")
     args = parser.parse_args()
@@ -76,11 +77,9 @@ def main() -> int:
         return 0
 
     if args.scheduled:
-        # BEFORE the machine gate on purpose: run_scheduled carries the
-        # gate itself, so a machine whose configuration is missing leaves
-        # the reason in data/spp/scrape.log instead of dying with a
-        # traceback the scheduled task reports as a bare exit code.
-        return 0 if run_scheduled(force=args.force)["ok"] else 1
+        # run_scheduled carries the machine gate itself, like the job does.
+        run_scheduled(force=args.force)
+        return 0
 
     # The scraping paths need the machine gate. scraper_enabled() rather
     # than assert_scraper(): the latter also demands a chromedriver path,

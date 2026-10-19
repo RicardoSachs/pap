@@ -6,7 +6,9 @@
 # One script, capability-registered: which jobs this process runs
 # is decided entirely by the machine_config flags —
 #   bloomberg_enabled      -> prices_bloomberg, dim_enrichment
-#   scraper_enabled        -> acquire_sbs (browser + image-pad beep)
+#   scraper_enabled        -> acquire_sbs (browser + image-pad beep),
+#                             acquire_spp (+ two retries; visible Chrome
+#                             through the SBS portal's WAF)
 #   sbs_ingestion_enabled  -> ingest_sbs (+ check_sbs when the
 #                             scraper runs on a remote machine)
 #   fms_enabled            -> positions_fms (four feeds, sequential)
@@ -21,6 +23,7 @@
 #
 # Daily chain (see schedules.yaml for the times):
 #   acquire_sbs -> check_sbs -> ingest_sbs -> positions_fms ->
+#   acquire_spp (16:00 Lima, retries 16:30 and 17:00) ->
 #   prices_bloomberg (17:30 America/New_York, DST-proof).
 #
 # Deployment: no admin rights, so no service. Register a user-level
@@ -225,6 +228,21 @@ def job_acquire_sbs() -> Optional[date]:
     return run_date
 
 
+def job_acquire_spp() -> date:
+    """SPP valor cuota from the public SBS portal, through a visible
+    Chrome (the Imperva WAF blocks headless browsers). The SBS publishes
+    t-2 reporting days during the afternoon with no fixed hour, so the
+    job is registered three times (acquire_spp and two retries); every
+    attempt first asks whether the book already holds the expected day
+    and, if so, returns without opening Chrome. The first run on a fresh
+    browser profile needs an operator to solve the WAF challenge once
+    (docs/SCHEDULER.md)."""
+    from src.pipelines.prices.sbs.valor_cuota.run import run_scheduled
+
+    logger.info("--- job: acquire spp ---")
+    return run_scheduled()
+
+
 def job_check_sbs() -> date:
     """Verifies the previous reporting day's SBS files arrived on the
     network share (remote acquisition). Raises on missing files so
@@ -326,6 +344,9 @@ def register_jobs() -> None:
 
     if scraper_enabled():
         _register("acquire_sbs", job_acquire_sbs, "SBS daily acquisition", jobs_cfg)
+        _register("acquire_spp", job_acquire_spp, "SPP valor cuota scrape", jobs_cfg)
+        _register("acquire_spp_retry_1", job_acquire_spp, "SPP valor cuota scrape (retry 1)", jobs_cfg)
+        _register("acquire_spp_retry_2", job_acquire_spp, "SPP valor cuota scrape (retry 2)", jobs_cfg)
 
     if sbs_ingestion_enabled():
         # check_sbs only matters when acquisition happens on a remote

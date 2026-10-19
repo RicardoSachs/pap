@@ -13,7 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet, apiSend } from '../../../lib/api';
 import {
-  apiUrl, fDate, fmtMetric, fundsOf as fundsOfCfg, todayLocal, metricsOf, nInt, metricName,
+  apiUrl, fDate, fTime, fmtMetric, fundsOf as fundsOfCfg, todayLocal, metricsOf, nInt, metricName,
 } from '../../../lib/spp';
 import Log from '../../../components/Log';
 import Echo from '../../../components/Echo';
@@ -75,6 +75,8 @@ function Sample({ sample, title }) {
 export default function SppCargaPage() {
   const [cfg, setCfg] = useState(null);
   const [status, setStatus] = useState(null);
+  // The last unattended scrape, as the scheduler recorded it in job_runs.
+  const [lastScrape, setLastScrape] = useState(undefined);
   // Which work area is on screen. Kept in the URL hash - not the query
   // string, which Sidebar propagates to every menu link - so the area
   // survives a reload and can be sent to someone.
@@ -96,10 +98,12 @@ export default function SppCargaPage() {
   const { task, busy, start } = useSppTask();
 
   const loadStatus = () => apiGet('/api/spp/status').then(setStatus).catch(() => {});
+  const loadLastScrape = () => apiGet('/api/spp/scrape/last').then((j) => setLastScrape(j.run)).catch(() => {});
   const refreshCfg = () => apiGet('/api/spp/config').then(setCfg).catch(() => {});
 
   const onTaskDone = (then) => (t) => {
     loadStatus();
+    loadLastScrape();
     if (then) then(t);
   };
 
@@ -148,6 +152,7 @@ export default function SppCargaPage() {
     }).catch(() => {});
     setRDate(todayLocal());
     loadStatus();
+    loadLastScrape();
   }, []);
 
   // Preload the fund boxes with what the book already holds (±12 days for
@@ -394,7 +399,22 @@ export default function SppCargaPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-title">Bitácora</div>
+          <div className="panel-title">Última corrida automática</div>
+          {lastScrape === undefined ? <p className="page-sub dim">Cargando…</p>
+            : lastScrape === null
+              ? <p className="page-sub dim">El scheduler no ha corrido la extracción todavía.</p>
+              : (
+                <p className="page-sub">
+                  {fTime(lastScrape.started_at)} en {lastScrape.machine_id} ·{' '}
+                  <b className={lastScrape.status === 'success' ? 'pos' : lastScrape.status === 'error' ? 'neg' : ''}>
+                    {lastScrape.status === 'success' ? 'correcta' : lastScrape.status === 'error' ? 'con error' : lastScrape.status}
+                  </b>
+                  {lastScrape.run_date ? ` · día esperado ${fDate(lastScrape.run_date)}` : ''}
+                  {lastScrape.error ? <><br /><span className="neg">{lastScrape.error}</span></> : null}
+                </p>
+              )}
+
+          <div className="panel-title" style={{ marginTop: 14 }}>Bitácora</div>
           <Log task={task} />
 
           <div className="panel-title" style={{ marginTop: 14 }}>Tramos sin dato</div>

@@ -340,6 +340,34 @@ def status() -> dict:
     return base
 
 
+def last_scheduled_run() -> dict | None:
+    """
+    The last unattended scrape as the scheduler recorded it in job_runs
+    (acquire_spp and its retries), or None when none has run. The
+    scrape leaves no trail of its own: job_runs is the record.
+    """
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT job_id, machine_id, status, run_date, started_at, finished_at, error
+            FROM job_runs
+            WHERE job_id LIKE 'acquire_spp%%'
+            ORDER BY started_at DESC
+            LIMIT 1
+            """)
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return {"job_id": row["job_id"], "machine_id": row["machine_id"],
+            "status": row["status"],
+            "run_date": str(row["run_date"]) if row["run_date"] else None,
+            "started_at": row["started_at"].isoformat(timespec="seconds"),
+            "finished_at": (row["finished_at"].isoformat(timespec="seconds")
+                            if row["finished_at"] else None),
+            "error": row["error"]}
+
+
 # ---- Series (chart) -------------------------------------------------------
 
 def series(fund: int, requested_afps: list[str] | None, metric: str,

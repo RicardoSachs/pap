@@ -35,6 +35,12 @@ def get_status() -> dict:
     return svc.status()
 
 
+@router.get("/scrape/last")
+def get_last_scrape() -> dict:
+    """The last unattended scrape, from job_runs (the scheduler job acquire_spp)."""
+    return {"run": svc.last_scheduled_run()}
+
+
 @router.get("/series")
 def get_series(
     fund: int = Query(2, ge=0, le=99),

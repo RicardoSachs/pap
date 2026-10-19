@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
-// NUESTRO: que rutas son de nuestros tableros, en un solo sitio.
+// OURS: which routes belong to our dashboards, in one place.
 import { isOurDashboard } from '../lib/routes';
 
 const SOURCES = [['bloomberg', 'Bloomberg'], ['fms', 'FMS']];
@@ -34,9 +34,9 @@ export default function ContextPill() {
   }, [open]);
 
   if (!d) return null;
-  // NUESTRO: el monitor de valor cuota y el Tradebook no leen cartera, periodo
-  // ni fuente - tienen sus propios controles - asi que la pildora entera
-  // seria un mando muerto que parece mover la pagina.
+  // OURS: the valor cuota monitor and the Tradebook read no portfolio,
+  // period or source - they have their own controls - so the whole pill
+  // would be a dead control that looks like it moves the page.
   if (isOurDashboard(path)) return null;
   const showFund = !(path === '/comparacion' || path === '/comparacion/');
   const allPeriods = [...d.periods, 'Custom'];

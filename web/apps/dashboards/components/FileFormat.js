@@ -1,6 +1,6 @@
 // web/apps/dashboards/components/FileFormat.js
 // ---------------------------------------------------------------------------
-// NUESTRO. The help icon next to every upload field, and the window it
+// OURS. The help icon next to every upload field, and the window it
 // opens with the format that site expects.
 //
 // It shows the TABLE and nothing else: the headers and one example row.
@@ -52,7 +52,7 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
 
   return (
     <>
-      <button type="button" className="fmt-icono" title={label}
+      <button type="button" className="fmt-icon" title={label}
         aria-label={label} aria-haspopup="dialog" aria-expanded={open}
         onClick={() => setOpen((v) => !v)}>
         {/* A drawn table: it says "this is what the file looks like"
@@ -65,25 +65,25 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
       </button>
 
       {open && (
-        <div className="fmt-fondo" role="dialog" aria-modal="true"
+        <div className="fmt-backdrop" role="dialog" aria-modal="true"
           aria-label={data?.title || label}>
-          <div className="fmt-ventana" ref={box}>
-            <div className="fmt-cabecera">
-              <div className="fmt-titulo">{data?.title || 'Formato del archivo'}</div>
-              <button type="button" className="fmt-cerrar" aria-label="Cerrar"
+          <div className="fmt-window" ref={box}>
+            <div className="fmt-header">
+              <div className="fmt-title">{data?.title || 'Formato del archivo'}</div>
+              <button type="button" className="fmt-close" aria-label="Cerrar"
                 onClick={() => setOpen(false)}>×</button>
             </div>
 
-            {error && <p className="fmt-resumen neg">No se pudo leer el formato: {error}</p>}
+            {error && <p className="fmt-summary neg">No se pudo leer el formato: {error}</p>}
             {!data && !error && <div className="loading">Cargando…</div>}
 
             {data && (
-              <div className="fmt-cuerpo">
+              <div className="fmt-body">
                 {data.columns.length ? (
                   <>
                     {/* The table IS the answer: one example row under the
                         headers says the whole format at a glance. */}
-                    <div className="table-wrap fmt-ejemplo">
+                    <div className="table-wrap fmt-example">
                       <table>
                         <thead><tr>
                           {data.columns.map((c) => (
@@ -99,7 +99,7 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
                         </tr></tbody>
                       </table>
                     </div>
-                    <p className="fmt-pie">
+                    <p className="fmt-footer">
                       <span className="fmt-req">*</span> obligatoria. El orden de
                       las columnas da igual y las que no se reconozcan se ignoran.
                     </p>
@@ -107,13 +107,13 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
                 ) : (
                   /* No table to show - it is someone else's sheet, the SBS's -
                      so it has to be said in words or the icon would open empty. */
-                  <ul className="fmt-notas">
+                  <ul className="fmt-notes">
                     {(data.notes || []).map((n) => <li key={n}>{n}</li>)}
                   </ul>
                 )}
 
                 {data.template && (
-                  <a className="btn principal" href={apiUrl(data.template)}
+                  <a className="btn primary" href={apiUrl(data.template)}
                     style={{ marginTop: 4, display: 'inline-block' }}>
                     ↓ Bajar la plantilla · XLSX
                   </a>

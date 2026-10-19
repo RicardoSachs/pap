@@ -38,7 +38,7 @@ const CHANGE_MARK = { added: '+ nuevo', dropped: '− sale', reweighted: '≠ pe
 // Small key/value report table, the same one the rest of the view uses.
 function Report({ rows }) {
   return (
-    <table className="spp-informe"><tbody>
+    <table className="spp-report"><tbody>
       {rows.map(([a, b], i) => (
         <tr key={i}><td>{a}</td><td className="num">{b}</td></tr>
       ))}
@@ -241,7 +241,7 @@ export default function BenchmarkEditor({ refreshCfg, busy, task, start, onTaskD
             <input id="b-name" className="date-input" placeholder="p. ej. Renta mixta global 60/40"
               value={newName} onChange={(e) => setNewName(e.target.value)} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>
-            <button className="btn principal" disabled={!newProcode.trim() || !newName.trim() || busy}
+            <button className="btn primary" disabled={!newProcode.trim() || !newName.trim() || busy}
               onClick={createBenchmark}>
               {(list || []).some((b) => b.procode === newProcode.trim().toUpperCase()) ? 'Renombrar' : 'Declarar benchmark'}</button></div>
         </div>
@@ -249,7 +249,7 @@ export default function BenchmarkEditor({ refreshCfg, busy, task, start, onTaskD
       </div>
 
       {/* ===== b · the versioned definition ===== */}
-      <div className="spp-dos">
+      <div className="spp-two-up">
         <div className="panel">
           <div className="panel-title">Nueva versión de «{current?.display_name || '—'}»</div>
           <p className="page-sub">La canasta es <b>append-only</b>: cambiar pesos o componentes no edita
@@ -352,7 +352,7 @@ export default function BenchmarkEditor({ refreshCfg, busy, task, start, onTaskD
                         ))}
                       </select>
                     </td>
-                    <td><button className="btn peligro"
+                    <td><button className="btn danger"
                       onClick={() => setConstituents(constituents.filter((_, j) => j !== i))}>Quitar</button></td>
                   </tr>
                 )) : <tr><td colSpan={5} className="dim">Busca series y agrégalas a la canasta.</td></tr>}
@@ -363,7 +363,7 @@ export default function BenchmarkEditor({ refreshCfg, busy, task, start, onTaskD
             {weightSum.toLocaleString('es-PE', { maximumFractionDigits: 4 })}</b> (debe ser 1 o 100)</p>
 
           <div className="controls">
-            <button className="btn principal" disabled={!canSave} onClick={saveVersion}
+            <button className="btn primary" disabled={!canSave} onClick={saveVersion}
               title={reason.trim() ? undefined : 'Escribe el motivo de la versión'}>
               Guardar versión y recalcular</button>
             <button className="btn" disabled={!current || !versions.length || busy}

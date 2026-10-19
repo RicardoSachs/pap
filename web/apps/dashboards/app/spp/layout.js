@@ -1,16 +1,15 @@
 // web/apps/dashboards/app/spp/layout.js
 // ---------------------------------------------------------------------------
-// Envoltura de las vistas del tablero Valor Cuota SPP.
+// Wrapper of the Valor Cuota SPP tablero views.
 //
-// Existe por una sola razón: cargar spp.css aquí y no en globals.css. Los
-// estilos del tablero solo hacen falta bajo /spp/, y tenerlos mezclados con el
-// sistema de diseño base obligaba a rescatarlos a mano cada vez que llegaba una
-// versión nueva de la interfaz. Next los inyecta igual para todas las rutas,
-// pero la SEPARACIÓN es la que importa: base.css se reemplaza entero y esto
-// sobrevive.
+// It exists for one reason: to load the tablero's stylesheets here and not in
+// globals.css. They are only needed under /spp/, and mixing them into the base
+// design system meant rescuing them by hand every time a new version of the
+// interface arrived. Next injects them for every route anyway, but the
+// SEPARATION is what matters: globals.css is replaced whole and this survives.
 //
-// Son dos hojas: la de widgets, que este tablero comparte con el Tradebook,
-// y la suya propia (styles/widgets.css + spp.css).
+// Two sheets: the widgets shared by our dashboards (styles/widgets.css) and
+// this tablero's own (spp.css).
 // ---------------------------------------------------------------------------
 import '../styles/widgets.css';
 import './spp.css';

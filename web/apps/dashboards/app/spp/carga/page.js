@@ -34,7 +34,7 @@ const AREA_KEYS = AREAS.map(([, v]) => v);
 // Small key/value report table used by every section.
 function Report({ rows }) {
   return (
-    <table className="spp-informe"><tbody>
+    <table className="spp-report"><tbody>
       {rows.map(([a, b], i) => (
         <tr key={i}><td>{a}</td><td className="num">{b}</td></tr>
       ))}
@@ -311,7 +311,7 @@ export default function SppCargaPage() {
 
       {area === 'vc' && (<>
       {/* ===== 1 · Manual registration of valor cuota ===== */}
-      <div className="spp-dos">
+      <div className="spp-two-up">
         <div className="panel">
           <div className="panel-title">Valor cuota · registro manual</div>
           <p className="page-sub">Una AFP y una fecha, sus fondos a la vez. Los cuadros se
@@ -342,10 +342,10 @@ export default function SppCargaPage() {
             ))}
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn principal" disabled={rPreload !== 'ok' || busy}
+            <button className="btn primary" disabled={rPreload !== 'ok' || busy}
               title={busy ? 'Espera a que termine la operación en curso' : undefined}
               onClick={() => register(false)}>Registrar valores</button>
-            <button className="btn peligro" disabled={rPreload !== 'ok' || busy}
+            <button className="btn danger" disabled={rPreload !== 'ok' || busy}
               title={busy ? 'Espera a que termine la operación en curso' : undefined}
               onClick={() => register(true)}>Anular la fecha</button>
           </div>
@@ -378,7 +378,7 @@ export default function SppCargaPage() {
       </div>
 
       {/* ===== 2 · Daily scrape ===== */}
-      <div className="spp-dos">
+      <div className="spp-two-up">
         <div className="panel">
           <div className="panel-title">Valor cuota · extracción diaria</div>
           <p className="page-sub">Lee la página de variables SPP (últimos 7 días hábiles) e
@@ -386,9 +386,9 @@ export default function SppCargaPage() {
             16:00 (y reintenta a las 16:30 y 17:00 si la SBS aún no publicó); aquí se lanza
             a mano. Toma unos 20–90 s.</p>
           <div className="controls">
-            <button className="btn principal" disabled={busy}
+            <button className="btn primary" disabled={busy}
               onClick={() => scrape(false)}>Correr extracción</button>
-            <button className="btn peligro" disabled={busy}
+            <button className="btn danger" disabled={busy}
               onClick={() => scrape(true)}>Correr y sobrescribir</button>
           </div>
           <p className="page-sub flag-warn" style={{ marginTop: 10 }}>
@@ -439,9 +439,9 @@ export default function SppCargaPage() {
         onChange={reviewHistory}
         fileName={hName}
         actions={hToken && (<>
-          <button className="btn principal" disabled={busy}
+          <button className="btn primary" disabled={busy}
             onClick={() => loadHistory('missing')}>Cargar lo que falta</button>
-          <button className="btn peligro" disabled={busy}
+          <button className="btn danger" disabled={busy}
             onClick={() => loadHistory('replace')}>Cargar y corregir</button>
         </>)}
         echo={hEcho}

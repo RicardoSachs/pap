@@ -6,8 +6,8 @@
 // inside a Suspense boundary for static export.
 // ---------------------------------------------------------------------------
 import './globals.css';
-// NUESTRO: lo nuestro de alcance global va en una hoja aparte y se carga
-// despues de globals.css, que se queda verbatim como viene de aguas arriba.
+// OURS: our global-scope rules live in a separate sheet loaded after
+// globals.css, which stays verbatim as it comes from upstream.
 import './styles/overrides.css';
 import { Suspense } from 'react';
 import { Inter, IBM_Plex_Mono } from 'next/font/google';

@@ -1,6 +1,6 @@
 // web/apps/dashboards/components/FileUpload.js
 // ---------------------------------------------------------------------------
-// NUESTRO. Uploading a file, the same in every site that offers it.
+// OURS. Uploading a file, the same in every site that offers it.
 //
 // Two panels, act on the left and see on the right:
 //
@@ -45,14 +45,14 @@ const FileUpload = forwardRef(function FileUpload({
   previewEmpty = 'Elige un archivo y aquí verás lo que trae, antes de que nada toque la base.',
 }, ref) {
   return (
-    <div className="spp-dos">
+    <div className="spp-two-up">
       <div className="panel">
         <div className="panel-title">{title}</div>
         {description && <p className="page-sub">{description}</p>}
 
         {/* The fixed header. The icon goes FIRST: it is the question one
             asks before choosing the file, not after. */}
-        <div className="controls carga-cabeza">
+        <div className="controls upload-header">
           <FileFormat formatKey={format} />
           {template && (
             <a className="btn" href={apiUrl(template)}>↓ Plantilla · XLSX</a>

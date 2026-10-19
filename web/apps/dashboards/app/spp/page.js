@@ -263,7 +263,7 @@ export default function SppPanelPage() {
     const afpOrder = order || relativeOrder;
     const funds = (cfg?.funds || []).filter((f) => rows.some((r) => r.fund === f));
     return (
-      <div className="table-wrap spp-vent">
+      <div className="table-wrap spp-windows">
         <table>
           <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
           <tbody>
@@ -277,9 +277,9 @@ export default function SppPanelPage() {
                 // weight, not by color.
                 return (
                   <tr key={`f${f}-${r.afp}`}
-                    className={`${i === 0 ? 'spp-bloque' : ''} ${isHouse ? 'spp-casa' : ''}`.trim()}>
+                    className={`${i === 0 ? 'spp-block' : ''} ${isHouse ? 'spp-house' : ''}`.trim()}>
                     {i === 0 && (
-                      <td rowSpan={ofFund.length} className="spp-fondo">Fondo {f}</td>
+                      <td rowSpan={ofFund.length} className="spp-fund">Fondo {f}</td>
                     )}
                     {/* With the fund in front this is no longer the row's
                         first cell and the global sheet would right-align it. */}
@@ -335,19 +335,19 @@ export default function SppPanelPage() {
         Valor cuota diario del SPP · fuente SBS
         {status?.rows ? ` · ${nInt(status.rows)} fechas (${fDate(status.from)} a ${fDate(status.to)})` : ''}
       </p>
-      <div className="spp-fila-tabs">
+      <div className="spp-tabs-row">
         <SppTabs />
         {/* The PDF report: a single icon, to the right of the tabs. It is
             what one takes away from the page, not a filter; the text goes
             in the tooltip and in aria-label. Relative table + alpha YTD/FY
             per fund, at the control date, built in the browser. */}
-        <button className="btn principal spp-icono" onClick={pdfReport}
+        <button className="btn primary spp-icon" onClick={pdfReport}
           disabled={generating || !win?.control}
           aria-label="Descargar el reporte de rentabilidad en PDF"
           title={generating ? 'Generando el reporte…'
             : 'Reporte de rentabilidad (PDF): tabla relativa + alpha YTD y FY de cada fondo, a la fecha de control'}>
           {generating ? (
-            <span className="spp-girando">…</span>
+            <span className="spp-spinning">…</span>
           ) : (
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
               strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -397,7 +397,7 @@ export default function SppPanelPage() {
       <div className="panel">
         {/* The title says what is on screen - scale, fund and window -
             because the filters stay above and the chart is looked at alone. */}
-        <div className="spp-cabecera-grafico">
+        <div className="spp-chart-header">
           <span />
           <div className="panel-title" style={{ margin: 0 }}>{seriesTitle}</div>
           {/* The CSV carries the view as is: level, base 100 or alpha in bps.
@@ -442,7 +442,7 @@ export default function SppPanelPage() {
           the ranks below carry their own controls (control date, fund), and
           without a visible cut the reader keeps changing the top filters and
           wondering why the tables do not move. */}
-      <div className="spp-corte" role="separator">
+      <div className="spp-divider" role="separator">
         <span>Fondo, ventana, escala y AFP mandan hasta aquí · la fecha de control manda en todo el panel</span>
       </div>
 
@@ -462,19 +462,19 @@ export default function SppPanelPage() {
 
         {win?.control ? (
           <>
-            <details className="spp-desplegable" open>
+            <details className="spp-collapsible" open>
               <summary>Rendimiento relativo · {house} contra cada competidora</summary>
               <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
                 rows={win.relative} withUnit order={relativeOrder} />
             </details>
-            <details className="spp-desplegable">
+            <details className="spp-collapsible">
               <summary>Rendimiento absoluto</summary>
               <WindowsTable cols={win.return_columns} rows={win.absolute} withUnit />
               <p className="page-sub">Hasta meses en puntos básicos; FY, YTD y año pasado en
                 porcentaje. FY es el ejercicio, del 31/10 al 31/10.
                 Las columnas diarias son el movimiento de ese día, no acumulados.</p>
             </details>
-            <details className="spp-desplegable">
+            <details className="spp-collapsible">
               <summary>Valor cuota en cada fecha base</summary>
               <WindowsTable cols={win.level_columns} rows={win.levels} withUnit={false} />
             </details>
@@ -518,7 +518,7 @@ export default function SppPanelPage() {
           />
         ) : <div className="dim">Sin meses cerrados suficientes.</div>)}
         {posView === 'table' && (
-        <div className="table-wrap spp-vent">
+        <div className="table-wrap spp-windows">
           <table>
             <thead><tr><th>AFP</th>{periods.map((p) => <th key={p.key}>{p.label}</th>)}</tr></thead>
             <tbody>
@@ -541,7 +541,7 @@ export default function SppPanelPage() {
                       const t = posTotal < 2 ? 1 : 1 - (rank - 1) / (posTotal - 1);
                       const share = Math.round(7 + 93 * t);
                       return (
-                        <td key={p.key} className="num spp-puesto"
+                        <td key={p.key} className="num spp-rank"
                           style={{
                             background: `color-mix(in srgb, ${base} ${share}%, transparent)`,
                             color: share >= 60 ? '#fff' : 'inherit',

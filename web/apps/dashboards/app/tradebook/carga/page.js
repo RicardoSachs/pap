@@ -146,7 +146,7 @@ function PorArchivo({ alCargar, origen, traders }) {
       actions={<>
         <button className="btn" disabled={!archivo || ocupado}
           onClick={() => enviar(true)}>Revisar</button>
-        <button className="btn principal" disabled={!archivo || ocupado || !informe?.leidas}
+        <button className="btn primary" disabled={!archivo || ocupado || !informe?.leidas}
           onClick={() => enviar(false)}>Cargar lo revisado</button>
       </>}
       echo={eco}
@@ -155,7 +155,7 @@ function PorArchivo({ alCargar, origen, traders }) {
         : `${informe.archivo} · ${nInt(informe.leidas)} operación(es) legibles. Nada se ha guardado todavía.`)}
       preview={informe && (
         <>
-          <table className="spp-informe">
+          <table className="spp-report">
             <tbody>
               <tr><td>Va al libro de</td><td className="num">
                 {informe.origen === 'fms' ? 'FMS' : 'los traders'}</td></tr>
@@ -197,7 +197,7 @@ function PorArchivo({ alCargar, origen, traders }) {
           ))}
 
           {!!descartadas.length && (
-            <details className="spp-desplegable" open>
+            <details className="spp-collapsible" open>
               <summary>Filas descartadas · {nInt(informe.descartadas.length)}</summary>
               <div className="table-wrap">
                 <table>
@@ -216,7 +216,7 @@ function PorArchivo({ alCargar, origen, traders }) {
           )}
 
           {!!muestra.length && (
-            <details className="spp-desplegable" open>
+            <details className="spp-collapsible" open>
               <summary>Muestra de lo leído</summary>
               <div className="table-wrap">
                 <table>
@@ -301,7 +301,7 @@ function AMano({ alCargar, traders }) {
   const vacio = <span className="dim">—</span>;
 
   return (
-    <div className="spp-dos">
+    <div className="spp-two-up">
       <div className="panel">
         <div className="panel-title">Captura a mano</div>
         <p className="page-sub">
@@ -309,8 +309,8 @@ function AMano({ alCargar, traders }) {
           con <Req /> son obligatorios.
         </p>
 
-        <div className="spp-grupo">
-          <div className="spp-grupo-titulo">Quién y cuándo</div>
+        <div className="spp-group">
+          <div className="spp-group-title">Quién y cuándo</div>
           <div className="controls spp-controls">
             {/* Operador y Book son dos cosas: quien ejecuto, y el libro al que
                 se atribuye. El operador es libre; el book, obligatorio. */}
@@ -332,8 +332,8 @@ function AMano({ alCargar, traders }) {
           </div>
         </div>
 
-        <div className="spp-grupo">
-          <div className="spp-grupo-titulo">Qué</div>
+        <div className="spp-group">
+          <div className="spp-group-title">Qué</div>
           <div className="controls spp-controls">
             <div className="field"><label>Lado</label>
               <SppSeg items={LADOS} value={form.lado}
@@ -344,8 +344,8 @@ function AMano({ alCargar, traders }) {
           </div>
         </div>
 
-        <div className="spp-grupo">
-          <div className="spp-grupo-titulo">Cuánto</div>
+        <div className="spp-group">
+          <div className="spp-group-title">Cuánto</div>
           <div className="controls spp-controls">
             <div className="field"><label>Cantidad<Req /></label>
               <input className="text-input" style={{ width: 130 }} value={form.cantidad} onChange={set('cantidad')} /></div>
@@ -363,8 +363,8 @@ function AMano({ alCargar, traders }) {
           </div>
         </div>
 
-        <div className="spp-grupo">
-          <div className="spp-grupo-titulo">Contraparte y nota</div>
+        <div className="spp-group">
+          <div className="spp-group-title">Contraparte y nota</div>
           <div className="controls spp-controls">
             <div className="field"><label>Contraparte</label>
               <input className="text-input" style={{ width: 160 }} value={form.contraparte} onChange={set('contraparte')} /></div>
@@ -374,7 +374,7 @@ function AMano({ alCargar, traders }) {
         </div>
 
         <div className="controls" style={{ marginTop: 14 }}>
-          <button className="btn principal" disabled={!listo} onClick={registrar}>
+          <button className="btn primary" disabled={!listo} onClick={registrar}>
             Registrar operación</button>
           <button className="btn" onClick={() => { setForm(VACIO); setEco(''); }}>Limpiar</button>
         </div>
@@ -496,7 +496,7 @@ function Libro({ estado, alCambiar }) {
                 <td>{o.operador || <span className="dim">—</span>}</td>
                 <td>{o.trader || <span className="dim">—</span>}</td>
                 <td><span className={`tb-origen ${o.origen}`}>{o.origen}</span></td>
-                <td><button className="btn peligro" onClick={() => borrar(o)}>Anular</button></td>
+                <td><button className="btn danger" onClick={() => borrar(o)}>Anular</button></td>
               </tr>
             )) : (
               <tr><td colSpan={12} className="dim">

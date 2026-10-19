@@ -22,8 +22,8 @@ export function chartTheme() {
     border: v('--s4', DARK.border),
     text: v('--text-primary', DARK.text),
     muted: v('--text-secondary', DARK.muted),
-    // NUESTRO: Plotly no resuelve var(--x) en marker.color ni line.color; se
-    // queda con su paleta por defecto. Se le da el valor ya resuelto.
+    // OURS: Plotly does not resolve var(--x) in marker.color or line.color;
+    // it keeps its default palette. It gets the resolved value.
     positive: v('--positive', DARK.positive),
     negative: v('--negative', DARK.negative),
     brand: v('--brand', DARK.brand),

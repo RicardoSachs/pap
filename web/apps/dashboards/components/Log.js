@@ -23,7 +23,7 @@ export default function Log({ task, empty = 'Sin operaciones en esta sesión.' }
   const [visible, ShowAll] = useShowAll(recent, CAP);
   return (
     <>
-      <div className="spp-bitacora mono">
+      <div className="spp-log mono">
         {!task && <div className="dim">{empty}</div>}
         {task && !lines.length && task.active && (
           <div className="dim">Iniciando {task.action || 'la operación'}…</div>

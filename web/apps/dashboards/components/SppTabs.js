@@ -1,4 +1,3 @@
-
 // web/apps/dashboards/components/SppTabs.js
 // ---------------------------------------------------------------------------
 // Sub-tab bar of the SPP tablero: one sidebar entry (/spp/) fans out into the
@@ -9,8 +8,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-// Se nombran como pares para que se lean como lo que son, aunque vivan en
-// niveles distintos de la navegación.
+// Named as pairs so they read as what they are, even though they live at
+// different levels of the navigation.
 const TABS = [
   { href: '/spp/', label: 'Panel' },
   { href: '/spp/libro/', label: 'Libro' },

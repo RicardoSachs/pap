@@ -1,6 +1,6 @@
 // web/apps/dashboards/components/DataDownload.js
 // ---------------------------------------------------------------------------
-// NUESTRO. "Download this chart's data": a CSV with EXACTLY what the chart
+// OURS. "Download this chart's data": a CSV with EXACTLY what the chart
 // draws, built in the browser from its traces.
 //
 // That is why it receives the Plotly traces and asks the API for nothing:

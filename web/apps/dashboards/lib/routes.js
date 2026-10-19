@@ -13,7 +13,7 @@ export const activeRoute = (path, href) => {
   return path === href || path === base || path.startsWith(`${base}/`);
 };
 
-// NUESTRO. Our dashboards, the ones that do not exist upstream.
+// OURS. Our dashboards, the ones that do not exist upstream.
 //
 // The adopted design system brings two pieces that assume every page is
 // one of its dashboards: the context pill (portfolio, dates, source) and

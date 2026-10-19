@@ -61,10 +61,10 @@ export default function DashboardProvider({ children }) {
   useEffect(() => {
     if (!hydrated) return;
     try { localStorage.setItem(LS_KEY, JSON.stringify(ctx)); } catch { /* ignore */ }
-    // NUESTRO: el monitor SPP no lee cartera, periodo ni fuente, asi que
-    // estamparlos en su URL solo produce enlaces y marcadores cargados de
-    // parametros que ninguna de sus vistas mira. El localStorage de arriba
-    // sigue guardando el contexto para los demas tableros.
+    // OURS: the SPP monitor reads no portfolio, period or source, so
+    // stamping them on its URL only produces links and bookmarks loaded
+    // with parameters none of its views reads. The localStorage above
+    // keeps storing the context for the other dashboards.
     if (isOurDashboard(pathname)) return;
     const sp = new URLSearchParams();
     if (ctx.portfolioId) sp.set('portfolio', ctx.portfolioId);

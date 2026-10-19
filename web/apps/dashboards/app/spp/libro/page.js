@@ -129,7 +129,7 @@ export default function SppLibroPage() {
 
       <div className="panel">
         {loading ? <div className="loading">Cargando…</div> : (
-          <div className="table-wrap spp-vent">
+          <div className="table-wrap spp-windows">
             <table>
               <thead>
                 <tr><th>Fecha</th>{columns.map((c) => <th key={c.col} className="num">{header(c)}</th>)}</tr>

@@ -258,14 +258,14 @@ export default function TradebookPanel() {
               : <p className="page-sub dim">Sin operaciones en este rango.</p>}
           </div>
 
-          <div className="spp-dos">
+          <div className="spp-two-up">
             <Composicion titulo="Por contraparte" filas={contrapartes}
               Ver={VerContrapartes} etiqueta="contrapartes" moneda={moneda} />
             <Composicion titulo="Por instrumento" filas={instrumentos}
               Ver={VerInstrumentos} etiqueta="instrumentos" moneda={moneda} />
           </div>
 
-          <div className="spp-dos">
+          <div className="spp-two-up">
             {/* Sin tope y sin 'Otras': los traders son pocos y el sentido de
                 esta tabla es justamente poder ver a cada uno. Con el libro de
                 FMS no se pinta: esas filas no llevan nombre. */}
@@ -283,7 +283,7 @@ export default function TradebookPanel() {
           </div>
 
           {libro !== 'fms' && (
-            <div className="spp-dos">
+            <div className="spp-two-up">
               <Composicion titulo="Por moneda" moneda={null}
                 filas={resumen?.por_moneda || []} conMoneda />
             </div>

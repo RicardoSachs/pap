@@ -197,7 +197,8 @@ plantilla XLSX.
 
 **Benchmarks** tiene su propia entrada en el menú: **Panel** y **Libro**
 muestran los índices compuestos y **Registro** los declara y versiona
-sus canastas, de pesos fijos. La canasta se arma buscando series de
+sus canastas; el rebalanceo es manual: cada versión fija los pesos desde
+su fecha de vigencia hasta la siguiente. La canasta se arma buscando series de
 precios por código, nombre, ticker o ISIN entre todo lo que los
 pipelines cargan en la base (Bloomberg, vector SBS, valor cuota SPP):
 con el `.env` apuntando al servidor de la oficina aparecen sin

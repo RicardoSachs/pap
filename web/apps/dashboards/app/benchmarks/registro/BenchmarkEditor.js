@@ -17,9 +17,11 @@
 // model series themselves. A Bloomberg ticker the pipelines do not carry
 // yet is registered from here too, in a folded block under the search.
 //
-// The tablero declares FIXED-WEIGHT baskets only: the weights are re-struck
-// at every rebalance boundary (monthly, quarterly, annual). The analytics
-// module also knows buy_and_hold; the choice is not offered here.
+// Rebalancing is MANUAL: the weights a version declares are struck at its
+// effective date and hold until the operator declares the next version -
+// that new version IS the rebalance. In the analytics module this is the
+// buy_and_hold method; fixed_weights (periodic re-strike) is not offered
+// here, though a version carrying it still renders in the history.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -32,11 +34,13 @@ import useShowAll from '../../../components/useShowAll';
 import { apiGet, apiSend } from '../../../lib/api';
 import { apiUrl, fDate, fTime, nInt, todayLocal } from '../../../lib/spp';
 
-const METHOD = 'fixed_weights';
-// For reading the history: a version may carry a method this editor no
-// longer offers.
-const METHOD_LABELS = { buy_and_hold: 'Buy and hold (deriva)', fixed_weights: 'Pesos fijos', heuristic: 'Heurístico' };
-const FREQUENCIES = [['Mensual', 'monthly'], ['Trimestral', 'quarterly'], ['Anual', 'annual']];
+const METHOD = 'buy_and_hold';
+// For reading the history: a version may carry a method or a frequency
+// this editor no longer offers.
+const METHOD_LABELS = {
+  buy_and_hold: 'Rebalanceo manual', fixed_weights: 'Pesos fijos (rebalanceo periódico)', heuristic: 'Heurístico',
+};
+const FREQUENCY_LABELS = { monthly: 'mensual', quarterly: 'trimestral', annual: 'anual' };
 const ENTITY_TYPES = { security: 'Valor (acción, ETF, bono)', index: 'Índice', fund: 'Fondo' };
 const STATUS = {
   active: 'activa', 'backfill-pending': 'pendiente de histórico', suspended: 'suspendida',
@@ -103,7 +107,6 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
 
   // ---- the new version form ----
   const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [frequency, setFrequency] = useState('monthly');
   const [changeType, setChangeType] = useState('rebalance');
   const [reason, setReason] = useState('');
   const [supportDoc, setSupportDoc] = useState('');
@@ -193,7 +196,6 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
   // a new version - the only way to "edit" an append-only definition.
   const loadLatest = () => {
     if (!latest) return;
-    setFrequency(latest.rebalance_frequency || 'monthly');
     setConstituents(latest.constituents.map((c) => ({
       label: c.label, series_id: c.series_id,
       detail: `${c.field} · ${c.source} · ${c.procode}`,
@@ -221,7 +223,7 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
     const body = {
       effective_from: effectiveFrom,
       method: METHOD,
-      rebalance_frequency: frequency,
+      rebalance_frequency: null,
       change_type: changeType,
       reason: reason.trim(),
       support_doc: supportDoc.trim() || null,
@@ -301,10 +303,10 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
         <div className="panel">
           <div className="panel-title">Nueva versión de «{current?.display_name || '—'}»</div>
           <p className="page-sub">La canasta es <b>append-only</b>: cambiar pesos o componentes no edita
-            nada, crea una versión nueva desde su fecha de vigencia, con un motivo. Los pesos son
-            <b> fijos</b>: se restablecen al inicio de cada periodo de rebalanceo y entre medio siguen
-            a los precios. Los niveles se recalculan desde la primera versión (base 100) y nunca se
-            cargan a mano.</p>
+            nada, crea una versión nueva desde su fecha de vigencia, con un motivo. El rebalanceo es
+            <b> manual</b>: los pesos que declaras rigen desde esa fecha hasta la siguiente versión, que
+            es la que rebalancea. Los niveles se recalculan desde la primera versión (base 100) y nunca
+            se cargan a mano.</p>
 
           <div className="controls spp-controls">
             <div className="field"><label>Benchmark</label>
@@ -315,8 +317,6 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
             <div className="field"><label htmlFor="v-from">Vigente desde</label>
               <input id="v-from" className="date-input" type="date" value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)} /></div>
-            <div className="field"><label>Rebalanceo</label>
-              <SppSeg items={FREQUENCIES} value={frequency} onChange={setFrequency} /></div>
             <div className="field"><label htmlFor="v-type">Tipo de cambio</label>
               <select id="v-type" className="select" value={changeType}
                 disabled={!versions.length}
@@ -482,7 +482,7 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
                 <p className="page-sub" style={{ margin: '2px 0 6px' }}>
                   <b>{v.reason}</b>
                   {' · '}{METHOD_LABELS[v.method] || v.method}
-                  {v.rebalance_frequency ? ` (${FREQUENCIES.find(([, k]) => k === v.rebalance_frequency)?.[0] || v.rebalance_frequency})` : ''}
+                  {v.rebalance_frequency ? ` (${FREQUENCY_LABELS[v.rebalance_frequency] || v.rebalance_frequency})` : ''}
                   {v.supersedes_version_id ? ` · reemplaza a la ${v.supersedes_version_id}` : ''}
                   {' · registrada el '}{fTime(v.created_at)}{v.recorded_by ? ` por ${v.recorded_by}` : ''}
                   {v.support_doc ? <> · <span className="mono">{v.support_doc}</span></> : null}

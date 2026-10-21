@@ -23,7 +23,9 @@ import { chartTheme } from '../../lib/theme';
 
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
 
-const METHODS = { buy_and_hold: 'Buy and hold (deriva)', fixed_weights: 'Pesos fijos', heuristic: 'Heurístico' };
+const METHODS = {
+  buy_and_hold: 'Rebalanceo manual', fixed_weights: 'Pesos fijos (rebalanceo periódico)', heuristic: 'Heurístico',
+};
 const RETURN_WINDOWS = [['MTD', 'mtd'], ['YTD', 'ytd'], ['FY', 'fy'], ['1A', 1], ['3A', 3], ['5A', 5]];
 
 // The fund type a benchmark is paired with, read from its procode suffix.

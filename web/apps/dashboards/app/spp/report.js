@@ -117,7 +117,10 @@ export async function generateReport({ cfg, windows }) {
     + ` · M-1 ${fDate(windows.dates.month1)} · inicio de año ${fDate(windows.dates.year)}`
     + ` · inicio de ejercicio ${fDate(windows.dates.fy)}`), W - 2 * M), M, 20);
 
-  const cols = (windows.return_columns || []).filter((c) => c[2] !== 'level');
+  // The filed page keeps the thirteen columns it was laid out for: the
+  // trailing windows (3M ... 10A annualized) stay on screen.
+  const TRAILING = new Set(['a10', 'a5', 'a3', 'm12', 'm6', 'm3']);
+  const cols = (windows.return_columns || []).filter((c) => c[2] !== 'level' && !TRAILING.has(c[0]));
   const order = houseFirst(cfg, names);
   const body = [];
   const meta = [];

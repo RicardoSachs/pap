@@ -6,21 +6,29 @@
 #
 # The monitor stored the book as one wide table; here it lives long in
 # fact_prices. read() rebuilds the wide frame (date x '{key}_f{n}[suffix]')
-# by pivoting, so the ported window/ranking logic runs unchanged - those
-# calculations are share-grid by nature (one common closing-date grid for
-# all AFPs, or relative performance would compare different periods).
+# for the views that show the book itself (table, export). The analytical
+# views do NOT pivot the book: windows() and positions() read the closing
+# grid (the distinct dates) and then the handful of closes they compare,
+# series() reads the lines it draws, status() aggregates in SQL. The book
+# is 78k rows and growing; pivoting it on every request cost over a
+# second per view, almost all of it in Python, while the SQL takes tens
+# of milliseconds. The calculations stay share-grid by nature: one common
+# closing-date grid for all AFPs, or relative performance would compare
+# different periods.
 #
 # Metric keys (valor_cuota, cuotas, fondo) are the SBS's own names for the
 # published figures and stay as they come; everything else is English.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import io
 import logging
 
 import numpy as np
 import pandas as pd
+from psycopg.rows import tuple_row
 
 from src.db.connection import get_connection
 from src.pipelines.prices.sbs.valor_cuota import afps
@@ -44,18 +52,27 @@ SHORT_MONTHS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
 # Window keys and labels. Column order is CHRONOLOGICAL, oldest on the left
 # and the control date on the right, so the tables read in the same
 # direction as the line chart and the positions heatmap. Mixed windows are
-# ordered by their START date: last year < YTD < M-2 < M-1 < MTD < 5D < the
-# daily moves < the level.
+# ordered by their START date: the trailing years < last year < 12M < FY
+# < YTD < 6M < 3M < M-2 < M-1 < MTD < 5D < the daily moves < the level.
+# (YTD and 6M swap places in the second half of the year; the column does
+# not move with the calendar - reordering it twice a year would cost more
+# than it clarifies. Same for FY, which overtakes the calendar year only
+# in November and December.)
 LEVEL_KEYS = ["year1", "year", "month2", "month1", "month",
               "t5", "t4", "t3", "t2", "t1", "t"]
+# (key, fixed label or None for a date label, unit). The trailing windows
+# count back from the control date: 3M / 6M / 12M are plain returns, 3A /
+# 5A / 10A are ANNUALIZED (compound rate per year over the window).
 RETURN_KEYS = [
+    ("a10",   "10A anual.",  "pct"),
+    ("a5",    "5A anual.",   "pct"),
+    ("a3",    "3A anual.",   "pct"),
     ("a1",    None,          "pct"),
-    # The fiscal year starts on 31/10, i.e. BEFORE 1/1 except in November
-    # and December, when the fiscal year has started and the calendar year
-    # has not. The column does not move those two months: reordering it
-    # twice a year would cost more than it clarifies.
+    ("m12",   "12M",         "pct"),
     ("fy",    "FY",          "pct"),
     ("ytd",   "YTD",         "pct"),
+    ("m6",    "6M",          "pct"),
+    ("m3",    "3M",          "pct"),
     ("m2",    None,          "bps"),
     ("m1",    None,          "bps"),
     ("mtd",   "MTD",         "bps"),
@@ -66,6 +83,8 @@ RETURN_KEYS = [
     ("d0",    None,          "bps"),
     ("level", "Valor cuota", "level"),
 ]
+# Years behind each annualized window.
+ANNUALIZED_YEARS = {"a3": 3, "a5": 5, "a10": 10}
 
 
 def column(afp, fund: int, metric: str = "valor_cuota") -> str:
@@ -103,8 +122,8 @@ def _control_date(dates: list, day) -> dt.date | None:
 
 
 def _cell(by_date: pd.DataFrame, col: str, day):
-    """One cell of the wide book, None-safe (shared lookup of windows()
-    and positions())."""
+    """One cell of the wide book, None-safe (kept for callers that still
+    hold a pivoted frame)."""
     if day is None or col not in by_date.columns:
         return None
     try:
@@ -114,22 +133,103 @@ def _cell(by_date: pd.DataFrame, col: str, day):
     return None if pd.isna(v) else float(v)
 
 
-def _last_date():
-    """Cheap MAX(date) probe so heavy readers can bound read() relative
-    to the book's real end instead of fetching 30 years to use two."""
+# ---- The series behind the book -------------------------------------------
+
+def _registry(metrics: list[str], funds=None, names=None) -> list[dict]:
+    """
+    The SPP series the requested metrics live in, with the wide-book column
+    each one becomes: one row per AFP x fund x metric, resolved once per
+    request from series_registry. Optionally narrowed to some funds and
+    AFP display names.
+    """
+    fields = [afps.METRIC_FIELD[m] for m in metrics]
+    name_of = {a["key"]: a["name"] for a in afps.afps()}
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT MAX(fp.date) AS last_date
-            FROM fact_prices fp
-            JOIN series_registry sr ON sr.series_id = fp.series_id
+            SELECT sr.series_id, e.procode, sr.field
+            FROM series_registry sr
             JOIN dim_entity e ON e.entity_id = sr.entity_id
             WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
-              AND sr.source = %s
-            """, (afps.SOURCE_SBS_SPP,))
-        row = cur.fetchone()
-    return row["last_date"] if row else None
+              AND sr.source = %s AND sr.field = ANY(%s)
+            ORDER BY sr.series_id
+            """, (afps.SOURCE_SBS_SPP, fields))
+        rows = cur.fetchall()
+    out = []
+    for r in rows:
+        parsed = afps.parse_procode(r["procode"])
+        metric = afps.FIELD_METRIC.get(r["field"])
+        if parsed is None or metric is None:
+            continue
+        key, fund = parsed
+        if funds is not None and fund not in funds:
+            continue
+        name = name_of.get(key, key)
+        if names is not None and name not in names:
+            continue
+        out.append({"series_id": r["series_id"], "col": f"{key}_f{fund}{SUFFIX[metric]}",
+                    "afp": name, "fund": fund, "metric": metric})
+    return out
+
+
+def _prices(series: list[dict], date_from=None, date_to=None,
+            dates=None) -> pd.DataFrame:
+    """Long frame (series_id, date, price) of the given series, bounded
+    by a date range and/or restricted to an explicit list of dates."""
+    if not series:
+        return pd.DataFrame(columns=["series_id", "date", "price"])
+    sql = "SELECT series_id, date, price FROM fact_prices WHERE series_id = ANY(%s)"
+    params: list = [[s["series_id"] for s in series]]
+    if date_from:
+        sql += " AND date >= %s::date"
+        params.append(str(date_from))
+    if date_to:
+        sql += " AND date <= %s::date"
+        params.append(str(date_to))
+    if dates is not None:
+        sql += " AND date = ANY(%s)"
+        params.append(list(dates))
+    with get_connection() as conn:
+        cur = conn.cursor(row_factory=tuple_row)
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    return pd.DataFrame(rows, columns=["series_id", "date", "price"])
+
+
+def _grid(series: list[dict]) -> list[dt.date]:
+    """The closing grid: every date any of the series quotes, ascending."""
+    if not series:
+        return []
+    with get_connection() as conn:
+        cur = conn.cursor(row_factory=tuple_row)
+        cur.execute("SELECT DISTINCT date FROM fact_prices WHERE series_id = ANY(%s) ORDER BY date",
+                    ([s["series_id"] for s in series],))
+        return [r[0] for r in cur.fetchall()]
+
+
+def _at(series: list[dict], dates) -> dict:
+    """{column: {date: price}} for the given dates only."""
+    wanted = sorted({d for d in dates if d is not None})
+    out: dict = {s["col"]: {} for s in series}
+    if not wanted:
+        return out
+    col_of = {s["series_id"]: s["col"] for s in series}
+    for sid, day, price in _prices(series, dates=wanted).itertuples(index=False):
+        out[col_of[sid]][day] = float(price)
+    return out
+
+
+def _last_date():
+    """Cheap MAX(date) probe over the SPP series."""
+    series = _registry(METRICS)
+    if not series:
+        return None
+    with get_connection() as conn:
+        cur = conn.cursor(row_factory=tuple_row)
+        cur.execute("SELECT MAX(date) FROM fact_prices WHERE series_id = ANY(%s)",
+                    ([s["series_id"] for s in series],))
+        return cur.fetchone()[0]
 
 
 # ---- Book reader ----------------------------------------------------------
@@ -139,53 +239,19 @@ def read(metrics: list[str] | None = None,
     """
     Wide DataFrame: one row per date, one column per AFP x fund x metric,
     named '{key}_f{n}[suffix]'. Only the requested metrics are pivoted -
-    status() needs all three, a chart request needs one.
+    the book views need one, an export may need all three.
     """
     metrics = [m for m in (metrics or METRICS) if m in SUFFIX] or METRICS
-    fields = [afps.METRIC_FIELD[m] for m in metrics]
-
-    sql = """
-        SELECT e.procode, sr.field, fp.date, fp.price
-        FROM fact_prices fp
-        JOIN series_registry sr ON sr.series_id = fp.series_id
-        JOIN dim_entity e ON e.entity_id = sr.entity_id
-        WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
-          AND sr.source = %s
-          AND sr.field = ANY(%s)
-    """
-    params: list = [afps.SOURCE_SBS_SPP, fields]
-    if date_from:
-        sql += " AND fp.date >= %s::date"
-        params.append(str(date_from))
-    if date_to:
-        sql += " AND fp.date <= %s::date"
-        params.append(str(date_to))
-
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-    if not rows:
+    series = _registry(metrics)
+    long = _prices(series, date_from, date_to)
+    if long.empty:
         return pd.DataFrame(columns=["date"])
-
-    records = []
-    for r in rows:
-        parsed = afps.parse_procode(r["procode"])
-        if parsed is None:
-            continue
-        key, fund = parsed
-        metric = afps.FIELD_METRIC.get(r["field"])
-        if metric is None:
-            continue
-        records.append({"date": r["date"],
-                        "col": f"{key}_f{fund}{SUFFIX[metric]}",
-                        "value": r["price"]})
-    if not records:
-        return pd.DataFrame(columns=["date"])
-
-    df = (pd.DataFrame(records)
-          .pivot_table(index="date", columns="col", values="value", aggfunc="last")
-          .sort_index().reset_index())
+    col_of = {s["series_id"]: s["col"] for s in series}
+    long["col"] = long["series_id"].map(col_of)
+    # pivot, not pivot_table: (series_id, date) is the primary key, so there
+    # is nothing to aggregate, and the aggregating path is what cost a
+    # second on the full book.
+    df = long.pivot(index="date", columns="col", values="price").sort_index().reset_index()
     df.columns.name = None
     return df
 
@@ -220,7 +286,11 @@ def gaps(dates, minimum: int = 3) -> list:
     dates = list(dates)
     if len(dates) < 2:
         return []
-    loaded = {pd.to_datetime(d).date() for d in dates}
+    # Dates arrive as date objects from the database; the conversion is
+    # only for strings and timestamps (pd.to_datetime on 8k dates alone
+    # cost a quarter of a second).
+    loaded = {(d.date() if isinstance(d, dt.datetime) else d) if isinstance(d, dt.date)
+              else pd.to_datetime(d).date() for d in dates}
     missing = sorted(set(pd.bdate_range(min(loaded), max(loaded)).date) - loaded)
     if not missing:
         return []
@@ -236,52 +306,82 @@ def gaps(dates, minimum: int = 3) -> list:
             for r in runs if len(r) >= minimum]
 
 
-def _metric_coverage(df: pd.DataFrame, metric: str) -> dict:
-    cols = [c for c in _columns_of(metric) if c in df.columns]
-    if not cols or df.empty:
-        return {"metric": metric, "dates": 0, "from": None, "to": None}
-    with_data = df[df[cols].notna().any(axis=1)]
-    if with_data.empty:
-        return {"metric": metric, "dates": 0, "from": None, "to": None}
-    return {"metric": metric, "dates": int(len(with_data)),
-            "from": str(with_data["date"].min()),
-            "to": str(with_data["date"].max())}
-
-
-def _columns_of(metric: str) -> list[str]:
-    return [column(a, f, metric)
-            for f in afps.funds() for a in afps.names() if afps.operates(a, f)]
-
-
 def status() -> dict:
-    """Summary for the tablero: coverage, latest values, gaps, variations."""
-    df = read()
-    base = {"table": "fact_prices", "rows": len(df), "from": None, "to": None,
+    """
+    Summary for the tablero: coverage, latest values, gaps, variations.
+    Aggregated in SQL - the only Python pass is over the distinct dates.
+    """
+    series = _registry(METRICS)
+    base = {"table": "fact_prices", "rows": 0, "from": None, "to": None,
             "gaps": [], "series": [], "complete": 0, "partial": 0,
-            "metrics": [_metric_coverage(df, m) for m in METRICS]}
-    if df.empty:
+            "metrics": [{"metric": m, "dates": 0, "from": None, "to": None} for m in METRICS]}
+    if not series:
         return base
+    ids = [s["series_id"] for s in series]
+    by_metric = {m: [s["series_id"] for s in series if s["metric"] == m] for m in METRICS}
 
-    base.update({"from": str(df["date"].min()), "to": str(df["date"].max()),
-                 "gaps": gaps(df["date"])})
+    with get_connection() as conn:
+        cur = conn.cursor(row_factory=tuple_row)
+        cur.execute("SELECT DISTINCT date FROM fact_prices WHERE series_id = ANY(%s) ORDER BY date",
+                    (ids,))
+        all_dates = [r[0] for r in cur.fetchall()]
+        if not all_dates:
+            return base
 
-    # A "complete" date has all valor cuota series published; usable
-    # coverage runs to the last of those - a half-published date is not
-    # coverage.
-    present = [c for c in _columns_of("valor_cuota") if c in df.columns]
-    complete = df[present].notna().all(axis=1) if present else df["date"].isna()
-    base["complete"] = int(complete.sum())
-    base["partial"] = int((~complete).sum())
-    complete_dates = df.loc[complete, "date"]
-    base["from_complete"] = str(complete_dates.min()) if len(complete_dates) else None
-    base["to_complete"] = str(complete_dates.max()) if len(complete_dates) else None
+        coverage = []
+        for m in METRICS:
+            cur.execute(
+                "SELECT COUNT(DISTINCT date), MIN(date), MAX(date) "
+                "FROM fact_prices WHERE series_id = ANY(%s)", (by_metric[m],))
+            n, first, last = cur.fetchone()
+            coverage.append({"metric": m, "dates": int(n),
+                             "from": str(first) if first else None,
+                             "to": str(last) if last else None})
+
+        cur.execute(
+            "SELECT series_id, COUNT(*), MIN(date) FROM fact_prices "
+            "WHERE series_id = ANY(%s) GROUP BY series_id", (ids,))
+        agg = {sid: (int(n), first) for sid, n, first in cur.fetchall()}
+
+        # The last two closes of every series, for the level and its move.
+        cur.execute(
+            """
+            SELECT series_id, date, price FROM (
+                SELECT series_id, date, price,
+                       ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY date DESC) AS rn
+                FROM fact_prices WHERE series_id = ANY(%s)) t
+            WHERE rn <= 2
+            ORDER BY series_id, date DESC
+            """, (ids,))
+        last_two: dict[int, list] = {}
+        for sid, day, price in cur.fetchall():
+            last_two.setdefault(sid, []).append((day, float(price)))
+
+        # A "complete" date has all valor cuota series published; usable
+        # coverage runs to the last of those - a half-published date is not
+        # coverage. The series counted are the valor cuota series that have
+        # any data at all, as the pivoted book would show them.
+        vc_ids = [sid for sid in by_metric["valor_cuota"] if sid in agg]
+        complete_dates: list = []
+        if vc_ids:
+            cur.execute(
+                "SELECT date, COUNT(*) FROM fact_prices WHERE series_id = ANY(%s) "
+                "GROUP BY date HAVING COUNT(*) = %s ORDER BY date", (vc_ids, len(vc_ids)))
+            complete_dates = [r[0] for r in cur.fetchall()]
+
+    base.update({"rows": len(all_dates), "from": str(all_dates[0]), "to": str(all_dates[-1]),
+                 "gaps": gaps(all_dates), "metrics": coverage})
+    base["complete"] = len(complete_dates)
+    base["partial"] = len(all_dates) - len(complete_dates)
+    base["from_complete"] = str(complete_dates[0]) if complete_dates else None
+    base["to_complete"] = str(complete_dates[-1]) if complete_dates else None
     base["partial_after"] = (
-        int((df["date"] > complete_dates.max()).sum()) if len(complete_dates) else 0)
+        sum(1 for d in all_dates if d > complete_dates[-1]) if complete_dates else 0)
 
     # Staleness KPI, owned here next to the coverage semantics it depends
     # on (the dashboard only renders tone): business days elapsed since
     # the last COMPLETE close, and the data-quality classification.
-    end = complete_dates.max() if len(complete_dates) else df["date"].max()
+    end = complete_dates[-1] if complete_dates else all_dates[-1]
     today = dt.date.today()
     lag = int(np.busday_count(end + dt.timedelta(days=1),
                               today + dt.timedelta(days=1))) if end < today else 0
@@ -295,27 +395,27 @@ def status() -> dict:
     base["lag_business_days"] = max(lag, 0)
     base["integrity"] = integrity
 
+    by_col = {s["col"]: s for s in series}
+
     def last_and_change(col):
-        if col not in df.columns:
+        s = by_col.get(col)
+        closes = last_two.get(s["series_id"]) if s else None
+        if not closes:
             return None, None, None
-        s = df[["date", col]].dropna(subset=[col])
-        if s.empty:
-            return None, None, None
-        last = float(s[col].iloc[-1])
-        previous = float(s[col].iloc[-2]) if len(s) > 1 else None
+        (last_day, last), *rest = closes
+        previous = rest[0][1] if rest else None
         change = None if not previous else round((last / previous - 1) * 10000, 1)
-        return last, change, str(s["date"].iloc[-1])
+        return last, change, str(last_day)
 
     for f in afps.funds():
         for a in afps.names():
             if not afps.operates(a, f):
                 continue
             col = column(a, f)
-            if col not in df.columns:
+            s = by_col.get(col)
+            if s is None or s["series_id"] not in agg:
                 continue
-            s = df[["date", col]].dropna(subset=[col])
-            if s.empty:
-                continue
+            points, start = agg[s["series_id"]]
             vc, vc_change, vc_date = last_and_change(col)
             units, units_change, units_date = last_and_change(column(a, f, "cuotas"))
             value, value_change, value_date = last_and_change(column(a, f, "fondo"))
@@ -324,8 +424,8 @@ def status() -> dict:
                 "date": vc_date, "value": vc, "var_bps": vc_change,
                 "cuotas": units, "cuotas_var_bps": units_change, "cuotas_date": units_date,
                 "fondo_soles": value, "fondo_var_bps": value_change, "fondo_date": value_date,
-                "points": int(len(s)),
-                "start": str(s["date"].iloc[0]),
+                "points": points,
+                "start": str(start),
             })
     return base
 
@@ -362,27 +462,24 @@ def last_scheduled_run() -> dict | None:
 
 def series(fund: int, requested_afps: list[str] | None, metric: str,
            date_from=None, date_to=None) -> dict:
+    """The lines of one fund: only the requested AFPs' series are read."""
     metric = _valid_metric(metric)
     fund = int(fund) if int(fund) in afps.funds() else afps.funds()[0]
     names = afps.names()
     requested = [a for a in (requested_afps or []) if a in names] or names
 
-    df = read([metric], date_from, date_to)
-    if df.empty:
-        return {"fund": fund, "metric": metric, "series": []}
+    reg = _registry([metric], funds=[fund], names=requested)
+    long = _prices(reg, date_from, date_to)
+    points: dict[int, list] = {}
+    if not long.empty:
+        long = long.sort_values("date")
+        for sid, g in long.groupby("series_id", sort=False):
+            points[sid] = [[str(d), float(v)] for d, v in zip(g["date"], g["price"])]
 
-    out = []
-    for afp in requested:
-        col = column(afp, fund, metric)
-        if col not in df.columns:
-            out.append({"afp": afp, "points": []})
-            continue
-        s = df[["date", col]].dropna(subset=[col])
-        out.append({
-            "afp": afp,
-            "points": [[str(d), float(v)] for d, v in zip(s["date"], s[col])],
-        })
-    return {"fund": fund, "metric": metric, "series": out}
+    by_afp = {s["afp"]: s["series_id"] for s in reg}
+    return {"fund": fund, "metric": metric,
+            "series": [{"afp": afp, "points": points.get(by_afp.get(afp), [])}
+                       for afp in requested]}
 
 
 # ---- Performance windows --------------------------------------------------
@@ -407,6 +504,14 @@ def _first_of_month(d: dt.date, back: int = 0) -> dt.date:
     return dt.date(y, m, 1)
 
 
+def _months_back(d: dt.date, months: int) -> dt.date:
+    """The same calendar day `months` earlier, clamped to that month's
+    length (31/05 minus three months is 28/02 or 29/02)."""
+    first = _first_of_month(d, months)
+    return dt.date(first.year, first.month,
+                   min(d.day, calendar.monthrange(first.year, first.month)[1]))
+
+
 def fiscal_year_start(d: dt.date) -> dt.date:
     """
     Day the fiscal year containing `d` starts. The year runs 31/10 to
@@ -426,12 +531,20 @@ def _last_before(dates: list, limit: dt.date):
     return earlier[-1] if earlier else None
 
 
+def _last_on_or_before(dates: list, limit: dt.date):
+    earlier = [d for d in dates if d <= limit]
+    return earlier[-1] if earlier else None
+
+
 def reference_dates(dates: list, control: dt.date) -> dict:
     """
     Base dates of every window on the COMMON closing grid - one grid for
     all series, or relative returns would compare different periods.
     Month/year bases are the LAST CLOSE OF THE PRIOR PERIOD (the desk
-    standard), so MTD includes the first business day.
+    standard), so MTD includes the first business day. The trailing
+    windows (3M ... 10A) are based on the close ON OR BEFORE the same
+    calendar day that many months or years back, so a 12M window spans
+    exactly one year when that day traded.
     """
     earlier = [d for d in dates if d < control]
     ref = {"t": control}
@@ -446,6 +559,9 @@ def reference_dates(dates: list, control: dt.date) -> dict:
     # the last close of the previous period, i.e. 31/10 (or October's last
     # trading day when the 31st fell on a weekend or holiday).
     ref["fy"] = _last_before(dates, fiscal_year_start(control))
+    for key, months in (("m3", 3), ("m6", 6), ("m12", 12),
+                        ("a3", 36), ("a5", 60), ("a10", 120)):
+        ref[key] = _last_on_or_before(dates, _months_back(control, months))
     return ref
 
 
@@ -455,36 +571,35 @@ def _change(current, base):
     return current / base - 1.0
 
 
+def _annualized(current, base, years: float):
+    """Compound rate per year over the window; None without both ends."""
+    if current is None or base is None or base <= 0 or current <= 0:
+        return None
+    return (current / base) ** (1.0 / years) - 1.0
+
+
 def windows(day=None, metric: str = "valor_cuota") -> dict:
     """
     Levels, absolute returns and relative returns (house minus each
-    competitor) per AFP and fund, on the common closing grid.
+    competitor) per AFP and fund, on the common closing grid. Reads the
+    grid and then only the closes the windows compare.
     """
     metric = _valid_metric(metric)
     empty = {"control": None, "dates": {}, "metric": metric, "levels": [],
              "absolute": [], "relative": [], "level_columns": [], "return_columns": []}
-    # Every window base (t-5, month starts, 31/10 of the fiscal year, Jan 1
-    # of the prior year) lives within two calendar years of the control
-    # date: bound the read there instead of pulling the book since 1993 on
-    # every request.
-    last = _last_date()
-    if last is None:
+    reg = _registry([metric])
+    dates = _grid(reg)
+    if not dates:
         return empty
-    anchor = min(pd.to_datetime(day).date(), last) if day else last
-    df = read([metric], date_from=dt.date(anchor.year - 2, 1, 1))
-    if df.empty:
-        return empty
-
-    dates = sorted(df["date"].tolist())
     control = _control_date(dates, day)
     if control is None:
         return empty
 
     ref = reference_dates(dates, control)
-    by_date = df.set_index("date")
+    values = _at(reg, ref.values())
 
     def cell(col, d):
-        return _cell(by_date, col, d)
+        return values.get(col, {}).get(d) if d is not None else None
 
     names = afps.names()
     levels, absolute, returns = [], [], {}
@@ -509,15 +624,21 @@ def windows(day=None, metric: str = "valor_cuota") -> dict:
                 "mtd": _change(v["t"],  v["month"]),
                 "m1":  _change(v["month"],  v["month1"]),
                 "m2":  _change(v["month1"], v["month2"]),
+                "m3":  _change(v["t"],    v["m3"]),
+                "m6":  _change(v["t"],    v["m6"]),
                 "fy":  _change(v["t"],    v["fy"]),
                 "ytd": _change(v["t"],    v["year"]),
+                "m12": _change(v["t"],    v["m12"]),
                 "a1":  _change(v["year"], v["year1"]),
             }
+            for k, years in ANNUALIZED_YEARS.items():
+                r[k] = _annualized(v["t"], v[k], years)
             returns[(a, f)] = r
             absolute.append({"afp": a, "fund": f, "values": r})
 
     # Relative: the house appears too, but with its ABSOLUTE return - the
-    # baseline the differences are read against.
+    # baseline the differences are read against. For the annualized
+    # windows the difference is between annualized rates.
     keys = [k for k, _, u in RETURN_KEYS if u != "level"]
     house_afp = house()
     relative = []
@@ -560,22 +681,15 @@ def positions(day=None, months: int = 24, metric: str = "valor_cuota") -> dict:
     """
     Monthly performance rank per AFP, grouped by FUND TYPE - ranking only
     makes sense between portfolios of the same risk profile. Each closed
-    month returns close-vs-prior-close; the last period is the MTD.
+    month returns close-vs-prior-close; the last period is the MTD. Reads
+    the grid and then the month-end closes only.
     """
     metric = _valid_metric(metric)
     empty = {"control": None, "metric": metric, "total_afp": 0, "periods": [], "rows": []}
-    # `months` closed months plus the extra base month and MTD: bound the
-    # read to that window instead of the whole book.
-    last = _last_date()
-    if last is None:
+    reg = _registry([metric])
+    dates = _grid(reg)
+    if not dates:
         return empty
-    anchor = min(pd.to_datetime(day).date(), last) if day else last
-    start = _first_of_month(anchor, int(months) + 2)
-    df = read([metric], date_from=start)
-    if df.empty:
-        return empty
-
-    dates = sorted(df["date"].tolist())
     control = _control_date(dates, day)
     if control is None:
         return empty
@@ -601,10 +715,10 @@ def positions(day=None, months: int = 24, metric: str = "valor_cuota") -> dict:
     periods.append({"key": "MTD", "label": "MTD",
                     "start": by_month[closed[-1]], "end": control})
 
-    by_date = df.set_index("date")
+    values = _at(reg, [p["start"] for p in periods] + [p["end"] for p in periods])
 
     def cell(col, d):
-        return _cell(by_date, col, d)
+        return values.get(col, {}).get(d)
 
     names = afps.names()
     rows = []
@@ -663,26 +777,21 @@ def recent_cut(metrics: list[str], n: int, date_to=None):
     metrics - resolved in SQL so a 60-row view does not fetch and pivot
     the book since 1993 to keep 60 dates.
     """
-    fields = [afps.METRIC_FIELD[m] for m in metrics]
-    sql = """
-        SELECT DISTINCT fp.date
-        FROM fact_prices fp
-        JOIN series_registry sr ON sr.series_id = fp.series_id
-        JOIN dim_entity e ON e.entity_id = sr.entity_id
-        WHERE e.procode LIKE 'SPP\\_%%' AND e.entity_type = 'fund'
-          AND sr.source = %s AND sr.field = ANY(%s)
-    """
-    params: list = [afps.SOURCE_SBS_SPP, fields]
+    series = _registry(metrics)
+    if not series:
+        return None
+    sql = "SELECT DISTINCT date FROM fact_prices WHERE series_id = ANY(%s)"
+    params: list = [[s["series_id"] for s in series]]
     if date_to:
-        sql += " AND fp.date <= %s::date"
+        sql += " AND date <= %s::date"
         params.append(str(date_to))
-    sql += " ORDER BY fp.date DESC LIMIT %s"
+    sql += " ORDER BY date DESC LIMIT %s"
     params.append(int(n))
     with get_connection() as conn:
-        cur = conn.cursor()
+        cur = conn.cursor(row_factory=tuple_row)
         cur.execute(sql, params)
         rows = cur.fetchall()
-    return rows[-1]["date"] if rows else None
+    return rows[-1][0] if rows else None
 
 
 def table(limit: int | None, metric: str, fund_arg: str) -> dict:
@@ -696,11 +805,16 @@ def table(limit: int | None, metric: str, fund_arg: str) -> dict:
 
     cut = (df if limit is None else df.tail(int(limit))).iloc[::-1]
     col_names = [c["col"] for c in selected]
+    present = [c for c in col_names if c in df.columns]
+    # One pass over the frame's values, not one .at lookup per cell.
+    block = cut.reindex(columns=present)
+    matrix = block.to_numpy(dtype=float)
     rows = []
-    for _, row in cut.iterrows():
-        rows.append({"date": str(row["date"]),
-                     "values": [None if (c not in df.columns or pd.isna(row[c]))
-                                else float(row[c]) for c in col_names]})
+    for day, values in zip(cut["date"], matrix):
+        by_col = dict(zip(present, values))
+        rows.append({"date": str(day),
+                     "values": [None if (c not in by_col or np.isnan(by_col[c]))
+                                else float(by_col[c]) for c in col_names]})
     return {"columns": selected, "metric": metric, "fund": fund_arg, "rows": rows}
 
 

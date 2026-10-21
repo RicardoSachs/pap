@@ -470,8 +470,9 @@ export default function SppPanelPage() {
             <details className="spp-collapsible">
               <summary>Rendimiento absoluto</summary>
               <WindowsTable cols={win.return_columns} rows={win.absolute} withUnit />
-              <p className="page-sub">Hasta meses en puntos básicos; FY, YTD y año pasado en
-                porcentaje. FY es el ejercicio, del 31/10 al 31/10.
+              <p className="page-sub">Días y meses en puntos básicos; de 3M en adelante en
+                porcentaje. 3M, 6M y 12M cuentan hacia atrás desde la fecha de control; 3A, 5A y
+                10A son tasas anualizadas. FY es el ejercicio, del 31/10 al 31/10.
                 Las columnas diarias son el movimiento de ese día, no acumulados.</p>
             </details>
             <details className="spp-collapsible">

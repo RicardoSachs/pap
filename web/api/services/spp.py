@@ -64,9 +64,9 @@ LEVEL_KEYS = ["year1", "year", "month2", "month1", "month",
 # count back from the control date: 3M / 6M / 12M are plain returns, 3A /
 # 5A / 10A are ANNUALIZED (compound rate per year over the window).
 RETURN_KEYS = [
-    ("a10",   "10A anual.",  "pct"),
-    ("a5",    "5A anual.",   "pct"),
-    ("a3",    "3A anual.",   "pct"),
+    ("a10",   "10A",         "pct"),
+    ("a5",    "5A",          "pct"),
+    ("a3",    "3A",          "pct"),
     ("a1",    None,          "pct"),
     ("m12",   "12M",         "pct"),
     ("fy",    "FY",          "pct"),

@@ -52,6 +52,11 @@
 .spp-windows tbody tr.spp-block:first-child td { border-top: none; }
 .spp-windows th.spp-afp, .spp-windows td.spp-afp { text-align: left; }
 .spp-windows tr.spp-house td { font-weight: 700; }
+/* A thick rule where the unit changes (percent | basis points | level), so
+   two scales never read as one. */
+.spp-windows th.spp-unit-break, .spp-windows td.spp-unit-break {
+  border-left: 3px solid var(--text-secondary);
+}
 
 /* Chart header: centered title and the data button on the right. Three
    columns 1fr auto 1fr, so the button does not pull the title off center. */

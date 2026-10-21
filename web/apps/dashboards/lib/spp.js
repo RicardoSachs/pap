@@ -115,21 +115,26 @@ export function todayLocal() {
 
 // Value as displayed, already rounded. Sign and color derive from THIS
 // number, not the raw one - otherwise -0.4 bps prints as "-0 bps".
-export function shownValue(v, unit) {
+// `bpsDigits` is how many decimals a basis-point figure keeps (one by
+// default; the relative table asks for none).
+export function shownValue(v, unit, bpsDigits = 1) {
   if (v == null) return null;
   if (unit === 'pct') return +(v * 100).toFixed(2);
   if (unit === 'level') return v;
-  return +(v * 10000).toFixed(1);
+  return +(v * 10000).toFixed(bpsDigits);
 }
 
-export function fmtReturn(v, unit, metric = 'valor_cuota') {
-  const x = shownValue(v, unit);
-  if (x == null) return '—';
+// A window without enough history (a 10A on a fund born in 2016) is a plain
+// dash, not a figure.
+export function fmtReturn(v, unit, metric = 'valor_cuota', bpsDigits = 1) {
+  const x = shownValue(v, unit, bpsDigits);
+  if (x == null) return '-';
   if (unit === 'level') return fmtMetric(x, metric, metric !== 'valor_cuota');
   const s = x > 0 ? '+' : (x < 0 ? '-' : '');
+  const digits = unit === 'pct' ? 2 : bpsDigits;
   const abs = Math.abs(x).toLocaleString('es-PE', {
-    minimumFractionDigits: unit === 'pct' ? 2 : 1,
-    maximumFractionDigits: unit === 'pct' ? 2 : 1,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
   });
   return s + abs + (unit === 'pct' ? '%' : ' bps');
 }

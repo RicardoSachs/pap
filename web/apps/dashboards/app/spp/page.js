@@ -253,7 +253,7 @@ export default function SppPanelPage() {
   // ---- Windows tables ----------------------------------------------------
   const relativeOrder = houseFirst(cfg, names);
 
-  function WindowsTable({ cols, rows, withUnit, order }) {
+  function WindowsTable({ cols, rows, withUnit, order, bpsDigits = 1 }) {
     // One block per FUND and inside it one row per AFP: the desk's question
     // is "in fund 2, how are we doing against each one", and so the four
     // answers stay together. The fund goes in a column on the left, one
@@ -262,10 +262,16 @@ export default function SppPanelPage() {
     // its color; competitors, neutral.
     const afpOrder = order || relativeOrder;
     const funds = (cfg?.funds || []).filter((f) => rows.some((r) => r.fund === f));
+    // A thick rule where the unit changes (percent -> basis points -> the
+    // level), so the eye does not read +1.00% and +19 bps as one scale.
+    const unitBreak = new Set(cols
+      .filter((c, i) => withUnit && i > 0 && c[2] !== cols[i - 1][2]).map((c) => c[0]));
+    const breakClass = (key) => (unitBreak.has(key) ? ' spp-unit-break' : '');
     return (
       <div className="table-wrap spp-windows">
         <table>
-          <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>{cols.map((c) => <th key={c[0]}>{c[1]}</th>)}</tr></thead>
+          <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>
+            {cols.map((c) => <th key={c[0]} className={breakClass(c[0]).trim() || undefined}>{c[1]}</th>)}</tr></thead>
           <tbody>
             {funds.map((f) => {
               const ofFund = rows.filter((r) => r.fund === f)
@@ -289,8 +295,11 @@ export default function SppPanelPage() {
                     {cols.map((c) => {
                       const unit = withUnit ? c[2] : 'level';
                       const v = r.values[c[0]];
-                      const cls = unit === 'level' ? 'num' : `num ${sign(shownValue(v, unit))}`;
-                      return <td key={c[0]} className={v == null ? 'num dim' : cls}>{fmtReturn(v, unit, metric)}</td>;
+                      const cls = unit === 'level' ? 'num' : `num ${sign(shownValue(v, unit, bpsDigits))}`;
+                      return (
+                        <td key={c[0]} className={(v == null ? 'num dim' : cls) + breakClass(c[0])}>
+                          {fmtReturn(v, unit, metric, bpsDigits)}</td>
+                      );
                     })}
                   </tr>
                 );
@@ -464,20 +473,18 @@ export default function SppPanelPage() {
           <>
             <details className="spp-collapsible" open>
               <summary>Rendimiento relativo · {house} contra cada competidora</summary>
+              {/* Differences in whole basis points: a tenth of a point between
+                  two AFPs is noise, and the decimal only widened the columns. */}
               <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
-                rows={win.relative} withUnit order={relativeOrder} />
+                rows={win.relative} withUnit order={relativeOrder} bpsDigits={0} />
             </details>
             <details className="spp-collapsible">
               <summary>Rendimiento absoluto</summary>
               <WindowsTable cols={win.return_columns} rows={win.absolute} withUnit />
               <p className="page-sub">Días y meses en puntos básicos; de 3M en adelante en
-                porcentaje. 3M, 6M y 12M cuentan hacia atrás desde la fecha de control; 3A, 5A y
-                10A son tasas anualizadas. FY es el ejercicio, del 31/10 al 31/10.
-                Las columnas diarias son el movimiento de ese día, no acumulados.</p>
-            </details>
-            <details className="spp-collapsible">
-              <summary>Valor cuota en cada fecha base</summary>
-              <WindowsTable cols={win.level_columns} rows={win.levels} withUnit={false} />
+                porcentaje. Las ventanas móviles cuentan hacia atrás desde la fecha de control.
+                FY es el ejercicio, del 31/10 al 31/10. Las columnas diarias son el movimiento de
+                ese día, no acumulados.</p>
             </details>
           </>
         ) : win == null

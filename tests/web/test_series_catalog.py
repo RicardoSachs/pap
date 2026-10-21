@@ -1,10 +1,10 @@
 # tests/web/test_series_catalog.py
 # ---------------------------------------------------------------
-# The series catalog and the per-source summary the Benchmarks module
-# reads (web/api/services/benchmarks.py): what a basket may draw from,
-# how a series is found and how its coverage is reported. Needs a
-# scratch PostgreSQL database (PAP_TEST_DBNAME) and is SKIPPED without
-# one - same contract as tests/analytics/benchmark/test_changelog.py.
+# The series catalog the Benchmarks module reads
+# (web/api/services/benchmarks.py): what a basket may draw from, how a
+# series is found and how its coverage is reported. Needs a scratch
+# PostgreSQL database (PAP_TEST_DBNAME) and is SKIPPED without one -
+# same contract as tests/analytics/benchmark/test_changelog.py.
 # ---------------------------------------------------------------
 
 import datetime as dt
@@ -17,7 +17,7 @@ from psycopg.rows import dict_row
 from src.db.bootstrap import create_schema
 from src.db.onboard import register_series
 from src.pipelines.analytics.benchmark import definitions
-from web.api.services.benchmarks import _catalog_rows, _sources_rows
+from web.api.services.benchmarks import _catalog_rows
 
 DBNAME = os.environ.get("PAP_TEST_DBNAME")
 pytestmark = pytest.mark.skipif(
@@ -85,17 +85,7 @@ def test_catalog_reports_coverage_status_and_identifiers(universe, conn):
     assert spx["label"] == "SPX"
 
 
-def test_catalog_filters_by_source_and_series_id(universe, conn):
-    assert [r["procode"] for r in _catalog_rows(conn, source="bloomberg")] == ["SPX", "SPY_US"]
-    assert _catalog_rows(conn, source="sbs") == []
+def test_catalog_filters_by_series_id_and_limit(universe, conn):
     only = _catalog_rows(conn, series_id=universe["spy"]["series_id"])
     assert [r["series_id"] for r in only] == [universe["spy"]["series_id"]]
     assert [r["procode"] for r in _catalog_rows(conn, limit=1)] == ["SPX"]
-
-
-def test_sources_summary(universe, conn):
-    rows = {r["source"]: r for r in _sources_rows(conn)}
-    assert set(rows) == {"bloomberg"}
-    b = rows["bloomberg"]
-    assert (b["series"], b["active"], b["pending"], b["priced"], b["points"]) == (2, 1, 1, 1, 3)
-    assert (b["from"], b["to"]) == ("2026-01-05", "2026-01-07")

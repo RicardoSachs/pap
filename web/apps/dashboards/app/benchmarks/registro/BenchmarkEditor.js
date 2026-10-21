@@ -14,7 +14,12 @@
 // holdings) in the shared background task; the component is handed the
 // task hook by the page that mounts it. Constituents come from ONE catalog:
 // the pipeline's priced series (series_registry / fact_prices), minus the
-// model series themselves.
+// model series themselves. A Bloomberg ticker the pipelines do not carry
+// yet is registered from here too, in a folded block under the search.
+//
+// The tablero declares FIXED-WEIGHT baskets only: the weights are re-struck
+// at every rebalance boundary (monthly, quarterly, annual). The analytics
+// module also knows buy_and_hold; the choice is not offered here.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -27,8 +32,16 @@ import useShowAll from '../../../components/useShowAll';
 import { apiGet, apiSend } from '../../../lib/api';
 import { apiUrl, fDate, fTime, nInt, todayLocal } from '../../../lib/spp';
 
-const METHODS = [['Buy and hold (deriva)', 'buy_and_hold'], ['Pesos fijos', 'fixed_weights']];
+const METHOD = 'fixed_weights';
+// For reading the history: a version may carry a method this editor no
+// longer offers.
+const METHOD_LABELS = { buy_and_hold: 'Buy and hold (deriva)', fixed_weights: 'Pesos fijos', heuristic: 'Heurístico' };
 const FREQUENCIES = [['Mensual', 'monthly'], ['Trimestral', 'quarterly'], ['Anual', 'annual']];
+const ENTITY_TYPES = { security: 'Valor (acción, ETF, bono)', index: 'Índice', fund: 'Fondo' };
+const STATUS = {
+  active: 'activa', 'backfill-pending': 'pendiente de histórico', suspended: 'suspendida',
+  inactive: 'inactiva', 'error-hold': 'en error',
+};
 const CHANGE_TYPES = {
   initial: 'Versión inicial', rebalance: 'Rebalanceo', methodology: 'Cambio de metodología',
   constituent_change: 'Cambio de componentes', correction: 'Corrección',
@@ -90,7 +103,6 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
 
   // ---- the new version form ----
   const [effectiveFrom, setEffectiveFrom] = useState('');
-  const [method, setMethod] = useState('buy_and_hold');
   const [frequency, setFrequency] = useState('monthly');
   const [changeType, setChangeType] = useState('rebalance');
   const [reason, setReason] = useState('');
@@ -104,6 +116,8 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
 
   useEffect(() => {
     setEffectiveFrom(todayLocal());
+    // A ten-year history is the usual starting point for a new ticker.
+    setTStart(`${Number(todayLocal().slice(0, 4)) - 10}-01-01`);
     loadList();
     // A small catalog, always loaded, for the FX selectors.
     apiGet('/api/benchmarks/series?limit=200').then((j) => setFxCatalog(j.series || [])).catch(() => {});
@@ -137,6 +151,39 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
     }]);
   };
 
+  // ---- a Bloomberg ticker the pipelines do not carry yet ----
+  // Writes the registry only (entity, Bloomberg identifier, PX_LAST series
+  // as backfill-pending); the Bloomberg machine fetches the history on its
+  // next backfill run. Until then the series shows "sin precios".
+  const [tProcode, setTProcode] = useState('');
+  const [tName, setTName] = useState('');
+  const [tTicker, setTTicker] = useState('');
+  const [tType, setTType] = useState('security');
+  const [tStart, setTStart] = useState('');
+  const [tickerEcho, setTickerEcho] = useState('');
+  const canRegister = tProcode.trim() && tName.trim() && tTicker.trim() && tStart && !busy;
+
+  const registerTicker = async () => {
+    setTickerEcho('');
+    const r = await apiSend('/api/benchmarks/series', 'POST', {
+      procode: tProcode.trim().toUpperCase(), name: tName.trim(), parsekyable: tTicker.trim(),
+      default_start_date: tStart, entity_type: tType,
+    });
+    if (!r.ok) { setTickerEcho({ ok: false, text: r.data.detail }); return; }
+    const s = r.data;
+    setTickerEcho({
+      ok: true,
+      text: s.created
+        ? `${s.procode} (${s.ticker}) registrada, pendiente de histórico: la máquina Bloomberg la traerá en su próxima corrida de backfill.`
+        : `${s.procode} ya estaba registrada (${STATUS[s.status] || s.status}).`,
+    });
+    if (s.created) { setTProcode(''); setTName(''); setTTicker(''); }
+    // Show it where it will be picked from.
+    setQuery(s.procode);
+    const j = await apiGet(`/api/benchmarks/series?q=${encodeURIComponent(s.procode)}`).catch(() => null);
+    if (j) setResults(j.series || []);
+  };
+
   const weightSum = constituents.reduce((a, c) => a + (Number(c.weight) || 0), 0);
   const sumOk = Math.abs(weightSum - 1) < 1e-6 || Math.abs(weightSum - 100) < 1e-4;
   const canSave = !!current && constituents.length > 0 && sumOk && !!effectiveFrom
@@ -146,7 +193,6 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
   // a new version - the only way to "edit" an append-only definition.
   const loadLatest = () => {
     if (!latest) return;
-    setMethod(latest.method);
     setFrequency(latest.rebalance_frequency || 'monthly');
     setConstituents(latest.constituents.map((c) => ({
       label: c.label, series_id: c.series_id,
@@ -174,8 +220,8 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
     setSaveEcho('');
     const body = {
       effective_from: effectiveFrom,
-      method,
-      rebalance_frequency: method === 'fixed_weights' ? frequency : null,
+      method: METHOD,
+      rebalance_frequency: frequency,
       change_type: changeType,
       reason: reason.trim(),
       support_doc: supportDoc.trim() || null,
@@ -255,10 +301,10 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
         <div className="panel">
           <div className="panel-title">Nueva versión de «{current?.display_name || '—'}»</div>
           <p className="page-sub">La canasta es <b>append-only</b>: cambiar pesos o componentes no edita
-            nada, crea una versión nueva desde su fecha de vigencia, con un motivo. Con
-            <b> buy and hold</b> los pesos derivan con los precios entre versiones; con
-            <b> pesos fijos</b> se restablecen cada periodo. Los niveles se recalculan desde la
-            primera versión (base 100) y nunca se cargan a mano.</p>
+            nada, crea una versión nueva desde su fecha de vigencia, con un motivo. Los pesos son
+            <b> fijos</b>: se restablecen al inicio de cada periodo de rebalanceo y entre medio siguen
+            a los precios. Los niveles se recalculan desde la primera versión (base 100) y nunca se
+            cargan a mano.</p>
 
           <div className="controls spp-controls">
             <div className="field"><label>Benchmark</label>
@@ -269,12 +315,8 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
             <div className="field"><label htmlFor="v-from">Vigente desde</label>
               <input id="v-from" className="date-input" type="date" value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)} /></div>
-            <div className="field"><label>Método</label>
-              <SppSeg items={METHODS} value={method} onChange={setMethod} /></div>
-            {method === 'fixed_weights' && (
-              <div className="field"><label>Rebalanceo</label>
-                <SppSeg items={FREQUENCIES} value={frequency} onChange={setFrequency} /></div>
-            )}
+            <div className="field"><label>Rebalanceo</label>
+              <SppSeg items={FREQUENCIES} value={frequency} onChange={setFrequency} /></div>
             <div className="field"><label htmlFor="v-type">Tipo de cambio</label>
               <select id="v-type" className="select" value={changeType}
                 disabled={!versions.length}
@@ -331,6 +373,37 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
             </div>
           )}
           {results && <ShowMoreResults label="series encontradas" />}
+
+          <details className="spp-collapsible">
+            <summary>¿No aparece el ticker? Regístralo desde Bloomberg</summary>
+            <p className="page-sub dim" style={{ marginTop: 4 }}>Se da de alta en el registro de la base
+              como serie PX_LAST diaria, pendiente de histórico. Este tablero no habla con Bloomberg: la
+              máquina con terminal trae el histórico en su próxima corrida de backfill y la deja activa.</p>
+            <div className="controls spp-controls">
+              <div className="field" style={{ flex: '0 1 150px' }}>
+                <label htmlFor="t-procode">Código</label>
+                <input id="t-procode" className="date-input mono" placeholder="SPY_US"
+                  value={tProcode} onChange={(e) => setTProcode(e.target.value)} /></div>
+              <div className="field" style={{ flex: '1 1 200px' }}>
+                <label htmlFor="t-name">Nombre</label>
+                <input id="t-name" className="date-input" placeholder="SPDR S&P 500 ETF"
+                  value={tName} onChange={(e) => setTName(e.target.value)} /></div>
+              <div className="field" style={{ flex: '0 1 190px' }}>
+                <label htmlFor="t-ticker">Ticker Bloomberg</label>
+                <input id="t-ticker" className="date-input mono" placeholder="SPY US Equity"
+                  value={tTicker} onChange={(e) => setTTicker(e.target.value)} /></div>
+              <div className="field"><label htmlFor="t-type">Tipo</label>
+                <select id="t-type" className="select" value={tType} onChange={(e) => setTType(e.target.value)}>
+                  {Object.entries(ENTITY_TYPES).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                </select></div>
+              <div className="field"><label htmlFor="t-start">Histórico desde</label>
+                <input id="t-start" className="date-input" type="date" value={tStart}
+                  onChange={(e) => setTStart(e.target.value)} /></div>
+              <div className="field"><label aria-hidden="true">&nbsp;</label>
+                <button className="btn" disabled={!canRegister} onClick={registerTicker}>Registrar</button></div>
+            </div>
+            <Echo echo={tickerEcho} />
+          </details>
 
           <div className="table-wrap" style={{ marginTop: 10 }}>
             <table>
@@ -408,7 +481,7 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
                 </div>
                 <p className="page-sub" style={{ margin: '2px 0 6px' }}>
                   <b>{v.reason}</b>
-                  {' · '}{METHODS.find(([, k]) => k === v.method)?.[0] || v.method}
+                  {' · '}{METHOD_LABELS[v.method] || v.method}
                   {v.rebalance_frequency ? ` (${FREQUENCIES.find(([, k]) => k === v.rebalance_frequency)?.[0] || v.rebalance_frequency})` : ''}
                   {v.supersedes_version_id ? ` · reemplaza a la ${v.supersedes_version_id}` : ''}
                   {' · registrada el '}{fTime(v.created_at)}{v.recorded_by ? ` por ${v.recorded_by}` : ''}

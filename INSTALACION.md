@@ -196,16 +196,17 @@ una vez cargado, y **Tradebook → Registro y carga** descarga su
 plantilla XLSX.
 
 **Benchmarks** tiene su propia entrada en el menú: **Panel** y **Libro**
-muestran los índices compuestos, **Series** lista las series de precios
-disponibles por fuente (Bloomberg, vector SBS, valor cuota SPP) y
-registra tickers de Bloomberg nuevos, y **Registro** declara los índices
-y sus versiones. Con el `.env` apuntando al servidor de la base de la
-oficina, los tickers que traen los pipelines del proyecto aparecen en
-**Series** sin configurar nada más. Un ticker registrado desde el
-tablero queda "pendiente de histórico" hasta la siguiente corrida de
-backfill de la máquina con terminal Bloomberg
-(`run_prices.py --source bloomberg --backfill`); hasta entonces no tiene
-precios y una canasta que lo use no se puede recalcular.
+muestran los índices compuestos y **Registro** los declara y versiona
+sus canastas, de pesos fijos. La canasta se arma buscando series de
+precios por código, nombre, ticker o ISIN entre todo lo que los
+pipelines cargan en la base (Bloomberg, vector SBS, valor cuota SPP):
+con el `.env` apuntando al servidor de la oficina aparecen sin
+configurar nada más. Si un ticker de Bloomberg no está, el bloque
+"¿No aparece el ticker?" del mismo editor lo registra; queda "pendiente
+de histórico" hasta la siguiente corrida de backfill de la máquina con
+terminal Bloomberg (`run_prices.py --source bloomberg --backfill`), y
+hasta entonces no tiene precios y una canasta que lo use no se puede
+recalcular.
 
 ## 7. Extracción diaria automática
 

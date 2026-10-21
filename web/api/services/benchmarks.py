@@ -166,13 +166,10 @@ _CATALOG_SQL = """
 """
 
 
-def _catalog_rows(conn, q: str = "", limit: int = 50, source: str | None = None,
+def _catalog_rows(conn, q: str = "", limit: int = 50,
                   series_id: int | None = None) -> list[dict]:
     """The catalog query on an open connection (the tests use it directly)."""
     sql, params = _CATALOG_SQL, {"model": SOURCE_MODEL, "limit": int(limit)}
-    if source:
-        sql += " AND sr.source = %(source)s"
-        params["source"] = source
     if series_id is not None:
         sql += " AND sr.series_id = %(series_id)s"
         params["series_id"] = int(series_id)
@@ -219,43 +216,10 @@ def _catalog_rows(conn, q: str = "", limit: int = 50, source: str | None = None,
     return out
 
 
-def series_catalog(q: str = "", limit: int = 50, source: str | None = None) -> list[dict]:
-    """Pickable series for the basket editor and the Series view."""
+def series_catalog(q: str = "", limit: int = 50) -> list[dict]:
+    """Pickable series for the basket editor."""
     with get_connection() as conn:
-        return _catalog_rows(conn, q, limit, source)
-
-
-def _sources_rows(conn) -> list[dict]:
-    """One row per price source: how many series it carries, in which
-    status, and how far their prices reach."""
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT sr.source,
-               COUNT(*) AS series,
-               COUNT(*) FILTER (WHERE sr.status = 'active') AS active,
-               COUNT(*) FILTER (WHERE sr.status = 'backfill-pending') AS pending,
-               COUNT(*) FILTER (WHERE cov.points > 0) AS priced,
-               COALESCE(SUM(cov.points), 0) AS points,
-               MIN(cov.first) AS first, MAX(cov.last) AS last
-        FROM series_registry sr
-        LEFT JOIN (SELECT series_id, COUNT(*) AS points, MIN(date) AS first, MAX(date) AS last
-                   FROM fact_prices GROUP BY series_id) cov ON cov.series_id = sr.series_id
-        WHERE sr.domain = 'prices' AND sr.source <> %s
-        GROUP BY sr.source
-        ORDER BY sr.source
-        """, (SOURCE_MODEL,))
-    return [{"source": r["source"], "series": int(r["series"]), "active": int(r["active"]),
-             "pending": int(r["pending"]), "priced": int(r["priced"]),
-             "points": int(r["points"]),
-             "from": str(r["first"]) if r["first"] else None,
-             "to": str(r["last"]) if r["last"] else None}
-            for r in cur.fetchall()]
-
-
-def series_sources() -> list[dict]:
-    with get_connection() as conn:
-        return _sources_rows(conn)
+        return _catalog_rows(conn, q, limit)
 
 
 def register_series(payload: dict) -> dict:

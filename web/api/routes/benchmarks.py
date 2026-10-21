@@ -2,8 +2,9 @@
 # ---------------------------------------------------------------------------
 # /api/benchmarks : the composite indices (benchmarks, targets) - which
 # exist, their versioned definitions, the changelog, the series catalog a
-# basket draws from (every price source, with coverage), and the writes:
-# append a version, materialize, register a Bloomberg ticker.
+# basket draws from (every price source, found by procode, name, ticker or
+# ISIN, with coverage), and the writes: append a version, materialize,
+# register a Bloomberg ticker.
 #
 # Definitions are append-only: there is no PUT or DELETE here. A change is
 # POSTed as a new version with its reason; the materialization runs in the
@@ -72,17 +73,10 @@ def list_benchmarks() -> dict:
 
 @router.get("/series")
 def get_series_catalog(q: str = Query(""),
-                       limit: int = Query(50, ge=1, le=200),
-                       source: str | None = Query(None)) -> dict:
+                       limit: int = Query(50, ge=1, le=200)) -> dict:
     """Pickable constituent series (the pipeline spine, no model series),
     with their coverage."""
-    return {"series": svc.series_catalog(q, limit, source)}
-
-
-@router.get("/series/sources")
-def get_series_sources() -> dict:
-    """One row per price source: series, status counts, coverage."""
-    return {"sources": svc.series_sources()}
+    return {"series": svc.series_catalog(q, limit)}
 
 
 @router.get("/{procode}")

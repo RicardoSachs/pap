@@ -38,8 +38,10 @@ if not exist ".venv\Scripts\python.exe" (
 rem Registro con PowerShell y no con "schtasks /Create /SC ONLOGON": sin
 rem derechos de administrador ese comando responde "Acceso denegado"; la
 rem tarea de usuario (sesion interactiva) si se puede crear y arrancar.
+rem Con -AllowStartIfOnBatteries y -DontStopIfGoingOnBatteries: sin ellos la
+rem tarea se detiene al desenchufar la laptop y queda en Queued sin arrancar.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $a = New-ScheduledTaskAction -Execute '%CD%\scripts\bat\scheduler.bat' -WorkingDirectory '%CD%'; try { $t = New-ScheduledTaskTrigger -AtLogOn -User $sid } catch { $t = New-ScheduledTaskTrigger -AtLogOn }; $p = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive; $s = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable; Register-ScheduledTask -TaskName '%TAREA%' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; Start-ScheduledTask -TaskName '%TAREA%'"
+  "$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $a = New-ScheduledTaskAction -Execute '%CD%\scripts\bat\scheduler.bat' -WorkingDirectory '%CD%'; try { $t = New-ScheduledTaskTrigger -AtLogOn -User $sid } catch { $t = New-ScheduledTaskTrigger -AtLogOn }; $p = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive; $s = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries; Register-ScheduledTask -TaskName '%TAREA%' -Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null; Start-ScheduledTask -TaskName '%TAREA%'"
 if errorlevel 1 (
   echo No se pudo registrar la tarea.
   pause

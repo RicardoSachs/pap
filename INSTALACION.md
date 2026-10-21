@@ -225,6 +225,13 @@ de Windows *pgetl scheduler*, que arranca el scheduler al iniciar sesión
 y lo reinicia si muere, y lo arranca en ese momento. Queda una ventana
 abierta llamada *scheduler*: es el proceso, no la cierres.
 
+La tarea se registra para correr **también con batería**: las tareas de
+Windows traen por defecto "no iniciar con batería" y "detener al pasar a
+batería", y con eso desenchufar la laptop mataba el scheduler y la tarea
+quedaba en *Queued* sin volver a arrancar. Si una tarea registrada antes
+de este cambio aparece en ese estado, vuelve a correr el `.bat`: la
+re-registra con las condiciones correctas.
+
 Si esta máquina solo hace el valor cuota (no tiene chromedriver ni ve la
 carpeta de red de la adquisición SBS), agrega al `.env`:
 

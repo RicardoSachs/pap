@@ -21,7 +21,7 @@ from src.pipelines.prices.sbs.valor_cuota.manual import register_values
 from src.pipelines.prices.sbs.valor_cuota.run import (
     LOAD_MODES, load_history, review_history, run_daily)
 from web.api.routes._spp_common import read_upload
-from web.api.services import spp_task as task
+from web.api.services import task_slot as task
 
 router = APIRouter(prefix="/api/spp", tags=["spp-write"])
 
@@ -53,14 +53,9 @@ def _launch(action: str, func) -> dict:
     return {"ok": True, "action": action}
 
 
-# ---- The background task ----------------------------------------------------
-# One task slot for the whole SPP tablero (SBS scrape, history load,
-# benchmark materialization); the frontend hook polls this.
-
-@router.get("/task")
-def get_task() -> dict:
-    return task.status()
-
+# ---- Scrape ---------------------------------------------------------------------
+# Long operations run in the shared task slot (web/api/services/task_slot.py);
+# the frontend follows them through /api/tasks/current.
 
 @router.post("/scrape")
 def post_scrape(body: ScrapeRequest | None = None) -> dict:

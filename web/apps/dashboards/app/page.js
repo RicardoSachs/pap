@@ -81,8 +81,9 @@ const MODULES = [
   { key: 'positioning', name: 'Positioning', href: '/positioning/', status: 'Q2 2026 · PRO 1 / 2 / 3', live: true },
   { key: 'contribution', name: 'Contribution', href: '/contribution/', status: 'YTD · Fondo 1', live: true },
   { key: 'comparison', name: 'Comparison', href: '/comparacion/', status: 'Select securities to begin', live: false },
-  // OURS: the two dashboards that do not exist upstream.
+  // OURS: the dashboards that do not exist upstream.
   { key: 'spp', name: 'Valor Cuota SPP', href: '/spp/', status: 'Diario · fuente SBS', live: true },
+  { key: 'benchmarks', name: 'Benchmarks', href: '/benchmarks/', status: 'Índices compuestos · versiones', live: true },
   { key: 'tradebook', name: 'Tradebook', href: '/tradebook/', status: 'Operaciones de la mesa', live: true },
 ];
 

@@ -23,6 +23,6 @@ export const activeRoute = (path, href) => {
 // Listed in ONE place so a third module does not require touching two
 // upstream components again, where every patch of ours has to be reapplied
 // on the next update.
-const OURS = ['/spp/', '/tradebook/'];
+const OURS = ['/spp/', '/benchmarks/', '/tradebook/'];
 export const isOurDashboard = (path) =>
   OURS.some((base) => activeRoute(path, base));

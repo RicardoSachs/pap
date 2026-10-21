@@ -6,7 +6,7 @@
 // act, on the RIGHT you see - and no file reaches the database without
 // having been shown first (the historical load reviews under a token, then
 // loads in the chosen mode). Long operations run in the shared background
-// task and are followed by polling /api/spp/task.
+// task and are followed by polling /api/tasks/current.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -21,15 +21,7 @@ import FileUpload from '../../../components/FileUpload';
 import useShowAll from '../../../components/useShowAll';
 import SppSeg from '../../../components/SppSeg';
 import SppTabs from '../../../components/SppTabs';
-import useSppTask from '../../../components/useSppTask';
-import BenchmarkEditor from './BenchmarkEditor';
-
-// The work areas, and the hash that makes each one linkable. Panel and
-// Libro are routes; these were pure state, so a reload (which the task hook
-// itself sometimes advises) always dropped the operator back into Valor
-// cuota.
-const AREAS = [['Valor cuota', 'vc'], ['Benchmarks', 'benchmarks']];
-const AREA_KEYS = AREAS.map(([, v]) => v);
+import useTask from '../../../components/useTask';
 
 // Small key/value report table used by every section.
 function Report({ rows }) {
@@ -77,29 +69,11 @@ export default function SppCargaPage() {
   const [status, setStatus] = useState(null);
   // The last unattended scrape, as the scheduler recorded it in job_runs.
   const [lastScrape, setLastScrape] = useState(undefined);
-  // Which work area is on screen. Kept in the URL hash - not the query
-  // string, which Sidebar propagates to every menu link - so the area
-  // survives a reload and can be sent to someone.
-  const [area, setAreaState] = useState('vc');
-
-  useEffect(() => {
-    const initial = window.location.hash.slice(1);
-    if (AREA_KEYS.includes(initial)) setAreaState(initial);
-  }, []);
-
-  const setArea = (v) => {
-    setAreaState(v);
-    try {
-      window.history.replaceState(null, '', `${window.location.pathname}#${v}`);
-    } catch { /* the area still changes even if the URL does not follow */ }
-  };
-
   // ---- shared background task (one hook for the whole page) ----
-  const { task, busy, start } = useSppTask();
+  const { task, busy, start } = useTask();
 
   const loadStatus = () => apiGet('/api/spp/status').then(setStatus).catch(() => {});
   const loadLastScrape = () => apiGet('/api/spp/scrape/last').then((j) => setLastScrape(j.run)).catch(() => {});
-  const refreshCfg = () => apiGet('/api/spp/config').then(setCfg).catch(() => {});
 
   const onTaskDone = (then) => (t) => {
     loadStatus();
@@ -302,14 +276,6 @@ export default function SppCargaPage() {
         Ningún archivo llega a la base sin haberse mostrado antes.</p>
       <SppTabs />
 
-      {/* Two work areas, one visible at a time. All the state lives in this
-          component, so switching areas loses nothing typed. */}
-      <div className="controls spp-controls" style={{ margin: '12px 0 16px' }}>
-        <div className="field"><label>Área</label>
-          <SppSeg items={AREAS} value={area} onChange={setArea} /></div>
-      </div>
-
-      {area === 'vc' && (<>
       {/* ===== 1 · Manual registration of valor cuota ===== */}
       <div className="spp-two-up">
         <div className="panel">
@@ -477,15 +443,6 @@ export default function SppCargaPage() {
         previewEmpty="Elige el Excel de la SBS y aquí verás lo que trae, antes de que nada toque la base."
       />
 
-      </>)}
-
-      {area === 'benchmarks' && (
-        <BenchmarkEditor
-          refreshCfg={refreshCfg}
-          busy={busy} task={task} start={start}
-          onTaskDone={onTaskDone}
-        />
-      )}
     </div>
   );
 }

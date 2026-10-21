@@ -1,7 +1,7 @@
-// web/apps/dashboards/app/spp/carga/BenchmarkEditor.js
+// web/apps/dashboards/app/benchmarks/registro/BenchmarkEditor.js
 // ---------------------------------------------------------------------------
-// The composite indices (benchmarks, targets) in Registro y carga: which
-// exist, and the editor of their VERSIONED definition.
+// The composite indices (benchmarks, targets): which exist, and the editor
+// of their VERSIONED definition - the Registro view of the Benchmarks module.
 //
 // A benchmark is a portfolio row with a level series; what it is made of
 // lives in append-only versions (dim_benchmark_version). This editor never
@@ -48,7 +48,7 @@ function Report({ rows }) {
 
 const pctOf = (w) => `${(w * 100).toLocaleString('es-PE', { maximumFractionDigits: 2 })} %`;
 
-export default function BenchmarkEditor({ refreshCfg, busy, task, start, onTaskDone }) {
+export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
   // ---- which benchmarks exist ----
   const [list, setList] = useState(null);
   const [selected, setSelected] = useState('');
@@ -75,8 +75,6 @@ export default function BenchmarkEditor({ refreshCfg, busy, task, start, onTaskD
     setNewProcode(''); setNewName('');
     await loadList();
     setSelected(r.data.procode);
-    // A new benchmark changes the list the Libro offers.
-    refreshCfg();
   };
 
   // ---- versions of the selected benchmark ----

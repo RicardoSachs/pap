@@ -23,7 +23,6 @@ import numpy as np
 import pandas as pd
 
 from src.db.connection import get_connection
-from src.pipelines.analytics.benchmark import definitions as benchmark_defs
 from src.pipelines.prices.sbs.valor_cuota import afps
 
 logger = logging.getLogger(__name__)
@@ -194,10 +193,7 @@ def read(metrics: list[str] | None = None,
 # ---- Config ---------------------------------------------------------------
 
 def config() -> dict:
-    """The AFP registry the interface consumes - it never names an AFP -
-    plus the benchmarks declared in the database."""
-    with get_connection() as conn:
-        benchmarks = benchmark_defs.benchmarks(conn)
+    """The AFP registry the interface consumes - it never names an AFP."""
     return {
         "funds": afps.funds(),
         "house": house(),
@@ -209,12 +205,6 @@ def config() -> dict:
                   "house": bool(a.get("house")),
                   "funds": afps.funds_of(a["key"])}
                  for a in afps.afps()],
-        # The composite indices are no longer one slot per fund type: any
-        # dim_portfolio row of type benchmark, by procode, with the name
-        # business knows it by.
-        "benchmarks": [{"portfolio_id": b["portfolio_id"], "procode": b["procode"],
-                        "display_name": b["display_name"] or b["procode"]}
-                       for b in benchmarks],
     }
 
 
@@ -667,7 +657,7 @@ def requested_columns(metric: str, fund_arg: str) -> list[dict]:
             for m in metrics]
 
 
-def _recent_cut(metrics: list[str], n: int, date_to=None):
+def recent_cut(metrics: list[str], n: int, date_to=None):
     """
     First date of the last `n` distinct dates carrying any of the given
     metrics - resolved in SQL so a 60-row view does not fetch and pivot
@@ -699,7 +689,7 @@ def table(limit: int | None, metric: str, fund_arg: str) -> dict:
     """The book, most recent first. limit=None is the whole book."""
     selected = requested_columns(metric, fund_arg)
     metrics = _requested_metrics(metric)
-    date_from = _recent_cut(metrics, limit) if limit else None
+    date_from = recent_cut(metrics, limit) if limit else None
     df = read(metrics, date_from=date_from)
     if df.empty:
         return {"columns": selected, "metric": metric, "fund": fund_arg, "rows": []}
@@ -714,51 +704,13 @@ def table(limit: int | None, metric: str, fund_arg: str) -> dict:
     return {"columns": selected, "metric": metric, "fund": fund_arg, "rows": rows}
 
 
-def benchmark_table(procode: str, limit: int | None) -> dict | None:
-    """
-    One benchmark's levels over the SAME date grid as the book.
-
-    The question this table answers is "which days is the index
-    missing", so the rows are the days WITH valor cuota - not the days
-    the index has. Listing only the latter would make a day without a
-    level simply disappear, which is exactly what one needs to see.
-    Returns None for an unknown benchmark.
-    """
-    with get_connection() as conn:
-        bench = benchmark_defs.benchmark_by_procode(conn, procode)
-        if bench is None or bench["series_id"] is None:
-            return None
-        date_from = _recent_cut(["valor_cuota"], limit) if limit else None
-        book = read(["valor_cuota"], date_from=date_from)
-        if book.empty:
-            return {"procode": procode, "display_name": bench["display_name"],
-                    "columns": [], "rows": [], "missing": 0, "dates": 0}
-        grid = (book if limit is None else book.tail(int(limit)))["date"]
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT date, price FROM fact_prices WHERE series_id = %s "
-            "AND date BETWEEN %s AND %s",
-            (bench["series_id"], grid.min(), grid.max()))
-        levels = {r["date"]: float(r["price"]) for r in cur.fetchall()}
-
-    rows, missing = [], 0
-    for day in grid.iloc[::-1]:
-        level = levels.get(day)
-        if level is None:
-            missing += 1
-        rows.append({"date": str(day), "values": [level]})
-    return {"procode": procode, "display_name": bench["display_name"] or procode,
-            "columns": [{"col": procode, "label": bench["display_name"] or procode}],
-            "rows": rows, "missing": missing, "dates": len(rows)}
-
-
 def export_csv(metric: str, fund_arg: str, limit: int | None,
                date_from=None, date_to=None) -> bytes:
     """The same cut as table(), as CSV bytes built in memory."""
     selected = [c["col"] for c in requested_columns(metric, fund_arg)]
     metrics = _requested_metrics(metric)
     if limit:
-        cut = _recent_cut(metrics, limit, date_to=date_to)
+        cut = recent_cut(metrics, limit, date_to=date_to)
         if cut is not None:
             date_from = max(pd.to_datetime(date_from).date(), cut) if date_from else cut
     df = read(metrics, date_from, date_to)

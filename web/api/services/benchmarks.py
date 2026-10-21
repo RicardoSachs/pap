@@ -16,6 +16,7 @@ import pandas as pd
 from src.db.connection import get_connection
 from src.pipelines.analytics.benchmark import definitions
 from src.pipelines.analytics.benchmark.materialize import SOURCE_MODEL, materialize
+from web.api.services.spp import read as read_book, recent_cut
 
 logger = logging.getLogger(__name__)
 
@@ -190,3 +191,53 @@ def export_xlsx(procode: str, date_from=None, date_to=None) -> bytes:
         df.sort_values("date", ascending=False).to_excel(
             writer, sheet_name=procode[:31], index=False)
     return buf.getvalue()
+
+
+def levels_points(procode: str, date_from=None, date_to=None) -> dict | None:
+    """The level series as [date, level] points, for the chart; None when
+    the benchmark does not exist."""
+    with get_connection() as conn:
+        bench = definitions.benchmark_by_procode(conn, procode)
+    if bench is None or bench["portfolio_type"] != definitions.PORTFOLIO_TYPE:
+        return None
+    df = levels(procode, date_from, date_to)
+    return {"procode": procode, "display_name": bench["display_name"] or procode,
+            "points": [[str(d), float(v)] for d, v in zip(df["date"], df["level"])]}
+
+
+def benchmark_table(procode: str, limit: int | None) -> dict | None:
+    """
+    One benchmark's levels over the SAME date grid as the valor cuota book.
+
+    The question this table answers is "which days is the index
+    missing", so the rows are the days WITH valor cuota - not the days
+    the index has. Listing only the latter would make a day without a
+    level simply disappear, which is exactly what one needs to see.
+    Returns None for an unknown benchmark.
+    """
+    with get_connection() as conn:
+        bench = definitions.benchmark_by_procode(conn, procode)
+        if bench is None or bench["series_id"] is None:
+            return None
+        date_from = recent_cut(["valor_cuota"], limit) if limit else None
+        book = read_book(["valor_cuota"], date_from=date_from)
+        if book.empty:
+            return {"procode": procode, "display_name": bench["display_name"] or procode,
+                    "columns": [], "rows": [], "missing": 0, "dates": 0}
+        grid = (book if limit is None else book.tail(int(limit)))["date"]
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT date, price FROM fact_prices WHERE series_id = %s "
+            "AND date BETWEEN %s AND %s",
+            (bench["series_id"], grid.min(), grid.max()))
+        stored = {r["date"]: float(r["price"]) for r in cur.fetchall()}
+
+    rows, missing = [], 0
+    for day in grid.iloc[::-1]:
+        level = stored.get(day)
+        if level is None:
+            missing += 1
+        rows.append({"date": str(day), "values": [level]})
+    return {"procode": procode, "display_name": bench["display_name"] or procode,
+            "columns": [{"col": procode, "label": bench["display_name"] or procode}],
+            "rows": rows, "missing": missing, "dates": len(rows)}

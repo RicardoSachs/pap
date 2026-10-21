@@ -10,7 +10,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-// OURS: our dashboards have sub-routes (/spp/libro, /tradebook/carga) and
+// OURS: our dashboards have sub-routes (/spp/libro, /benchmarks/registro) and
 // an exact match would leave the menu dark inside them.
 import { activeRoute } from '../lib/routes';
 
@@ -19,8 +19,9 @@ const ITEMS = [
   { href: '/positioning/', label: 'Positioning', icon: '▦' },
   { href: '/contribution/', label: 'Contribution', icon: '≡' },
   { href: '/comparacion/', label: 'Comparison', icon: '⇄' },
-  // OURS: the two dashboards that do not exist upstream.
+  // OURS: the dashboards that do not exist upstream.
   { href: '/spp/', label: 'Valor Cuota SPP', icon: '◷' },
+  { href: '/benchmarks/', label: 'Benchmarks', icon: '◈' },
   { href: '/tradebook/', label: 'Tradebook', icon: '▤' },
 ];
 const SOON = [

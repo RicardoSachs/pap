@@ -1,9 +1,9 @@
-// web/apps/dashboards/components/useSppTask.js
+// web/apps/dashboards/components/useTask.js
 // ---------------------------------------------------------------------------
-// The one polling loop over /api/spp/task (SBS scrape, history load and
-// benchmark materialization follow the same background-task contract). It
-// used to be written per page and had already diverged in interval and
-// error handling.
+// The one polling loop over /api/tasks/current, the background task slot
+// the dashboards share (SBS scrape, history load, benchmark
+// materialization follow the same contract). It used to be written per
+// page and had already diverged in interval and error handling.
 //
 //   start(action, onDone)  kick off UI state and start polling
 //   follow(onDone)         poll a task another call already launched
@@ -17,7 +17,7 @@ import { apiGet } from '../lib/api';
 const INTERVAL_MS = 1000;
 const MAX_FAILURES = 5;
 
-export default function useSppTask() {
+export default function useTask() {
   const [task, setTask] = useState(null);
   const pollRef = useRef(null);
 
@@ -27,7 +27,7 @@ export default function useSppTask() {
   // believing nothing was happening - its write buttons enabled, its log
   // empty - until the operator hit a 409 they could not explain.
   useEffect(() => {
-    apiGet('/api/spp/task')
+    apiGet('/api/tasks/current')
       .then((t) => { if (t?.active) { setTask(t); follow(); } })
       .catch(() => {});
     return () => clearInterval(pollRef.current);
@@ -43,7 +43,7 @@ export default function useSppTask() {
     let failures = 0;
     pollRef.current = setInterval(async () => {
       try {
-        const t = await apiGet('/api/spp/task');
+        const t = await apiGet('/api/tasks/current');
         failures = 0;
         setTask(t);
         if (!t.active) {

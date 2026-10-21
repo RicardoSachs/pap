@@ -1,8 +1,9 @@
-# web/api/services/spp_task.py
+# web/api/services/task_slot.py
 # ---------------------------------------------------------------------------
-# The ONE background task slot of the SPP tablero (SBS scrape, history
-# load, benchmark materialization) and the in-memory store of reviewed
-# uploads.
+# The ONE background task slot the dashboards share - the SPP valor cuota
+# writes (SBS scrape, history load) and the benchmark materialization -
+# and the in-memory store of reviewed uploads. Its state is read through
+# routes/tasks.py (/api/tasks/current).
 #
 # SINGLE-PROCESS ASSUMPTION. Both live in this process's memory: the slot
 # is a module-level dict behind a lock, the upload store a dict of the last

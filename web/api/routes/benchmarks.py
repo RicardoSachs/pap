@@ -6,7 +6,7 @@
 #
 # Definitions are append-only: there is no PUT or DELETE here. A change is
 # POSTed as a new version with its reason; the materialization runs in the
-# shared background task (the frontend follows /api/spp/task).
+# shared background task (the frontend follows /api/tasks/current).
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
@@ -15,8 +15,7 @@ from pydantic import BaseModel
 
 from web.api.routes._spp_common import XLSX, iso_date
 from web.api.services import benchmarks as svc
-from web.api.services import spp as spp_svc
-from web.api.services import spp_task as task
+from web.api.services import task_slot as task
 
 router = APIRouter(prefix="/api/benchmarks", tags=["benchmarks"])
 
@@ -88,11 +87,22 @@ def get_changelog(procode: str) -> dict:
         raise _not_found(procode) from None
 
 
+@router.get("/{procode}/levels")
+def get_levels(procode: str,
+               date_from: str | None = Query(None, alias="from"),
+               date_to: str | None = Query(None, alias="to")) -> dict:
+    """The level series as [date, level] points, for the chart."""
+    result = svc.levels_points(procode, iso_date(date_from), iso_date(date_to))
+    if result is None:
+        raise _not_found(procode)
+    return result
+
+
 @router.get("/{procode}/table")
 def get_table(procode: str,
               limit: int = Query(60, ge=0, le=20000, description="0 = the whole book")) -> dict:
     """The index day by day, over the book's date grid (a missing day shows)."""
-    result = spp_svc.benchmark_table(procode, limit or None)
+    result = svc.benchmark_table(procode, limit or None)
     if result is None:
         raise _not_found(procode)
     return result

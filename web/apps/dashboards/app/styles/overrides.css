@@ -36,9 +36,9 @@
 
    globals.css ships .table-wrap with max-height: 62vh; it has to be undone by
    hand or the vertical scroll comes back with every update. Border, radius
-   and shadow ARE inherited. Scoped to OUR pages (.spp-page, .tb-page): the
+   and shadow ARE inherited. Scoped to OUR pages (.spp-page, .bm-page, .tb-page): the
    upstream tables keep their scroll box. */
-.spp-page .table-wrap, .tb-page .table-wrap {
+.spp-page .table-wrap, .bm-page .table-wrap, .tb-page .table-wrap {
   overflow-x: auto; overflow-y: visible; max-height: none;
 }
 

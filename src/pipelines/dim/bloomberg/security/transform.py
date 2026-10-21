@@ -46,10 +46,17 @@ FUND_FIELD_MAP = {
     'FUND_OBJECTIVE_LONG':'objective'
 }
 
-# Identifier fields to upsert into dim_entity_identifiers
+# Identifier fields to upsert into dim_entity_identifiers:
+#   bbg field -> (id_type, source, is_primary)
+# PARSEKYABLE_DES is the canonical Bloomberg security string and becomes
+# the CURRENT parsekyable - this is how an entity reached through the
+# '/isin/<ISIN>' bridge (sbs discovery) graduates to its real ticker;
+# the '/isin/' form persists as an alias. ID_ISIN is recorded as an
+# alias only: the regulator's ISIN (seeds / SBS files) stays current,
+# so a default-listing mismatch on Bloomberg's side cannot demote it.
 IDENTIFIER_FIELD_MAP = {
-    'ID_ISIN': ('isin', 'internal'),
-    'PARSEKYABLE_DES': ('parsekyable', 'bloomberg')
+    'ID_ISIN': ('isin', 'internal', False),
+    'PARSEKYABLE_DES': ('parsekyable', 'bloomberg', True),
 }
 
 def transform_security_attributes(
@@ -204,7 +211,7 @@ def _map_identifiers(wide_df: pd.DataFrame) -> pd.DataFrame:
     """
     rows = []
     for _, row in wide_df.iterrows():
-        for bbg_field, (id_type, source) in IDENTIFIER_FIELD_MAP.items():
+        for bbg_field, (id_type, source, is_primary) in IDENTIFIER_FIELD_MAP.items():
             val = row.get(bbg_field)
             if pd.notna(val) and str(val).strip() and str(val) != 'nan':
                 rows.append({
@@ -212,7 +219,7 @@ def _map_identifiers(wide_df: pd.DataFrame) -> pd.DataFrame:
                     'id_type': id_type,
                     'id_value': str(val).strip(),
                     'source': source,
-                    'is_primary': True
+                    'is_primary': is_primary
                 })
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 

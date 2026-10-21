@@ -6,6 +6,7 @@
 # for consistency with bootstrap.py pattern.
 
 import logging
+from datetime import date, timedelta
 from itertools import groupby
 from operator import itemgetter
 
@@ -110,6 +111,153 @@ def run_backfill_pending(
             f'domain={grp_domain} source={grp_source}'
         )
         _dispatch_backfill(grp_domain, grp_source, series_list)
+
+# ---- Bloomberg price series for the held SBS universe -------------------
+#
+# The rule that decides which SBS-discovered instruments ALSO get a
+# Bloomberg PX_LAST series (decided 2026-10-20/21, docs/BLOOMBERG_SBS.md):
+#   universe   held within the trailing window: MAX(date) in
+#              fact_positions_securities >= today - held_within_days
+#              (default 1095 = 3 years; recently sold names stay relevant)
+#   coverage   enrichment resolved a real ticker, i.e. the current
+#              parsekyable is not the '/isin/<ISIN>' bridge alias. All
+#              security types qualify, so this is the only other filter.
+#   field      PX_LAST only
+#   start      first held date minus buffer_days (returns exist on day 1)
+#   lifecycle  symmetric on the same window. A PX_LAST/bloomberg series
+#              whose entity was held but not within the window is set
+#              'suspended' (the daily run skips it; no unique-security
+#              hit). It flips back to 'active' when the name reappears;
+#              the daily run then resumes from last_loaded_date, so the
+#              gap fills itself. Seeded Bloomberg series for entities
+#              NEVER held are not touched - curation is not this rule's.
+#              Terminal states ('inactive', 'error-hold') are never changed.
+# Idempotent: INSERT ... ON CONFLICT DO NOTHING; the UPDATEs are keyed on
+# the status they move from. New series land as backfill-pending; the
+# workstation pulls history with
+#   onboard_series.py --backfill --backfill-source bloomberg
+
+_HELD_SQL = """
+    SELECT security_entity_id AS entity_id,
+           MIN(date) AS first_held,
+           MAX(date) AS last_held
+    FROM fact_positions_securities
+    GROUP BY security_entity_id
+"""
+
+_BBG_PX_LAST = "sr.source = 'bloomberg' AND sr.field = 'PX_LAST'"
+
+_TO_REGISTER_SQL = f"""
+    WITH held AS ({_HELD_SQL})
+    SELECT h.entity_id, e.procode, e.name, bbg.id_value AS parsekyable,
+           h.first_held, h.last_held
+    FROM held h
+    JOIN dim_entity e ON e.entity_id = h.entity_id
+    JOIN vw_entity_identifier_current bbg
+      ON  bbg.entity_id = h.entity_id
+      AND bbg.id_type   = 'parsekyable'
+      AND bbg.source    = 'bloomberg'
+    WHERE h.last_held >= CURRENT_DATE - %(days)s
+      AND bbg.id_value NOT LIKE '/isin/%%'
+      AND NOT EXISTS (
+          SELECT 1 FROM series_registry sr
+          WHERE sr.entity_id = h.entity_id AND {_BBG_PX_LAST}
+      )
+    ORDER BY h.first_held, e.procode
+"""
+
+_TO_SUSPEND_SQL = f"""
+    WITH held AS ({_HELD_SQL})
+    SELECT sr.series_id, sr.entity_id, e.procode, h.last_held
+    FROM series_registry sr
+    JOIN held h       ON h.entity_id = sr.entity_id
+    JOIN dim_entity e ON e.entity_id = sr.entity_id
+    WHERE {_BBG_PX_LAST}
+      AND sr.status = 'active'
+      AND h.last_held < CURRENT_DATE - %(days)s
+    ORDER BY h.last_held
+"""
+
+_TO_REACTIVATE_SQL = f"""
+    WITH held AS ({_HELD_SQL})
+    SELECT sr.series_id, sr.entity_id, e.procode, h.last_held
+    FROM series_registry sr
+    JOIN held h       ON h.entity_id = sr.entity_id
+    JOIN dim_entity e ON e.entity_id = sr.entity_id
+    WHERE {_BBG_PX_LAST}
+      AND sr.status = 'suspended'
+      AND h.last_held >= CURRENT_DATE - %(days)s
+    ORDER BY h.last_held
+"""
+
+
+def register_bloomberg_series(
+    dry_run: bool = False,
+    buffer_days: int = 30,
+    held_within_days: int = 1095,
+) -> dict[str, list[dict]]:
+    """
+    Applies the held-universe rule for PX_LAST/bloomberg series. Returns
+    {'register': [...], 'suspend': [...], 'reactivate': [...]} - the rows
+    the rule acted on (or would act on with dry_run=True; nothing is then
+    written). 'register' rows carry default_start_date.
+    """
+    params = {'days': held_within_days}
+
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(_TO_REGISTER_SQL, params)
+        register = [dict(r) for r in cur.fetchall()]
+        for c in register:
+            c['default_start_date'] = c['first_held'] - timedelta(days=buffer_days)
+        cur.execute(_TO_SUSPEND_SQL, params)
+        suspend = [dict(r) for r in cur.fetchall()]
+        cur.execute(_TO_REACTIVATE_SQL, params)
+        reactivate = [dict(r) for r in cur.fetchall()]
+
+        logger.info(
+            f'bloomberg series rule (held within {held_within_days}d): '
+            f'{len(register)} to register, {len(suspend)} to suspend, '
+            f'{len(reactivate)} to reactivate'
+            + (' (dry run, nothing written)' if dry_run else '')
+        )
+        if dry_run:
+            return {'register': register, 'suspend': suspend, 'reactivate': reactivate}
+
+        inserted = 0
+        for c in register:
+            cur.execute(
+                """
+                INSERT INTO series_registry (
+                    entity_id, field, domain, source, frequency,
+                    default_start_date, status
+                ) VALUES (%s, 'PX_LAST', 'prices', 'bloomberg', 'daily', %s, 'backfill-pending')
+                ON CONFLICT (entity_id, field, source) DO NOTHING
+                """,
+                (c['entity_id'], c['default_start_date']),
+            )
+            inserted += cur.rowcount
+
+        for new_status, rows, from_status in (
+            ('suspended', suspend, 'active'),
+            ('active', reactivate, 'suspended'),
+        ):
+            if rows:
+                cur.execute(
+                    """
+                    UPDATE series_registry
+                    SET status = %s, updated_at = NOW()
+                    WHERE series_id = ANY(%s) AND status = %s
+                    """,
+                    (new_status, [r['series_id'] for r in rows], from_status),
+                )
+
+        logger.info(
+            f'bloomberg series rule: {inserted} registered, '
+            f'{len(suspend)} suspended, {len(reactivate)} reactivated.'
+        )
+    return {'register': register, 'suspend': suspend, 'reactivate': reactivate}
+
 
 def _get_fact_pipeplines() -> list[dict]:
     """

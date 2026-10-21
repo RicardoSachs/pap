@@ -4,12 +4,21 @@
 # Dispatches to vendor/domain-specific enrichment pipelines
 # via the registry in src/db/bootstrap.run_dim_enrichment().
 #
-# Run weekly (Sunday night via scheduler_central.py) or
-# on-demand after new securities are onboarded.
+# Scheduled weekly (scheduler.py, job dim_enrichment) in 'new' mode:
+# only securities never asked about, plus unrecognised ones past the
+# retry window. --refresh re-requests the recently held set (entities
+# with a non-terminal Bloomberg series); run it by hand when a name,
+# sector or market status is suspected stale. See docs/BLOOMBERG_SBS.md.
 #
 # Usage:
-#   # Enrich all vendors and all domains
+#   # New securities only (what the scheduler runs)
 #   python scripts/run_dim_enrichment.py
+#
+#   # Refresh the recently held set
+#   python scripts/run_dim_enrichment.py --refresh
+#
+#   # Re-ask unrecognised ISINs sooner than the 90-day default
+#   python scripts/run_dim_enrichment.py --retry-days 30
 #
 #   # Enrich bloomberg securities only
 #   python scripts/run_dim_enrichment.py --vendor bloomberg --domain security
@@ -58,8 +67,22 @@ def main() -> None:
         ),
     )
 
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="re-request entities with a non-terminal Bloomberg series instead of new ones",
+    )
+    parser.add_argument(
+        "--retry-days",
+        type=int,
+        default=90,
+        dest="retry_days",
+        help="in 'new' mode, re-ask unrecognised securities older than this (default 90)",
+    )
+
     args = parser.parse_args()
     setup_logging("run_dim_enrichment")
+    mode = "refresh" if args.refresh else "new"
 
     # All dim enrichment pipelines currently require Bloomberg access.
     # If non-Bloomberg vendors are added later, move this guard
@@ -69,11 +92,12 @@ def main() -> None:
     logger.info(
         f"=== Dim enrichment | "
         f"vendor={args.vendor or 'all'} | "
-        f"domain={args.domain or 'all'} ==="
+        f"domain={args.domain or 'all'} | mode={mode} ==="
     )
 
     from src.db.bootstrap import run_dim_enrichment
-    run_dim_enrichment(vendor=args.vendor, domain=args.domain)
+    run_dim_enrichment(vendor=args.vendor, domain=args.domain,
+                       mode=mode, retry_days=args.retry_days)
 
 
 if __name__ == "__main__":

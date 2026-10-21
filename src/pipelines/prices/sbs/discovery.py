@@ -12,7 +12,8 @@
 # diffs against already-registered codigo_sbs values in the DB,
 # and registers new instruments directly into:
 #   dim_entity
-#   dim_entity_identifiers  (codigo_sbs + isin)
+#   dim_entity_identifiers  (codigo_sbs + isin + a Bloomberg
+#                            parsekyable alias '/isin/<ISIN>', see below)
 #   dim_security            (skeleton only)
 #   series_registry         (one row per field, status=backfill-pending)
 #
@@ -21,6 +22,19 @@
 #
 # created_at in series_registry records when each instrument
 # first appeared in the SBS files, providing the audit trail.
+#
+# Bloomberg bridge: Bloomberg's refdata service accepts '/isin/<ISIN>'
+# as a security string, so every ISIN-bearing instrument also gets a
+# parsekyable identifier in that form (source 'bloomberg'). That is
+# what makes the dim enrichment pipeline pick SBS-discovered entities
+# up: it keys on dim_security rows that have a Bloomberg parsekyable.
+# The alias is written with is_primary=False, so it becomes the current
+# parsekyable only when the entity has none (first value is primary by
+# the upsert rules) and never demotes a real ticker. When enrichment
+# answers, PARSEKYABLE_DES is upserted as the new primary and the
+# '/isin/' form stays an alias. Pass 0 re-touches existing instruments
+# every run, so entities discovered before this existed get the alias
+# on the next SBS run - no migration needed.
 # ---------------------------------------------------------------
 
 import logging
@@ -193,6 +207,7 @@ def _register_securities(
                             conn, entity_id, "isin", isin, "internal",
                             is_primary=False, seen_date=seen,
                         )
+                        _upsert_bloomberg_isin_alias(conn, entity_id, isin, seen)
                     registered_existing += _register_series(
                         conn, entity_id, fields, run_date, domain, source, frequency
                     )
@@ -325,6 +340,7 @@ def _register_normal_instrument(
             conn, entity_id, "isin", isin, "internal",
             is_primary=False, seen_date=seen,
         )
+        _upsert_bloomberg_isin_alias(conn, entity_id, isin, seen)
 
     return _register_series(
         conn, entity_id, fields, run_date, domain, source, frequency
@@ -631,6 +647,23 @@ def _is_x_isin(val) -> bool:
         return False
     s = str(val).strip().upper()
     return len(s) == 12 and s.endswith("X")
+
+
+def bloomberg_isin_parsekyable(isin: str) -> str:
+    """Bloomberg security string that resolves an ISIN: '/isin/PE1000000001'."""
+    return f"/isin/{isin}"
+
+
+def _upsert_bloomberg_isin_alias(conn, entity_id: int, isin: str, seen: date) -> None:
+    """
+    Records the '/isin/<ISIN>' form as a Bloomberg parsekyable ALIAS
+    (is_primary=False): current only while the entity has no other
+    parsekyable, never demoting a real ticker. See the module banner.
+    """
+    upsert_entity_identifier(
+        conn, entity_id, "parsekyable", bloomberg_isin_parsekyable(isin),
+        "bloomberg", is_primary=False, seen_date=seen,
+    )
 
 
 def _derive_name(row) -> Optional[str]:

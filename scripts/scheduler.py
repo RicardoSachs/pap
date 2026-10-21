@@ -178,11 +178,13 @@ def job_prices_bloomberg() -> date:
 
 
 def job_dim_enrichment() -> None:
-    """Weekly Bloomberg dim enrichment. No calendar guard — runs
-    Monday morning regardless of exchange."""
-    logger.info("--- job: dim enrichment bloomberg ---")
+    """Weekly Bloomberg dim enrichment, 'new' mode only: securities never
+    asked about plus unrecognised ones past the retry window. Refreshing
+    already-enriched names is on demand (run_dim_enrichment.py --refresh).
+    No calendar guard — runs Monday morning regardless of exchange."""
+    logger.info("--- job: dim enrichment bloomberg (new) ---")
     from src.db.bootstrap import run_dim_enrichment
-    run_dim_enrichment(vendor="bloomberg", domain="security")
+    run_dim_enrichment(vendor="bloomberg", domain="security", mode="new")
     return None
 
 

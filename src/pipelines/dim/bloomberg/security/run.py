@@ -3,17 +3,33 @@
 # Orchestrates the Bloomberg security-dimension pipeline: extract
 # attributes, transform, and load dim_security and its equity/fund/
 # identifier extensions.
+#
+# Two selection modes (docs/BLOOMBERG_SBS.md):
+#   'new'      (default, the Monday scheduler job) entities never asked
+#              about, plus unrecognised ones past retry_days. After the
+#              one-time pass over the SBS-discovered universe this is a
+#              trickle of new instruments.
+#   'refresh'  entities with a non-terminal Bloomberg series (the recently
+#              held set). On demand: run_dim_enrichment.py --refresh. The
+#              configured attributes change rarely; market status is the
+#              exception and is covered here until a price-gap signal in
+#              the daily Bloomberg run takes it over.
+# Every request leaves a '_REQUESTED' sentinel in staging, answered or
+# not, so 'new' never re-asks what Bloomberg already said it doesn't know.
 
 import logging
+from datetime import datetime
+
 import pandas as pd
 
 from src.shared.config_loader import load_pipelines
 from src.db.connection import get_connection
-from src.db.queries import get_backfill_pending_series, get_registered_securities
+from src.db.queries import get_securities_to_enrich
 from src.pipelines.dim.bloomberg.security.extract import (
     extract_security_attributes,
     load_stg_security_bloomberg,
-    read_latest_stg_security_bloomberg
+    read_latest_stg_security_bloomberg,
+    sentinel_rows,
 )
 from src.pipelines.dim.bloomberg.security.transform import transform_security_attributes
 from src.pipelines.dim.bloomberg.security.loaders.dim_security import load_dim_security
@@ -24,33 +40,30 @@ from src.pipelines.dim.bloomberg.security.loaders.series_status import load_seri
 
 logger = logging.getLogger(__name__)
 
-def run() -> None:
+def run(mode: str = 'new', retry_days: int = 90) -> None:
     """
-    Full dim enrichment run for Bloomberg securities.
+    Dim enrichment run for Bloomberg securities.
 
     Steps:
-        1. Resolve all active bloomberg securities from series_registry
-           across all relevant domains (prices, fundamentals)
-        2. Extract all fields in one BDP call
-        3. Stage raw response to stg_security_bloomberg
-        4. Transform: pivot, resolve entity_id, split by target table
+        1. Select securities per `mode` (see module banner)
+        2. Extract all fields via chunked BDP calls
+        3. Stage raw response + one request sentinel per security
+        4. Transform (this run's securities only): pivot, resolve
+           entity_id, split by target table
         5. Load each dim table - each loader filters by security type
         6. Load identifiers discovered during enrichment
     """
-    logger.info('=== Dim enrichment: bloomberg/security started ===')
+    logger.info(f'=== Dim enrichment: bloomberg/security started | mode={mode} ===')
 
     cfg = load_pipelines()['pipelines']['dim']['bloomberg']['security']
-    
+
     fields = []
     for l in cfg.values():
         fields += l
-    
-    # Step 1: Resolve all registered bloomberg securities across domains
-    # dim enrichment is domain-agnostic - same security appears in
-    # prices and fundamentals but needs one dim row
+
+    # Step 1: select per mode (every row has a current parsekyable)
     with get_connection() as conn:
-        securities = get_registered_securities(conn)
-        securities = [s for s in securities if s['parsekyable']]
+        securities = get_securities_to_enrich(conn, mode=mode, retry_days=retry_days)
 
     # Deduplicate by entity_id - one dim row per security regardless
     # of how many series it appears in
@@ -62,25 +75,33 @@ def run() -> None:
             unique_securities.append(s)
 
     if not unique_securities:
-        logger.warning('No active bloomberg securities found. Skipping enrichment.')
+        logger.info(f'mode={mode}: nothing to enrich.')
         return
-    
+
     logger.info(f'Enriching {len(unique_securities)} unique securities.')
+    requested = [s['parsekyable'] for s in unique_securities]
 
     # Step 2: Extract
     raw_df = extract_security_attributes(unique_securities, fields)
+    answered = set(raw_df['parsekyable']) if not raw_df.empty else set()
+    logger.info(f'{len(answered)} of {len(requested)} securities answered by Bloomberg.')
+
+    # Step 3: Stage - response rows plus the request sentinel for every
+    # security asked, so unrecognised ones are not re-asked next week.
+    loaded_at = datetime.now().isoformat(timespec='seconds')
+    with get_connection() as conn:
+        load_stg_security_bloomberg(
+            conn, pd.concat([raw_df, sentinel_rows(requested, answered, loaded_at)],
+                            ignore_index=True),
+        )
 
     if raw_df.empty:
-        logger.warning('Extract returned no data.')
+        logger.warning('Extract returned no data; sentinels staged, nothing to load.')
         return
-    
-    # Step 3: Stage
-    with get_connection() as conn:
-        load_stg_security_bloomberg(conn, raw_df)
 
-    # Step 4: Transform - reads latest from stg, resolves entity_id    
+    # Step 4: Transform - latest staged values for THIS run's securities
     with get_connection() as conn:
-        stg_df = read_latest_stg_security_bloomberg(conn)
+        stg_df = read_latest_stg_security_bloomberg(conn, parsekyables=requested)
         transformed_dict = transform_security_attributes(stg_df, conn)
 
     if not transformed_dict:

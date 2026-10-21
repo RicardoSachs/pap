@@ -504,6 +504,75 @@ def get_registered_securities(
     return cur.fetchall()
 
 
+def get_securities_to_enrich(
+    conn: connection,
+    mode: str = 'new',
+    retry_days: int = 90,
+) -> list[dict]:
+    """
+    Which securities the Bloomberg dim enrichment should request this run
+    (docs/BLOOMBERG_SBS.md). Same row shape as get_registered_securities.
+
+    mode='new'      entities never asked about (no stg_security_bloomberg
+                    row under ANY of their parsekyable aliases - the
+                    '/isin/' bridge alias included, so an entity that
+                    graduated to a real ticker is not asked twice), plus
+                    entities Bloomberg did not recognise (still no ticker)
+                    whose last request is older than retry_days. This is
+                    the scheduled weekly mode: a one-time pass over the
+                    discovered universe, then a trickle.
+    mode='refresh'  entities with a non-terminal Bloomberg series - the
+                    recently held set, whose names and market status are
+                    the ones in use. On demand, not scheduled.
+    """
+    base = """
+        WITH cur AS (
+            SELECT e.entity_id, e.procode, e.name, ds.security_type, ds.ticker,
+                   bbg.id_value AS parsekyable
+            FROM dim_entity e
+            JOIN dim_security ds ON ds.entity_id = e.entity_id
+            JOIN vw_entity_identifier_current bbg
+              ON  bbg.entity_id = e.entity_id
+              AND bbg.id_type   = 'parsekyable'
+              AND bbg.source    = 'bloomberg'
+            WHERE e.entity_type = 'security'
+        ),
+        asked AS (
+            SELECT di.entity_id, MAX(s.loaded_at) AS last_asked
+            FROM dim_entity_identifiers di
+            JOIN stg_security_bloomberg s ON s.parsekyable = di.id_value
+            WHERE di.id_type = 'parsekyable' AND di.source = 'bloomberg'
+            GROUP BY di.entity_id
+        )
+    """
+    if mode == 'new':
+        query = base + """
+            SELECT c.entity_id, c.procode, c.name, c.security_type, c.parsekyable
+            FROM cur c
+            LEFT JOIN asked a ON a.entity_id = c.entity_id
+            WHERE a.last_asked IS NULL
+               OR (c.ticker IS NULL
+                   AND a.last_asked < NOW() - make_interval(days => %(retry)s))
+            ORDER BY c.entity_id
+        """
+    elif mode == 'refresh':
+        query = base + """
+            SELECT DISTINCT c.entity_id, c.procode, c.name, c.security_type, c.parsekyable
+            FROM cur c
+            JOIN series_registry sr
+              ON  sr.entity_id = c.entity_id
+              AND sr.source    = 'bloomberg'
+              AND sr.status NOT IN ('inactive', 'error-hold')
+            ORDER BY c.entity_id
+        """
+    else:
+        raise ValueError(f"mode must be 'new' or 'refresh', got {mode!r}")
+
+    cur = conn.cursor()
+    cur.execute(query, {'retry': retry_days})
+    return cur.fetchall()
+
+
 def update_series_status(
     conn: connection,
     series_id: int,

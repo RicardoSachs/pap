@@ -13,6 +13,7 @@ import logging
 
 import pandas as pd
 
+from src.db import onboard
 from src.db.connection import get_connection
 from src.pipelines.analytics.benchmark import definitions
 from src.pipelines.analytics.benchmark.materialize import SOURCE_MODEL, materialize
@@ -135,31 +136,139 @@ def rebuild(procode: str) -> dict:
     return summary
 
 
-def series_catalog(q: str = "", limit: int = 50) -> list[dict]:
-    """
-    Pickable series for the basket editor: the pipeline spine, without
-    the model series themselves - an index built from another index is a
-    loop waiting to happen.
-    """
-    pattern = f"%{q.strip()}%" if q.strip() else "%"
-    with get_connection() as conn:
-        cur = conn.cursor()
+# ---- The series a basket can draw from -------------------------------------
+# The pipeline spine (series_registry over fact_prices), whatever the
+# source - Bloomberg, the SBS vector, the SPP valor cuota - minus the model
+# series themselves: an index built from another index is a loop waiting to
+# happen. A series is found by procode, name, ticker, Bloomberg parsekyable
+# or ISIN, the way the operator knows it. The coverage (first, last, count)
+# is read for the rows returned, not for the whole registry, so a search
+# stays cheap on a large book.
+
+_CATALOG_SQL = """
+    SELECT sr.series_id, sr.field, sr.source, sr.status, sr.frequency,
+           sr.default_start_date,
+           e.entity_id, e.procode, e.entity_type, e.name,
+           ds.ticker, ds.currency, ds.security_type,
+           bbg.id_value AS parsekyable, isin.id_value AS isin
+    FROM series_registry sr
+    JOIN dim_entity e ON e.entity_id = sr.entity_id
+    LEFT JOIN dim_security ds ON ds.entity_id = e.entity_id
+    LEFT JOIN vw_entity_identifier_current bbg
+        ON bbg.entity_id = e.entity_id AND bbg.id_type = 'parsekyable'
+       AND bbg.source = 'bloomberg'
+    LEFT JOIN LATERAL (
+        SELECT i.id_value FROM vw_entity_identifier_current i
+        WHERE i.entity_id = e.entity_id AND i.id_type = 'isin'
+        ORDER BY i.source LIMIT 1
+    ) isin ON TRUE
+    WHERE sr.domain = 'prices' AND sr.source <> %(model)s
+"""
+
+
+def _catalog_rows(conn, q: str = "", limit: int = 50, source: str | None = None,
+                  series_id: int | None = None) -> list[dict]:
+    """The catalog query on an open connection (the tests use it directly)."""
+    sql, params = _CATALOG_SQL, {"model": SOURCE_MODEL, "limit": int(limit)}
+    if source:
+        sql += " AND sr.source = %(source)s"
+        params["source"] = source
+    if series_id is not None:
+        sql += " AND sr.series_id = %(series_id)s"
+        params["series_id"] = int(series_id)
+    if q.strip():
+        sql += """
+      AND (e.procode ILIKE %(q)s OR COALESCE(e.name, '') ILIKE %(q)s
+           OR COALESCE(ds.ticker, '') ILIKE %(q)s
+           OR COALESCE(ds.security_name, '') ILIKE %(q)s
+           OR COALESCE(bbg.id_value, '') ILIKE %(q)s
+           OR COALESCE(isin.id_value, '') ILIKE %(q)s)"""
+        params["q"] = f"%{q.strip()}%"
+    sql += " ORDER BY e.procode, sr.field, sr.source LIMIT %(limit)s"
+    cur = conn.cursor()
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+
+    coverage: dict[int, dict] = {}
+    if rows:
         cur.execute(
-            """
-            SELECT sr.series_id, e.procode, e.name, sr.field, sr.source
-            FROM series_registry sr
-            JOIN dim_entity e ON e.entity_id = sr.entity_id
-            WHERE sr.source <> %s AND sr.domain = 'prices'
-              AND (e.procode ILIKE %s OR COALESCE(e.name, '') ILIKE %s)
-            ORDER BY e.procode, sr.field, sr.source
-            LIMIT %s
-            """, (SOURCE_MODEL, pattern, pattern, int(limit)))
-        rows = cur.fetchall()
-    return [{"series_id": r["series_id"], "procode": r["procode"], "name": r["name"],
-             "field": r["field"], "source": r["source"],
-             "label": r["procode"],
-             "detail": f"{r['field']} · {r['source']}" + (f" · {r['name']}" if r["name"] else "")}
-            for r in rows]
+            "SELECT series_id, COUNT(*) AS points, MIN(date) AS first, MAX(date) AS last "
+            "FROM fact_prices WHERE series_id = ANY(%s) GROUP BY series_id",
+            ([r["series_id"] for r in rows],))
+        coverage = {c["series_id"]: c for c in cur.fetchall()}
+
+    out = []
+    for r in rows:
+        cov = coverage.get(r["series_id"])
+        ticker = r["parsekyable"] or r["ticker"]
+        out.append({
+            "series_id": r["series_id"], "entity_id": r["entity_id"],
+            "procode": r["procode"], "entity_type": r["entity_type"], "name": r["name"],
+            "field": r["field"], "source": r["source"], "status": r["status"],
+            "frequency": r["frequency"],
+            "default_start_date": (str(r["default_start_date"])
+                                   if r["default_start_date"] else None),
+            "ticker": ticker, "isin": r["isin"], "currency": r["currency"],
+            "security_type": r["security_type"],
+            "points": int(cov["points"]) if cov else 0,
+            "from": str(cov["first"]) if cov else None,
+            "to": str(cov["last"]) if cov else None,
+            "label": r["procode"],
+            "detail": " · ".join(x for x in (r["field"], r["source"], ticker or r["name"]) if x),
+        })
+    return out
+
+
+def series_catalog(q: str = "", limit: int = 50, source: str | None = None) -> list[dict]:
+    """Pickable series for the basket editor and the Series view."""
+    with get_connection() as conn:
+        return _catalog_rows(conn, q, limit, source)
+
+
+def _sources_rows(conn) -> list[dict]:
+    """One row per price source: how many series it carries, in which
+    status, and how far their prices reach."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT sr.source,
+               COUNT(*) AS series,
+               COUNT(*) FILTER (WHERE sr.status = 'active') AS active,
+               COUNT(*) FILTER (WHERE sr.status = 'backfill-pending') AS pending,
+               COUNT(*) FILTER (WHERE cov.points > 0) AS priced,
+               COALESCE(SUM(cov.points), 0) AS points,
+               MIN(cov.first) AS first, MAX(cov.last) AS last
+        FROM series_registry sr
+        LEFT JOIN (SELECT series_id, COUNT(*) AS points, MIN(date) AS first, MAX(date) AS last
+                   FROM fact_prices GROUP BY series_id) cov ON cov.series_id = sr.series_id
+        WHERE sr.domain = 'prices' AND sr.source <> %s
+        GROUP BY sr.source
+        ORDER BY sr.source
+        """, (SOURCE_MODEL,))
+    return [{"source": r["source"], "series": int(r["series"]), "active": int(r["active"]),
+             "pending": int(r["pending"]), "priced": int(r["priced"]),
+             "points": int(r["points"]),
+             "from": str(r["first"]) if r["first"] else None,
+             "to": str(r["last"]) if r["last"] else None}
+            for r in cur.fetchall()]
+
+
+def series_sources() -> list[dict]:
+    with get_connection() as conn:
+        return _sources_rows(conn)
+
+
+def register_series(payload: dict) -> dict:
+    """
+    Registers a Bloomberg ticker as a priced series (src.db.onboard does
+    the writing) and answers with its catalog row plus `created`. The
+    series has no prices yet: the Bloomberg machine fetches them on its
+    next backfill run.
+    """
+    with get_connection() as conn:
+        result = onboard.register_series(conn, payload)
+        row = _catalog_rows(conn, limit=1, series_id=result["series_id"])[0]
+    return {**row, "created": result["created"]}
 
 
 def levels(procode: str, date_from=None, date_to=None) -> pd.DataFrame:

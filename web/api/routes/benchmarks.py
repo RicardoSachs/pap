@@ -2,17 +2,21 @@
 # ---------------------------------------------------------------------------
 # /api/benchmarks : the composite indices (benchmarks, targets) - which
 # exist, their versioned definitions, the changelog, the series catalog a
-# basket draws from, and the two writes: append a version, materialize.
+# basket draws from (every price source, with coverage), and the writes:
+# append a version, materialize, register a Bloomberg ticker.
 #
 # Definitions are append-only: there is no PUT or DELETE here. A change is
 # POSTed as a new version with its reason; the materialization runs in the
-# shared background task (the frontend follows /api/tasks/current).
+# shared background task (the frontend follows /api/tasks/current). The
+# ticker registration writes the registry only: the series is born
+# 'backfill-pending' and the Bloomberg machine fetches its history.
 # ---------------------------------------------------------------------------
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
+from src.db.onboard import SeriesConflict
 from web.api.routes._spp_common import XLSX, iso_date
 from web.api.services import benchmarks as svc
 from web.api.services import task_slot as task
@@ -45,6 +49,16 @@ class VersionIn(BaseModel):
     constituents: list[ConstituentIn]
 
 
+class SeriesIn(BaseModel):
+    procode: str
+    name: str
+    parsekyable: str
+    default_start_date: str
+    entity_type: str = "security"
+    security_type: str | None = None
+    isin: str | None = None
+
+
 def _not_found(procode: str) -> HTTPException:
     return HTTPException(status_code=404, detail=f"No hay un benchmark llamado {procode}.")
 
@@ -58,9 +72,17 @@ def list_benchmarks() -> dict:
 
 @router.get("/series")
 def get_series_catalog(q: str = Query(""),
-                       limit: int = Query(50, ge=1, le=200)) -> dict:
-    """Pickable constituent series (the pipeline spine, no model series)."""
-    return {"series": svc.series_catalog(q, limit)}
+                       limit: int = Query(50, ge=1, le=200),
+                       source: str | None = Query(None)) -> dict:
+    """Pickable constituent series (the pipeline spine, no model series),
+    with their coverage."""
+    return {"series": svc.series_catalog(q, limit, source)}
+
+
+@router.get("/series/sources")
+def get_series_sources() -> dict:
+    """One row per price source: series, status counts, coverage."""
+    return {"sources": svc.series_sources()}
 
 
 @router.get("/{procode}")
@@ -126,6 +148,18 @@ def post_benchmark(body: BenchmarkIn) -> dict:
     """Creates a benchmark (entity + level series + portfolio) or renames it."""
     try:
         return svc.create(body.procode, body.display_name, body.base_currency)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.post("/series")
+def post_series(body: SeriesIn) -> dict:
+    """Registers a Bloomberg ticker as a priced series, 'backfill-pending'.
+    Writes the registry only; the Bloomberg machine fetches the history."""
+    try:
+        return svc.register_series(body.model_dump())
+    except SeriesConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 

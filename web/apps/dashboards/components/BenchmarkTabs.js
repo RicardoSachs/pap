@@ -13,6 +13,7 @@ import { usePathname } from 'next/navigation';
 const TABS = [
   { href: '/benchmarks/', label: 'Panel' },
   { href: '/benchmarks/libro/', label: 'Libro' },
+  { href: '/benchmarks/series/', label: 'Series' },
   { href: '/benchmarks/registro/', label: 'Registro' },
 ];
 

@@ -126,10 +126,14 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
     } catch { setResults([]); }
   };
 
+  // `points` travels with the row so a constituent that has no prices yet
+  // (a ticker registered but not fetched) is flagged in the basket: the
+  // materialization would fail loud on it.
   const addConstituent = (s) => {
     if (constituents.some((c) => c.series_id === s.series_id)) return;
     setConstituents([...constituents, {
       label: s.label, series_id: s.series_id, detail: s.detail, weight: '', fx_series_id: '',
+      points: s.points,
     }]);
   };
 
@@ -303,7 +307,7 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
           )}
 
           <div className="controls" style={{ marginTop: 10 }}>
-            <input className="date-input" placeholder="Buscar serie (ticker, nombre)…"
+            <input className="date-input" placeholder="Buscar serie (código, ticker, nombre, ISIN)…"
               aria-label="Buscar serie"
               value={query} onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && searchSeries()} />
@@ -316,10 +320,13 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
                   <tr key={s.series_id}>
                     <td className="mono">{s.label}</td>
                     <td className="dim">{s.detail}</td>
+                    <td className={s.points ? 'dim' : 'neg'}>
+                      {s.points ? `${fDate(s.from)} – ${fDate(s.to)} · ${nInt(s.points)} precios` : 'sin precios todavía'}
+                    </td>
                     <td><button className="btn" onClick={() => addConstituent(s)}>+ Agregar</button></td>
                   </tr>
                 ))}
-                {!results.length && <tr><td className="dim">Sin resultados.</td></tr>}
+                {!results.length && <tr><td className="dim">Sin resultados. Las series nuevas se registran en la pestaña <b>Series</b>.</td></tr>}
               </tbody></table>
             </div>
           )}
@@ -333,7 +340,7 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
                 {constituents.length ? constituents.map((c, i) => (
                   <tr key={c.series_id}>
                     <td className="mono">{c.label}</td>
-                    <td className="dim">{c.detail}</td>
+                    <td className="dim">{c.detail}{c.points === 0 && <> · <b className="neg">sin precios</b></>}</td>
                     <td className="num">
                       <input className="date-input" type="number" min="0" step="0.01"
                         style={{ width: 90 }} value={c.weight} aria-label={`Peso de ${c.label}`}

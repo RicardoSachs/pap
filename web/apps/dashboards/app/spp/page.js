@@ -480,7 +480,9 @@ export default function SppPanelPage() {
             </details>
             <details className="spp-collapsible">
               <summary>Rendimiento absoluto</summary>
-              <WindowsTable cols={win.return_columns} rows={win.absolute} withUnit />
+              {/* Returns only: the level itself is the Libro's business. */}
+              <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
+                rows={win.absolute} withUnit />
               <p className="page-sub">Días y meses en puntos básicos; de 3M en adelante en
                 porcentaje. Las ventanas móviles cuentan hacia atrás desde la fecha de control.
                 FY es el ejercicio, del 31/10 al 31/10. Las columnas diarias son el movimiento de

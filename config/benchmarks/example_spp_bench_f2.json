@@ -1,0 +1,17 @@
+{
+  "procode": "SPP_BENCH_F2",
+  "display_name": "Benchmark Fondo 2",
+  "base_currency": "PEN",
+  "version": {
+    "effective_from": "2025-10-21",
+    "method": "buy_and_hold",
+    "change_type": "initial",
+    "reason": "Example definition: the two largest peers, equal-weighted at the FY start",
+    "support_doc": null,
+    "recorded_by": "example",
+    "constituents": [
+      {"label": "Habitat F2",  "series": {"procode": "SPP_HABITAT_F2",  "field": "PX_LAST", "source": "sbs_spp"}, "weight": 50},
+      {"label": "Integra F2",  "series": {"procode": "SPP_INTEGRA_F2",  "field": "PX_LAST", "source": "sbs_spp"}, "weight": 50}
+    ]
+  }
+}

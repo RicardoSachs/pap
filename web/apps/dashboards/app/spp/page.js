@@ -269,7 +269,15 @@ export default function SppPanelPage() {
     const breakClass = (key) => (unitBreak.has(key) ? ' spp-unit-break' : '');
     return (
       <div className="table-wrap spp-windows">
+        {/* Fixed layout with one colgroup: the fund and AFP columns have set
+            widths and every window column takes an equal share, so the
+            relative and the absolute tables line up column for column. */}
         <table>
+          <colgroup>
+            <col className="spp-col-fund" />
+            <col className="spp-col-afp" />
+            {cols.map((c) => <col key={c[0]} />)}
+          </colgroup>
           <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>
             {cols.map((c) => <th key={c[0]} className={breakClass(c[0]).trim() || undefined}>{c[1]}</th>)}</tr></thead>
           <tbody>

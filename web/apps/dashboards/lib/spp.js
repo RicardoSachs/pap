@@ -136,7 +136,9 @@ export function fmtReturn(v, unit, metric = 'valor_cuota', bpsDigits = 1) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
-  return s + abs + (unit === 'pct' ? '%' : ' bps');
+  // Basis points carry no suffix: the tables say which columns are in
+  // basis points, and " bps" seventeen times a row only widened them.
+  return s + abs + (unit === 'pct' ? '%' : '');
 }
 
 // MTD/YTD/FY start at the LAST CLOSE of the prior period (same base the

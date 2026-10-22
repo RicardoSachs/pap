@@ -18,8 +18,15 @@
   margin-right: 7px; vertical-align: baseline;
 }
 
-/* Windows tables: AFP section rows. */
-.spp-windows table { min-width: 100%; }
+/* Windows tables. Fixed layout so the relative and the absolute tables
+   share one column grid: the fund and AFP columns have set widths and the
+   window columns split the rest equally. The minimum width keeps every
+   figure on one line (seventeen windows at 13px); below it the wrapper
+   scrolls horizontally instead of clipping digits. */
+.spp-windows table { table-layout: fixed; width: 100%; min-width: 1240px; }
+.spp-windows col.spp-col-fund { width: 70px; }
+.spp-windows col.spp-col-afp { width: 112px; }
+.spp-windows th, .spp-windows td { padding: 8px 6px; }
 .spp-section td {
   background: var(--s3); font-weight: 600; letter-spacing: .02em;
   border-top: 1px solid var(--s4);

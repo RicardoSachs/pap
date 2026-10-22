@@ -268,7 +268,7 @@ export default function SppPanelPage() {
       .filter((c, i) => withUnit && i > 0 && c[2] !== cols[i - 1][2]).map((c) => c[0]));
     const breakClass = (key) => (unitBreak.has(key) ? ' spp-unit-break' : '');
     return (
-      <div className="table-wrap spp-windows">
+      <div className="table-wrap spp-windows spp-grid-windows">
         {/* Fixed layout with one colgroup: the fund and AFP columns have set
             widths and every window column takes an equal share, so the
             relative and the absolute tables line up column for column. */}
@@ -536,8 +536,14 @@ export default function SppPanelPage() {
           />
         ) : <div className="dim">Sin meses cerrados suficientes.</div>)}
         {posView === 'table' && (
-        <div className="table-wrap spp-windows">
+        <div className="table-wrap spp-windows spp-grid-ranks">
+          {/* Same discipline as the windows tables: the AFP column has a set
+              width and every month takes an equal share. */}
           <table>
+            <colgroup>
+              <col className="spp-col-name" />
+              {periods.map((p) => <col key={p.key} />)}
+            </colgroup>
             <thead><tr><th>AFP</th>{periods.map((p) => <th key={p.key}>{p.label}</th>)}</tr></thead>
             <tbody>
               {/* House row first (it is the question this table answers),

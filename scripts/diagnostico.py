@@ -163,7 +163,8 @@ def main() -> int:
             for tabla, etiqueta in (("series_registry", "series registradas"),
                                     ("fact_prices", "observaciones del libro"),
                                     ("dim_benchmark_version", "versiones de benchmark"),
-                                    ("benchmark_constituent", "componentes de benchmark")):
+                                    ("benchmark_constituent", "componentes de benchmark"),
+                                    ("benchmark_assignment", "benchmarks vinculados a un fondo")):
                 n = intentar(lambda t=tabla: conn.execute(
                     f"SELECT count(*) AS n FROM {t}").fetchone()["n"], "-")
                 print(f"           {etiqueta:<28} {n}")

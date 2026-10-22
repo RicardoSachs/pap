@@ -31,6 +31,7 @@ import pandas as pd
 from psycopg.rows import tuple_row
 
 from src.db.connection import get_connection
+from src.pipelines.analytics.benchmark import definitions as bench_defs
 from src.pipelines.prices.sbs.valor_cuota import afps
 
 logger = logging.getLogger(__name__)
@@ -578,11 +579,122 @@ def _annualized(current, base, years: float):
     return (current / base) ** (1.0 / years) - 1.0
 
 
+def _window_returns(v: dict) -> dict:
+    """The return columns of one row from its levels at the reference
+    dates (`v`: window key -> level, None when unavailable)."""
+    g = v.get
+    r = {
+        "level": g("t"),
+        "d0":  _change(g("t"),  g("t1")),
+        "d1":  _change(g("t1"), g("t2")),
+        "d2":  _change(g("t2"), g("t3")),
+        "d3":  _change(g("t3"), g("t4")),
+        "d5":  _change(g("t"),  g("t5")),
+        "mtd": _change(g("t"),  g("month")),
+        "m1":  _change(g("month"),  g("month1")),
+        "m2":  _change(g("month1"), g("month2")),
+        "m3":  _change(g("t"),    g("m3")),
+        "m6":  _change(g("t"),    g("m6")),
+        "fy":  _change(g("t"),    g("fy")),
+        "ytd": _change(g("t"),    g("year")),
+        "m12": _change(g("t"),    g("m12")),
+        "a1":  _change(g("year"), g("year1")),
+    }
+    for k, years in ANNUALIZED_YEARS.items():
+        r[k] = _annualized(g("t"), g(k), years)
+    return r
+
+
+def _excess(base: dict, other: dict, keys: list) -> dict:
+    """base minus other per window; None where either side is missing."""
+    return {k: (None if (base.get(k) is None or other.get(k) is None)
+                else base[k] - other[k]) for k in keys}
+
+
+# ---- The benchmarks inside the tables -------------------------------------
+# An index declared in the Benchmarks module and ASSIGNED to a house fund
+# (benchmark_assignment, through the analytics module) is one more row of
+# that fund's block: its own returns in the absolute table, the house's
+# excess over it in the relative one. Only for the valor cuota metric -
+# an index has no fund size.
+
+def _assigned_benchmarks(conn) -> dict[int, list[dict]]:
+    """{fund type: [benchmark rows]} for the active benchmarks assigned
+    to a fund entity (the entity's procode says which type)."""
+    out: dict[int, list[dict]] = {}
+    for b in bench_defs.assignments(conn):
+        parsed = afps.parse_procode(b["assigned_procode"])
+        if parsed is None or b["series_id"] is None:
+            continue
+        out.setdefault(parsed[1], []).append(b)
+    return out
+
+
+def _levels_at_or_before(conn, series_ids: list[int], dates) -> dict[int, dict]:
+    """
+    {series_id: {date: level}} with the last level AT OR BEFORE each date.
+    A benchmark quotes on its constituents' calendar, which need not be
+    the SPP grid: a day the index did not print must not read as a
+    missing index.
+    """
+    wanted = sorted({d for d in dates if d is not None})
+    out: dict[int, dict] = {sid: {} for sid in series_ids}
+    if not series_ids or not wanted:
+        return out
+    cur = conn.cursor(row_factory=tuple_row)
+    cur.execute(
+        """
+        SELECT s.series_id, d.day, l.price
+        FROM unnest(%s::int[]) AS s(series_id)
+        CROSS JOIN unnest(%s::date[]) AS d(day)
+        LEFT JOIN LATERAL (
+            SELECT price FROM fact_prices f
+            WHERE f.series_id = s.series_id AND f.date <= d.day
+            ORDER BY f.date DESC LIMIT 1
+        ) l ON TRUE
+        """, (list(series_ids), wanted))
+    for sid, day, price in cur.fetchall():
+        if price is not None:
+            out[sid][day] = float(price)
+    return out
+
+
+def _benchmark_rows(conn, ref: dict, house_returns: dict) -> tuple[list, list, list]:
+    """
+    The benchmark rows of the windows tables, for every fund type with
+    assigned benchmarks: levels at the reference dates (forward-filled),
+    the returns, and the house's excess over each index.
+    `house_returns`: {fund: the house's return row} for the relative table.
+    Returns (levels, absolute, relative), every row flagged benchmark=True.
+    """
+    by_fund = _assigned_benchmarks(conn)
+    if not by_fund:
+        return [], [], []
+    series_ids = [b["series_id"] for bs in by_fund.values() for b in bs]
+    by_series = _levels_at_or_before(conn, series_ids, ref.values())
+    keys = [k for k, _, u in RETURN_KEYS if u != "level"]
+    levels, absolute, relative = [], [], []
+    for fund in sorted(by_fund):
+        for b in by_fund[fund]:
+            lv = by_series.get(b["series_id"], {})
+            v = {k: (lv.get(d) if d is not None else None) for k, d in ref.items()}
+            r = _window_returns(v)
+            tag = {"afp": b["display_name"] or b["procode"], "fund": fund,
+                   "benchmark": True, "procode": b["procode"]}
+            levels.append({**tag, "values": {k: v.get(k) for k in LEVEL_KEYS}})
+            absolute.append({**tag, "values": r})
+            base = house_returns.get(fund)
+            if base is not None:
+                relative.append({**tag, "absolute": False, "values": _excess(base, r, keys)})
+    return levels, absolute, relative
+
+
 def windows(day=None, metric: str = "valor_cuota") -> dict:
     """
     Levels, absolute returns and relative returns (house minus each
-    competitor) per AFP and fund, on the common closing grid. Reads the
-    grid and then only the closes the windows compare.
+    competitor, and minus each benchmark assigned to the fund) per AFP
+    and fund, on the common closing grid. Reads the grid and then only
+    the closes the windows compare.
     """
     metric = _valid_metric(metric)
     empty = {"control": None, "dates": {}, "metric": metric, "levels": [],
@@ -602,6 +714,7 @@ def windows(day=None, metric: str = "valor_cuota") -> dict:
         return values.get(col, {}).get(d) if d is not None else None
 
     names = afps.names()
+    house_afp = house()
     levels, absolute, returns = [], [], {}
 
     for f in afps.funds():
@@ -610,29 +723,9 @@ def windows(day=None, metric: str = "valor_cuota") -> dict:
                 continue
             col = column(a, f, metric)
             v = {k: cell(col, ref.get(k)) for k in ref}
-
             levels.append({"afp": a, "fund": f,
                            "values": {k: v.get(k) for k in LEVEL_KEYS}})
-
-            r = {
-                "level": v["t"],
-                "d0":  _change(v["t"],  v["t1"]),
-                "d1":  _change(v["t1"], v["t2"]),
-                "d2":  _change(v["t2"], v["t3"]),
-                "d3":  _change(v["t3"], v["t4"]),
-                "d5":  _change(v["t"],  v["t5"]),
-                "mtd": _change(v["t"],  v["month"]),
-                "m1":  _change(v["month"],  v["month1"]),
-                "m2":  _change(v["month1"], v["month2"]),
-                "m3":  _change(v["t"],    v["m3"]),
-                "m6":  _change(v["t"],    v["m6"]),
-                "fy":  _change(v["t"],    v["fy"]),
-                "ytd": _change(v["t"],    v["year"]),
-                "m12": _change(v["t"],    v["m12"]),
-                "a1":  _change(v["year"], v["year1"]),
-            }
-            for k, years in ANNUALIZED_YEARS.items():
-                r[k] = _annualized(v["t"], v[k], years)
+            r = _window_returns(v)
             returns[(a, f)] = r
             absolute.append({"afp": a, "fund": f, "values": r})
 
@@ -640,7 +733,6 @@ def windows(day=None, metric: str = "valor_cuota") -> dict:
     # baseline the differences are read against. For the annualized
     # windows the difference is between annualized rates.
     keys = [k for k, _, u in RETURN_KEYS if u != "level"]
-    house_afp = house()
     relative = []
     for f in afps.funds():
         if (house_afp, f) not in returns:
@@ -651,10 +743,17 @@ def windows(day=None, metric: str = "valor_cuota") -> dict:
         for a in names:
             if a == house_afp or (a, f) not in returns:
                 continue
-            other = returns[(a, f)]
-            diff = {k: (None if (base.get(k) is None or other.get(k) is None)
-                        else base[k] - other[k]) for k in keys}
-            relative.append({"afp": a, "fund": f, "absolute": False, "values": diff})
+            relative.append({"afp": a, "fund": f, "absolute": False,
+                             "values": _excess(base, returns[(a, f)], keys)})
+
+    if metric == "valor_cuota":
+        house_rows = {f: returns[(house_afp, f)] for f in afps.funds()
+                      if (house_afp, f) in returns}
+        with get_connection() as conn:
+            b_levels, b_absolute, b_relative = _benchmark_rows(conn, ref, house_rows)
+        levels += b_levels
+        absolute += b_absolute
+        relative += b_relative
 
     level_columns = [[k, (_dmy(ref[k]) if k in ("year", "year1") else _dm(ref[k]))]
                      for k in LEVEL_KEYS]

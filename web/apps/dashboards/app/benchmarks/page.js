@@ -28,7 +28,9 @@ const METHODS = {
 };
 const RETURN_WINDOWS = [['MTD', 'mtd'], ['YTD', 'ytd'], ['FY', 'fy'], ['1A', 1], ['3A', 3], ['5A', 5]];
 
-// The fund type a benchmark is paired with, read from its procode suffix.
+// The fund type a benchmark is paired with: the assignment made in
+// Registro, or, for an index declared before assignments existed, its
+// procode suffix.
 const fundOf = (procode) => {
   const m = /_F(\d)$/.exec(procode || '');
   return m ? Number(m[1]) : null;
@@ -66,7 +68,7 @@ export default function BenchmarksPanelPage() {
   }, []);
 
   const current = (list || []).find((b) => b.procode === selected) || null;
-  const fund = fundOf(selected);
+  const fund = current?.fund ?? fundOf(selected);
   const houseName = cfg?.house;
 
   // The benchmark's whole series: the window is cut client-side so the

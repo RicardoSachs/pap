@@ -44,7 +44,7 @@ from src.shared.paths import DATA_DIR
 # Tables that only exist here: named so the summary can prove the dump
 # carried the SPP work, not just the upstream pipelines.
 TABLAS_SPP = ("fact_prices", "series_registry", "dim_entity", "dim_portfolio",
-              "dim_benchmark_version", "benchmark_constituent",
+              "dim_benchmark_version", "benchmark_constituent", "benchmark_assignment",
               "fact_positions_model", "fact_portfolio_valuation")
 
 

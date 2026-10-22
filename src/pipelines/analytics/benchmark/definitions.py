@@ -29,6 +29,12 @@
 # effective_from, the highest version_id (a correction restating the
 # same start date wins over what it corrects). governing_versions()
 # is that rule, and materialize.build_periods() consumes it.
+#
+# Besides its definition a benchmark has an ASSIGNMENT: the entity it
+# is the benchmark of (the house fund of one type), in
+# benchmark_assignment (45). That is a link, not a definition - one row
+# per benchmark, replaced when reassigned - and the tablero reads it to
+# show the index inside that fund's return tables.
 # ---------------------------------------------------------------
 
 import datetime as dt
@@ -110,11 +116,14 @@ def ensure_benchmark(conn, procode: str, display_name: str,
 _BENCHMARK_SQL = """
     SELECT p.portfolio_id, p.procode, p.display_name, p.base_currency,
            p.portfolio_type, p.status, p.parent_entity_id AS entity_id,
-           sr.series_id
+           sr.series_id,
+           ba.entity_id AS assigned_entity_id, ae.procode AS assigned_procode
     FROM dim_portfolio p
     LEFT JOIN series_registry sr
            ON sr.entity_id = p.parent_entity_id
           AND sr.field = %(field)s AND sr.source = %(source)s
+    LEFT JOIN benchmark_assignment ba ON ba.portfolio_id = p.portfolio_id
+    LEFT JOIN dim_entity ae ON ae.entity_id = ba.entity_id
     WHERE p.source = %(source)s
 """
 
@@ -144,6 +153,43 @@ def benchmarks(conn, status: str | None = "active") -> list[dict]:
         params["status"] = status
     cur = conn.cursor()
     cur.execute(sql + " ORDER BY p.procode", params)
+    return cur.fetchall()
+
+
+# ---- What a benchmark is the benchmark OF -------------------------------
+
+def assign(conn, portfolio_id: int, entity_id: int) -> None:
+    """
+    Links a benchmark to the entity it measures - the house fund it is
+    the benchmark of. One link per benchmark; assigning again replaces
+    it. A link, not a definition: nothing in the versions or the levels
+    changes, only where the tablero shows the index.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM dim_entity WHERE entity_id = %s", (entity_id,))
+    if cur.fetchone() is None:
+        raise ValueError(f"Entity {entity_id} does not exist.")
+    cur.execute(
+        """
+        INSERT INTO benchmark_assignment (portfolio_id, entity_id)
+        VALUES (%s, %s)
+        ON CONFLICT (portfolio_id) DO UPDATE SET
+            entity_id = EXCLUDED.entity_id, assigned_at = NOW()
+        """, (portfolio_id, entity_id))
+    logger.info(f"benchmark portfolio_id={portfolio_id} assigned to entity_id={entity_id}.")
+
+
+def assignments(conn) -> list[dict]:
+    """Every ACTIVE benchmark assigned to an entity, with that entity's
+    procode and the benchmark's level series (benchmark_by_procode's
+    shape)."""
+    cur = conn.cursor()
+    cur.execute(
+        _BENCHMARK_SQL + """
+          AND p.portfolio_type = %(type)s AND p.status = 'active'
+          AND ba.entity_id IS NOT NULL
+        ORDER BY p.procode
+        """, {"field": LEVEL_FIELD, "source": SOURCE_MODEL, "type": PORTFOLIO_TYPE})
     return cur.fetchall()
 
 

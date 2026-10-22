@@ -64,6 +64,9 @@
 .spp-windows tbody tr.spp-block:first-child td { border-top: none; }
 .spp-windows th.spp-afp, .spp-windows td.spp-afp { text-align: left; }
 .spp-windows tr.spp-house td { font-weight: 700; }
+/* Benchmark rows inside a fund's block: an index, not an AFP. */
+.spp-windows tr.spp-benchmark td.spp-afp { font-style: italic; color: var(--text-secondary); }
+.spp-windows tr.spp-benchmark td { border-top: 1px dashed var(--s4); }
 /* A thick rule where the unit changes (percent | basis points | level), so
    two scales never read as one. */
 .spp-windows th.spp-unit-break, .spp-windows td.spp-unit-break {

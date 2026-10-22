@@ -52,6 +52,9 @@ export default function SppPanelPage() {
   const [generating, setGenerating] = useState(false);
   const [posFund, setPosFund] = useState(2);
   const [posView, setPosView] = useState('table');
+  // The benchmarks assigned to each fund are rows of the return tables;
+  // this switch takes them off without another request.
+  const [showBench, setShowBench] = useState(true);
 
   // Config first: without it we don't know how many AFPs exist.
   useEffect(() => {
@@ -228,7 +231,8 @@ export default function SppPanelPage() {
     if (!cfg || !win?.control) return;
     setGenerating(true); setError(null);
     try {
-      await generateReport({ cfg, windows: win });
+      // The PDF prints what is on screen: benchmarks only when shown.
+      await generateReport({ cfg, windows: { ...win, relative: visibleRows(win.relative) } });
     } catch (e) {
       setError(`No se pudo generar el reporte: ${e.message}`);
     } finally {
@@ -252,6 +256,8 @@ export default function SppPanelPage() {
 
   // ---- Windows tables ----------------------------------------------------
   const relativeOrder = houseFirst(cfg, names);
+  const hasBenchmarks = (win?.absolute || []).some((r) => r.benchmark);
+  const visibleRows = (rows) => (rows || []).filter((r) => showBench || !r.benchmark);
 
   function WindowsTable({ cols, rows, withUnit, order, bpsDigits = 1 }) {
     // One block per FUND and inside it one row per AFP: the desk's question
@@ -282,16 +288,20 @@ export default function SppPanelPage() {
             {cols.map((c) => <th key={c[0]} className={breakClass(c[0]).trim() || undefined}>{c[1]}</th>)}</tr></thead>
           <tbody>
             {funds.map((f) => {
+              // AFPs in the house-first order, then the fund's benchmarks in
+              // the order the API lists them.
               const ofFund = rows.filter((r) => r.fund === f)
-                .sort((x, y) => afpOrder.indexOf(x.afp) - afpOrder.indexOf(y.afp));
+                .sort((x, y) => ((x.benchmark ? 1 : 0) - (y.benchmark ? 1 : 0))
+                  || (afpOrder.indexOf(x.afp) - afpOrder.indexOf(y.afp)));
               return ofFund.map((r, i) => {
                 const isHouse = r.afp === house;
                 // The house row is bold THROUGHOUT - name and figures -
                 // keeping each figure's sign color: it stands out by
-                // weight, not by color.
+                // weight, not by color. A benchmark row is an index, not
+                // an AFP: italic name, a dashed rule above.
                 return (
                   <tr key={`f${f}-${r.afp}`}
-                    className={`${i === 0 ? 'spp-block' : ''} ${isHouse ? 'spp-house' : ''}`.trim()}>
+                    className={`${i === 0 ? 'spp-block' : ''} ${isHouse ? 'spp-house' : ''} ${r.benchmark ? 'spp-benchmark' : ''}`.trim()}>
                     {i === 0 && (
                       <td rowSpan={ofFund.length} className="spp-fund">Fondo {f}</td>
                     )}
@@ -464,45 +474,6 @@ export default function SppPanelPage() {
       </div>
 
       <div className="panel">
-        <div className="controls" style={{ justifyContent: 'space-between' }}>
-          <div>
-            <div className="panel-title">Ventanas de rendimiento</div>
-            {win?.control && (
-              <p className="page-sub" style={{ margin: '4px 0 0' }}>
-                Control {fDate(win.dates.t)} · inicio de mes {fDate(win.dates.month)} ·
-                M-1 {fDate(win.dates.month1)} · inicio de año {fDate(win.dates.year)} ·
-                inicio de ejercicio {fDate(win.dates.fy)}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {win?.control ? (
-          <>
-            <details className="spp-collapsible" open>
-              <summary>Rendimiento relativo · {house} contra cada competidora</summary>
-              {/* Differences in whole basis points: a tenth of a point between
-                  two AFPs is noise, and the decimal only widened the columns. */}
-              <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
-                rows={win.relative} withUnit order={relativeOrder} bpsDigits={0} />
-            </details>
-            <details className="spp-collapsible">
-              <summary>Rendimiento absoluto</summary>
-              {/* Returns only: the level itself is the Libro's business. */}
-              <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
-                rows={win.absolute} withUnit />
-              <p className="page-sub">Días y meses en puntos básicos; de 3M en adelante en
-                porcentaje. Las ventanas móviles cuentan hacia atrás desde la fecha de control.
-                FY es el ejercicio, del 31/10 al 31/10. Las columnas diarias son el movimiento de
-                ese día, no acumulados.</p>
-            </details>
-          </>
-        ) : win == null
-          ? <div className="loading">Cargando…</div>
-          : <div className="page-sub dim">Sin datos en el libro.</div>}
-      </div>
-
-      <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
           <div className="panel-title">Posiciones mensuales por rendimiento</div>
           <div className="controls" style={{ margin: 0 }}>
@@ -583,6 +554,52 @@ export default function SppPanelPage() {
         <p className="page-sub">Puesto 1 al {posTotal} por rendimiento del mes, dentro de cada tipo
           de fondo{posView === 'table' ? ' — más intenso = mejor puesto; la fila en color es ' : '; la línea gruesa es '}
           {house}. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
+      </div>
+
+      <div className="panel">
+        <div className="controls" style={{ justifyContent: 'space-between' }}>
+          <div>
+            <div className="panel-title">Ventanas de rendimiento</div>
+            {win?.control && (
+              <p className="page-sub" style={{ margin: '4px 0 0' }}>
+                Control {fDate(win.dates.t)} · inicio de mes {fDate(win.dates.month)} ·
+                M-1 {fDate(win.dates.month1)} · inicio de año {fDate(win.dates.year)} ·
+                inicio de ejercicio {fDate(win.dates.fy)}
+              </p>
+            )}
+          </div>
+          {hasBenchmarks && (
+            <div className="controls" style={{ margin: 0 }}>
+              <div className="field"><label>Benchmarks</label>
+                <SppSeg items={[['Mostrar', true], ['Ocultar', false]]}
+                  value={showBench} onChange={setShowBench} /></div>
+            </div>
+          )}
+        </div>
+
+        {win?.control ? (
+          <>
+            <details className="spp-collapsible" open>
+              <summary>Rendimiento relativo · {house} contra cada competidora{hasBenchmarks && showBench ? ' y sus benchmarks' : ''}</summary>
+              {/* Differences in whole basis points: a tenth of a point between
+                  two AFPs is noise, and the decimal only widened the columns. */}
+              <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
+                rows={visibleRows(win.relative)} withUnit order={relativeOrder} bpsDigits={0} />
+            </details>
+            <details className="spp-collapsible">
+              <summary>Rendimiento absoluto</summary>
+              {/* Returns only: the level itself is the Libro's business. */}
+              <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
+                rows={visibleRows(win.absolute)} withUnit />
+              <p className="page-sub">Días y meses en puntos básicos; de 3M en adelante en
+                porcentaje. Las ventanas móviles cuentan hacia atrás desde la fecha de control.
+                FY es el ejercicio, del 31/10 al 31/10. Las columnas diarias son el movimiento de
+                ese día, no acumulados.</p>
+            </details>
+          </>
+        ) : win == null
+          ? <div className="loading">Cargando…</div>
+          : <div className="page-sub dim">Sin datos en el libro.</div>}
       </div>
     </div>
   );

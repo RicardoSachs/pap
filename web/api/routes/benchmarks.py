@@ -29,6 +29,9 @@ class BenchmarkIn(BaseModel):
     procode: str
     display_name: str
     base_currency: str = "PEN"
+    # The house fund type this index is the benchmark of (0..3); it then
+    # shows inside that fund's block of the SPP return tables.
+    fund: int | None = None
 
 
 class ConstituentIn(BaseModel):
@@ -139,9 +142,10 @@ def get_export(procode: str,
 
 @router.post("")
 def post_benchmark(body: BenchmarkIn) -> dict:
-    """Creates a benchmark (entity + level series + portfolio) or renames it."""
+    """Creates a benchmark (entity + level series + portfolio) or renames it,
+    and assigns it to a house fund when `fund` is given."""
     try:
-        return svc.create(body.procode, body.display_name, body.base_currency)
+        return svc.create(body.procode, body.display_name, body.base_currency, body.fund)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 

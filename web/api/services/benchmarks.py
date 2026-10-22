@@ -15,15 +15,24 @@ import pandas as pd
 
 from src.db import onboard
 from src.db.connection import get_connection
+from src.db.queries import get_entity_id
 from src.pipelines.analytics.benchmark import definitions
 from src.pipelines.analytics.benchmark.materialize import SOURCE_MODEL, materialize
+from src.pipelines.prices.sbs.valor_cuota import afps
 from web.api.services.spp import read as read_book, recent_cut
 
 logger = logging.getLogger(__name__)
 
 
+def _fund_of(procode) -> int | None:
+    """The fund type behind an assigned entity's procode (SPP_X_F2 -> 2)."""
+    parsed = afps.parse_procode(procode or "")
+    return parsed[1] if parsed else None
+
+
 def _summary(conn, bench: dict) -> dict:
-    """One benchmark with its coverage: versions, stored levels, last level."""
+    """One benchmark with its coverage: versions, stored levels, last level,
+    and the house fund it is assigned to."""
     cur = conn.cursor()
     cur.execute("SELECT COUNT(*) AS n FROM dim_benchmark_version WHERE portfolio_id = %s",
                 (bench["portfolio_id"],))
@@ -47,6 +56,8 @@ def _summary(conn, bench: dict) -> dict:
         "versions": int(versions), "points": int(points),
         "from": str(first) if first else None, "to": str(last) if last else None,
         "last_level": last_level,
+        "fund": _fund_of(bench.get("assigned_procode")),
+        "assigned_to": bench.get("assigned_procode"),
     }
 
 
@@ -63,10 +74,25 @@ def get(procode: str) -> dict | None:
         return _summary(conn, bench)
 
 
-def create(procode: str, display_name: str, base_currency: str = "PEN") -> dict:
-    """Creates a benchmark or renames it (the procode is the identity)."""
+def create(procode: str, display_name: str, base_currency: str = "PEN",
+           fund: int | None = None) -> dict:
+    """
+    Creates a benchmark or renames it (the procode is the identity) and,
+    when a fund type is given, assigns it to the house's fund of that
+    type - the block of the return tables it will appear in.
+    """
     with get_connection() as conn:
         bench = definitions.ensure_benchmark(conn, procode, display_name, base_currency)
+        if fund is not None:
+            if int(fund) not in afps.funds():
+                raise ValueError(f"Unknown fund type {fund}.")
+            target = afps.procode(afps.house_afp(), int(fund))
+            entity_id = get_entity_id(conn, target, "fund")
+            if entity_id is None:
+                raise ValueError(
+                    f"{target} is not registered yet: load the valor cuota book first.")
+            definitions.assign(conn, bench["portfolio_id"], entity_id)
+            bench = definitions.benchmark_by_procode(conn, bench["procode"])
         return _summary(conn, bench)
 
 

@@ -78,18 +78,31 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
     .catch(() => setList([]));
   const current = (list || []).find((b) => b.procode === selected) || null;
 
-  // ---- create / rename ----
+  // ---- create / rename, and the house fund it is the benchmark of ----
   const [newProcode, setNewProcode] = useState('');
   const [newName, setNewName] = useState('');
+  const [newFund, setNewFund] = useState(null);
+  const [funds, setFunds] = useState([0, 1, 2, 3]);
+  const [houseName, setHouseName] = useState('');
   const [createEcho, setCreateEcho] = useState('');
+
+  // The fund follows the code: an existing benchmark brings its own, a
+  // new code ending in _F{n} proposes n; otherwise the operator picks.
+  useEffect(() => {
+    const code = newProcode.trim().toUpperCase();
+    const existing = (list || []).find((b) => b.procode === code);
+    if (existing && existing.fund != null) { setNewFund(existing.fund); return; }
+    const m = /_F(\d)$/.exec(code);
+    if (m) setNewFund(Number(m[1]));
+  }, [newProcode, list]);
 
   const createBenchmark = async () => {
     setCreateEcho('');
     const r = await apiSend('/api/benchmarks', 'POST',
-      { procode: newProcode.trim().toUpperCase(), display_name: newName.trim() });
+      { procode: newProcode.trim().toUpperCase(), display_name: newName.trim(), fund: newFund });
     if (!r.ok) { setCreateEcho({ ok: false, text: r.data.detail }); return; }
-    setCreateEcho({ ok: true, text: `${r.data.procode}: «${r.data.display_name}».` });
-    setNewProcode(''); setNewName('');
+    setCreateEcho({ ok: true, text: `${r.data.procode}: «${r.data.display_name}» · Fondo ${r.data.fund}.` });
+    setNewProcode(''); setNewName(''); setNewFund(null);
     await loadList();
     setSelected(r.data.procode);
   };
@@ -124,6 +137,11 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
     loadList();
     // A small catalog, always loaded, for the FX selectors.
     apiGet('/api/benchmarks/series?limit=200').then((j) => setFxCatalog(j.series || [])).catch(() => {});
+    // The house and its fund types, for the assignment.
+    apiGet('/api/spp/config').then((c) => {
+      if (c.funds?.length) setFunds(c.funds);
+      setHouseName(c.house || '');
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { loadVersions(selected); setSaveEcho(''); }, [selected]);
@@ -255,20 +273,22 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
       <div className="panel">
         <div className="panel-title">Benchmarks declarados</div>
         <p className="page-sub">Cada índice compuesto es un portafolio con su serie de niveles.
-          Declararlo le pone nombre y registra su serie; su canasta se define por <b>versiones</b>,
-          en el editor de abajo.</p>
+          Declararlo le pone nombre, lo vincula a un fondo de la casa (aparece en las tablas de
+          rendimiento de ese fondo, en el Panel SPP) y registra su serie; su canasta se define
+          por <b>versiones</b>, en el editor de abajo.</p>
 
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Código</th><th>Nombre</th><th className="num">Versiones</th>
+            <thead><tr><th>Código</th><th>Nombre</th><th>Fondo</th><th className="num">Versiones</th>
               <th className="num">Días calculados</th><th>Desde</th><th>Hasta</th><th className="num">Último nivel</th></tr></thead>
             <tbody>
-              {list === null && <tr><td colSpan={7} className="dim">Cargando…</td></tr>}
-              {list && !list.length && <tr><td colSpan={7} className="dim">Ningún benchmark declarado todavía.</td></tr>}
+              {list === null && <tr><td colSpan={8} className="dim">Cargando…</td></tr>}
+              {list && !list.length && <tr><td colSpan={8} className="dim">Ningún benchmark declarado todavía.</td></tr>}
               {(list || []).map((b) => (
                 <tr key={b.procode} style={b.procode === selected ? { fontWeight: 700 } : undefined}>
                   <td className="mono">{b.procode}</td>
                   <td>{b.display_name}</td>
+                  <td className={b.fund == null ? 'neg' : ''}>{b.fund == null ? 'sin vincular' : `Fondo ${b.fund}`}</td>
                   <td className="num">{nInt(b.versions)}</td>
                   <td className={`num ${b.points ? '' : 'dim'}`}>{b.points ? nInt(b.points) : 'sin calcular'}</td>
                   <td>{fDate(b.from)}</td>
@@ -290,8 +310,11 @@ export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
             <label htmlFor="b-name">Nombre</label>
             <input id="b-name" className="date-input" placeholder="p. ej. Renta mixta global 60/40"
               value={newName} onChange={(e) => setNewName(e.target.value)} /></div>
+          <div className="field"><label>Benchmark de {houseName || 'la casa'}</label>
+            <SppSeg items={funds.map((f) => [`Fondo ${f}`, f])} value={newFund} onChange={setNewFund} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>
-            <button className="btn primary" disabled={!newProcode.trim() || !newName.trim() || busy}
+            <button className="btn primary" disabled={!newProcode.trim() || !newName.trim() || newFund == null || busy}
+              title={newFund == null ? 'Elige el fondo del que es benchmark' : undefined}
               onClick={createBenchmark}>
               {(list || []).some((b) => b.procode === newProcode.trim().toUpperCase()) ? 'Renombrar' : 'Declarar benchmark'}</button></div>
         </div>

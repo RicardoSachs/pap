@@ -169,7 +169,12 @@ export default function BenchmarksPanelPage() {
 
   return (
     <div className="bm-page">
-      <h1 className="page-title">Benchmarks</h1>
+      {/* The upstream masthead: brand name over the dashboard title, then
+          the one-line subtitle, so every dashboard opens the same way. */}
+      <div className="page-brand-block">
+        <div className="page-brand-name">Profuturo Analytics</div>
+        <div className="page-dashboard-title">Benchmarks</div>
+      </div>
       <p className="page-sub">
         Índices compuestos de la mesa · {list ? `${nInt(list.length)} declarados` : '—'}
         {current?.points ? ` · ${current.display_name}: ${nInt(current.points)} fechas (${fDate(current.from)} a ${fDate(current.to)})` : ''}

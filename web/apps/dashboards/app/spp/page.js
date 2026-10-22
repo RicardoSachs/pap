@@ -374,7 +374,12 @@ export default function SppPanelPage() {
 
   return (
     <div className="spp-page">
-      <h1 className="page-title">Valor Cuota SPP</h1>
+      {/* The upstream masthead: brand name over the dashboard title, then
+          the one-line subtitle, so every dashboard opens the same way. */}
+      <div className="page-brand-block">
+        <div className="page-brand-name">Profuturo Analytics</div>
+        <div className="page-dashboard-title">Valor Cuota SPP</div>
+      </div>
       <p className="page-sub">
         Valor cuota diario del SPP · fuente SBS
         {status?.rows ? ` · ${nInt(status.rows)} fechas (${fDate(status.from)} a ${fDate(status.to)})` : ''}

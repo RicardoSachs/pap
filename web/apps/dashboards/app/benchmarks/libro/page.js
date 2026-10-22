@@ -63,7 +63,12 @@ export default function BenchmarksLibroPage() {
 
   return (
     <div className="bm-page">
-      <h1 className="page-title">Benchmarks</h1>
+      {/* The upstream masthead: brand name over the dashboard title, then
+          the one-line subtitle, so every dashboard opens the same way. */}
+      <div className="page-brand-block">
+        <div className="page-brand-name">Profuturo Analytics</div>
+        <div className="page-dashboard-title">Benchmarks</div>
+      </div>
       <p className="page-sub">
         Libro de {bench?.display_name || '—'} · {rows.length
           ? (missing ? `${nInt(rows.length)} fechas · ${nInt(missing)} sin nivel` : `${nInt(rows.length)} fechas · sin huecos`)

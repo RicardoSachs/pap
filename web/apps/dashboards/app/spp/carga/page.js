@@ -270,7 +270,12 @@ export default function SppCargaPage() {
 
   return (
     <div className="spp-page">
-      <h1 className="page-title">Valor Cuota SPP</h1>
+      {/* The upstream masthead: brand name over the dashboard title, then
+          the one-line subtitle, so every dashboard opens the same way. */}
+      <div className="page-brand-block">
+        <div className="page-brand-name">Profuturo Analytics</div>
+        <div className="page-dashboard-title">Valor Cuota SPP</div>
+      </div>
       <p className="page-sub">Registro y carga · a la izquierda se actúa, a la derecha se ve.
         Ningún archivo llega a la base sin haberse mostrado antes.</p>
 

@@ -16,7 +16,12 @@ export default function BenchmarksRegistroPage() {
 
   return (
     <div className="bm-page">
-      <h1 className="page-title">Benchmarks</h1>
+      {/* The upstream masthead: brand name over the dashboard title, then
+          the one-line subtitle, so every dashboard opens the same way. */}
+      <div className="page-brand-block">
+        <div className="page-brand-name">Profuturo Analytics</div>
+        <div className="page-dashboard-title">Benchmarks</div>
+      </div>
       <p className="page-sub">Registro · las definiciones son append-only: cada cambio es una versión
         nueva con su fecha de vigencia y su motivo, y los niveles se recalculan desde la primera.</p>
       <BenchmarkEditor busy={busy} task={task} start={start} onTaskDone={onTaskDone} />

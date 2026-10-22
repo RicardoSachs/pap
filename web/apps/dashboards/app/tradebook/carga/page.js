@@ -19,7 +19,6 @@ import { useEffect, useRef, useState } from 'react';
 import Echo from '../../../components/Echo';
 import FileUpload from '../../../components/FileUpload';
 import SppSeg from '../../../components/SppSeg';
-import TradebookTabs from '../../../components/TradebookTabs';
 import useShowAll from '../../../components/useShowAll';
 import { apiGet, apiSend } from '../../../lib/api';
 import { apiUrl, fDate, nInt } from '../../../lib/spp';
@@ -54,8 +53,6 @@ export default function TradebookCarga() {
           ? ` · ${nInt(estado.filas)} operaciones (${nInt(deTraders)} de traders, ${nInt(deFms)} de FMS)`
           : ' · el libro está vacío'}
       </p>
-      <TradebookTabs />
-
       {error && <div className="panel error">Error: {error}</div>}
 
       <AMano alCargar={cargarEstado} traders={estado?.traders || []} />

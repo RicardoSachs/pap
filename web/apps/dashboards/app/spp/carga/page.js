@@ -20,7 +20,6 @@ import Echo from '../../../components/Echo';
 import FileUpload from '../../../components/FileUpload';
 import useShowAll from '../../../components/useShowAll';
 import SppSeg from '../../../components/SppSeg';
-import SppTabs from '../../../components/SppTabs';
 import useTask from '../../../components/useTask';
 
 // Small key/value report table used by every section.
@@ -274,7 +273,6 @@ export default function SppCargaPage() {
       <h1 className="page-title">Valor Cuota SPP</h1>
       <p className="page-sub">Registro y carga · a la izquierda se actúa, a la derecha se ve.
         Ningún archivo llega a la base sin haberse mostrado antes.</p>
-      <SppTabs />
 
       {/* ===== 1 · Manual registration of valor cuota ===== */}
       <div className="spp-two-up">

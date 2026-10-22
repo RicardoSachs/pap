@@ -195,6 +195,11 @@ Comprueba: el **Panel** muestra el gráfico y las tablas de rentabilidad
 una vez cargado, y **Tradebook → Registro y carga** descarga su
 plantilla XLSX.
 
+Las vistas de cada módulo (Panel, Libro, Registro...) se cambian en la
+**barra flotante** de arriba, la misma de los demás tableros: a la
+izquierda el tipo de fondo, al centro la ventana de tiempo (1M, 3M,
+YTD, 1Y o Custom con dos fechas) y a la derecha la lista de vistas.
+
 **Benchmarks** tiene su propia entrada en el menú: **Panel** y **Libro**
 muestran los índices compuestos y **Registro** los declara y versiona
 sus canastas; el rebalanceo es manual: cada versión fija los pesos desde

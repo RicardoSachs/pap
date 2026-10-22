@@ -14,11 +14,13 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  WINDOWS, colorOf, windowStart, fDate, fTime, fmtReturn, grayLine, nInt, sign, shownValue,
+  WINDOWS, colorOf, periodWindow, windowStart, fDate, fTime, fmtReturn, grayLine, nInt, sign,
+  shownValue,
 } from '../../lib/spp';
-import BenchmarkTabs from '../../components/BenchmarkTabs';
 import DataDownload from '../../components/DataDownload';
 import SppSeg from '../../components/SppSeg';
+import { useDashboard } from '../../components/DashboardProvider';
+import { useModule } from '../../components/ModuleContext';
 import { chartTheme } from '../../lib/theme';
 
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
@@ -50,7 +52,13 @@ export default function BenchmarksPanelPage() {
   const [list, setList] = useState(null);
   const [cfg, setCfg] = useState(null);
   const [selected, setSelected] = useState('');
-  const [window_, setWindow] = useState(1);
+  // Fund type and period come from the floating pill: the fund narrows
+  // the indices to those assigned to it ('all' shows every one), the
+  // period is the chart's window.
+  const pill = useModule();
+  const dash = useDashboard();
+  const pillFund = pill?.fund ?? 'all';
+  const period = dash?.period || 'YTD';
   const [scale, setScale] = useState('base');
   const [compare, setCompare] = useState(true);
   const [levels, setLevels] = useState(null);       // the whole series, once per benchmark
@@ -66,6 +74,15 @@ export default function BenchmarksPanelPage() {
     }).catch((e) => setError(e.message));
     apiGet('/api/spp/config').then(setCfg).catch(() => {});
   }, []);
+
+  const visible = useMemo(
+    () => (list || []).filter((b) => pillFund === 'all' || b.fund === pillFund), [list, pillFund]);
+  // Keep the selection inside the fund in view.
+  useEffect(() => {
+    if (list && !visible.some((b) => b.procode === selected)) {
+      setSelected(visible.find((b) => b.points)?.procode || visible[0]?.procode || '');
+    }
+  }, [list, visible, selected]);
 
   const current = (list || []).find((b) => b.procode === selected) || null;
   const fund = current?.fund ?? fundOf(selected);
@@ -87,22 +104,27 @@ export default function BenchmarksPanelPage() {
     return () => { live = false; };
   }, [selected]);
 
-  // The window start, from the series' own last date.
+  // The window, from the pill's period counted back from the series' own
+  // last date (Custom brings its own two dates).
   const lastDate = levels?.length ? levels[levels.length - 1][0] : null;
-  const from = useMemo(() => (lastDate ? windowStart(window_, { to: lastDate }, null) : null),
-    [window_, lastDate]);
-  const windowed = useMemo(() => (levels || []).filter((p) => !from || p[0] >= from), [levels, from]);
+  const win = useMemo(() => periodWindow(period, lastDate,
+    { customFrom: dash?.customFrom, customTo: dash?.customTo }),
+  [period, lastDate, dash?.customFrom, dash?.customTo]);
+  const from = win.from;
+  const to = win.to || lastDate;
+  const windowed = useMemo(
+    () => (levels || []).filter((p) => (!from || p[0] >= from) && (!to || p[0] <= to)), [levels, from, to]);
 
   // The house fund of the same type, over the same window, for the overlay.
   useEffect(() => {
-    if (!compare || fund == null || !houseName || !from || !lastDate) { setHouse(null); return undefined; }
+    if (!compare || fund == null || !houseName || !from || !to) { setHouse(null); return undefined; }
     let live = true;
-    const q = new URLSearchParams({ fund: String(fund), afps: houseName, metric: 'valor_cuota', from, to: lastDate });
+    const q = new URLSearchParams({ fund: String(fund), afps: houseName, metric: 'valor_cuota', from, to });
     apiGet(`/api/spp/series?${q}`)
       .then((d) => { if (live) setHouse(d.series?.[0]?.points || []); })
       .catch(() => { if (live) setHouse(null); });
     return () => { live = false; };
-  }, [compare, fund, houseName, from, lastDate]);
+  }, [compare, fund, houseName, from, to]);
 
   const ct = chartTheme();
   const traces = useMemo(() => {
@@ -138,7 +160,8 @@ export default function BenchmarksPanelPage() {
   }, [windowed, house, scale, current, cfg]);
 
   const latest = versions.length ? versions[versions.length - 1] : null;
-  const windowLabel = (WINDOWS.find(([, v]) => v === window_) || ['—'])[0];
+  const windowLabel = period === 'Custom' && dash?.customFrom && dash?.customTo
+    ? `${fDate(dash.customFrom)} a ${fDate(dash.customTo)}` : period;
   const title = `${current?.display_name || '—'}`;
   const footer = scale === 'base' ? 'Expresado en base 100' : 'Expresado en nivel';
   const fileName = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -151,17 +174,14 @@ export default function BenchmarksPanelPage() {
         Índices compuestos de la mesa · {list ? `${nInt(list.length)} declarados` : '—'}
         {current?.points ? ` · ${current.display_name}: ${nInt(current.points)} fechas (${fDate(current.from)} a ${fDate(current.to)})` : ''}
       </p>
-      <BenchmarkTabs />
-
       {error && <div className="panel error">Error: {error}</div>}
 
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Benchmark</label>
-            <SppSeg items={(list || []).map((b) => [b.display_name, b.procode])}
-              value={selected} onChange={setSelected} /></div>
-          <div className="field"><label>Ventana</label>
-            <SppSeg items={WINDOWS} value={window_} onChange={setWindow} /></div>
+          <div className="field"><label>Benchmark{pillFund === 'all' ? '' : ` · Fondo ${pillFund}`}</label>
+            {visible.length
+              ? <SppSeg items={visible.map((b) => [b.display_name, b.procode])} value={selected} onChange={setSelected} />
+              : <span className="dim">Ningún benchmark vinculado a este fondo.</span>}</div>
           <div className="field"><label>Escala</label>
             <SppSeg items={[['Nivel', 'level'], ['Base 100', 'base']]} value={scale} onChange={setScale} /></div>
           {fund != null && houseName && (

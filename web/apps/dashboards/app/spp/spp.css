@@ -87,10 +87,5 @@
   background: color-mix(in srgb, var(--brand) 12%, transparent);
 }
 
-/* Tabs row with one action on the right (the PDF report). The bottom
-   margin the tabs carry (16px) moves to the row, so the filter bar does
-   not stick to them. */
-.spp-tabs-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 16px; }
-.spp-tabs-row .spp-tabs { margin-bottom: 0; }
 .btn.spp-icon { padding: 7px 9px; line-height: 0; }
 .spp-spinning { display: inline-block; font-size: 14px; line-height: 16px; }

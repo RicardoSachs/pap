@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import { apiUrl, fDate, fmtMetric, metricsOf, nInt, metricName } from '../../../lib/spp';
 import SppSeg from '../../../components/SppSeg';
-import SppTabs from '../../../components/SppTabs';
+import { useModule } from '../../../components/ModuleContext';
 
 // 0 asks the API for the whole book.
 const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['Todas', 0]];
@@ -18,7 +18,9 @@ const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['Todas', 0]];
 export default function SppLibroPage() {
   const [cfg, setCfg] = useState(null);
   const [metric, setMetric] = useState('valor_cuota');
-  const [fund, setFund] = useState('all');
+  // The fund type comes from the floating pill ('all' = every fund).
+  const pill = useModule();
+  const fund = pill?.fund == null ? 'all' : String(pill.fund);
   const [limit, setLimit] = useState(60);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -57,17 +59,11 @@ export default function SppLibroPage() {
       <p className="page-sub">
         Libro de valores cuota · {rows.length ? `${nInt(rows.length)} filas en pantalla` : '—'}
       </p>
-      <SppTabs />
-
       <div className="panel">
         <div className="controls spp-controls">
           <div className="field"><label>Métrica</label>
             <SppSeg items={[...metricsOf(cfg), ['Todas', 'all']]}
               value={metric} onChange={setMetric} /></div>
-          <div className="field"><label>Tipo de fondo</label>
-            <SppSeg items={[...(cfg?.funds || []).map((f) => [`Fondo ${f}`, String(f)]),
-              ['Todos', 'all']]}
-              value={fund} onChange={setFund} /></div>
           <div className="field"><label>Filas</label>
             <SppSeg items={LIMITS} value={limit} onChange={setLimit} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>

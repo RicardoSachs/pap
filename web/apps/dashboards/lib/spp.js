@@ -167,6 +167,29 @@ export function windowStart(w, status, refDates) {
   return h.toISOString().slice(0, 10);
 }
 
+// The chart window of our panels from the pill's quick period (the same
+// keys the upstream dashboards use). The range ends at `to` - the control
+// date, or the series' own last date - and starts the period before it.
+// YTD starts at the last close of the prior year when the reference dates
+// are known (the base the return tables use), else at 31/12. 'Custom' is
+// the pill's own two dates. Dates are built by parts: toISOString would
+// drift a day from 19:00 Lima onward.
+export function periodWindow(period, to, { customFrom, customTo, refDates } = {}) {
+  if (period === 'Custom' && customFrom && customTo) return { from: customFrom, to: customTo };
+  if (!to) return { from: null, to: null };
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const end = new Date(`${to}T00:00:00`);
+  if (period === 'YTD') {
+    if (refDates?.year) return { from: refDates.year, to };
+    return { from: iso(new Date(end.getFullYear(), 0, 0)), to };
+  }
+  const start = new Date(end);
+  if (period === '1M') start.setMonth(start.getMonth() - 1);
+  else if (period === '3M') start.setMonth(start.getMonth() - 3);
+  else start.setFullYear(start.getFullYear() - 1);          // '1Y', and anything unknown
+  return { from: iso(start), to };
+}
+
 // Cumulative alpha: the house's base-100 curve minus each competitor's, in
 // basis points, from the first date with data in EVERY series (the same rule
 // Base 100 uses: every line starts from the same zero). Only the arithmetic:

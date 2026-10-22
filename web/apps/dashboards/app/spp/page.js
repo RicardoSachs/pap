@@ -14,13 +14,14 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  COMPETITOR_GRAY, WINDOWS, alphaOf, colorOf, windowStart, fDate, fmtReturn,
+  COMPETITOR_GRAY, alphaOf, colorOf, periodWindow, fDate, fmtReturn,
   grayLine, nInt, metricName, operates as operatesCfg, houseFirst, sign,
   shownValue,
 } from '../../lib/spp';
 import SppSeg from '../../components/SppSeg';
-import SppTabs from '../../components/SppTabs';
 import DataDownload from '../../components/DataDownload';
+import { useDashboard } from '../../components/DashboardProvider';
+import { useModule } from '../../components/ModuleContext';
 import { generateReport } from './report';
 import { chartTheme } from '../../lib/theme';
 
@@ -35,8 +36,13 @@ export default function SppPanelPage() {
   // stored and the Libro still offers them; here they are the closing
   // table's columns, not a series worth a chart.
   const metric = 'valor_cuota';
-  const [fund, setFund] = useState(2);
-  const [window_, setWindow] = useState(1);
+  // Fund type and period come from the floating pill (ModuleContext and
+  // the upstream DashboardProvider): the fund governs the chart AND the
+  // monthly positions, the period the chart's window.
+  const pill = useModule();
+  const dash = useDashboard();
+  const fund = typeof pill?.fund === 'number' ? pill.fund : 2;
+  const period = dash?.period || 'YTD';
   // Base 100 by default: it is the only reading in which four funds that
   // started on different dates and bases can share one chart.
   const [scale, setScale] = useState('base');
@@ -50,7 +56,6 @@ export default function SppPanelPage() {
   // fund published); cuotas and fondo do not count for that.
   const [controlDate, setControlDate] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [posFund, setPosFund] = useState(2);
   const [posView, setPosView] = useState('table');
   // The benchmarks assigned to each fund are rows of the return tables;
   // this switch takes them off without another request.
@@ -73,6 +78,16 @@ export default function SppPanelPage() {
   }, [status?.to_complete]);
   const operates = (afp, f) => operatesCfg(cfg, afp, f);
 
+  // The fund comes from the pill: keep the AFP selection valid for it.
+  useEffect(() => {
+    if (!names.length) return;
+    setSelectedAfps((prev) => {
+      const valid = prev.filter((a) => operates(a, fund));
+      return valid.length ? valid : names.filter((a) => operates(a, fund));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fund, names]);
+
   // Historic series follows the metric/fund/window/AFP selection - and the
   // reference dates, which is what MTD/YTD actually start from. Leaving
   // win?.dates out of the deps meant the chart kept the previous month's
@@ -82,20 +97,21 @@ export default function SppPanelPage() {
   useEffect(() => {
     if (!cfg || !selectedAfps.length || !controlDate) return;
     setError(null);
-    // Year windows (1A, 3A...) count back from the control date, not from
-    // the book's last date.
-    const from = windowStart(window_, { to: controlDate }, win?.dates);
+    // The pill's period counts back from the control date, not from the
+    // book's last date; Custom brings its own two dates.
+    const { from, to } = periodWindow(period, controlDate,
+      { customFrom: dash?.customFrom, customTo: dash?.customTo, refDates: win?.dates });
     // In Alpha the house is every line's reference: it is always requested,
     // even when the operator switched it off in "AFP en pantalla".
     const afps = (scale === 'alpha' && house && !selectedAfps.includes(house))
       ? [house, ...selectedAfps] : selectedAfps;
     const q = new URLSearchParams({
-      fund: String(fund), afps: afps.join(','), metric, from, to: controlDate,
+      fund: String(fund), afps: afps.join(','), metric, from, to,
     });
     apiGet(`/api/spp/series?${q}`).then(setSeriesData).catch((e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, controlDate, metric, fund, window_, selectedAfps, scale === 'alpha',
-      win?.dates?.month, win?.dates?.year, win?.dates?.fy]);
+  }, [cfg, controlDate, metric, fund, period, dash?.customFrom, dash?.customTo, selectedAfps,
+      scale === 'alpha', win?.dates?.year]);
 
   // Windows + positions follow metric and control date.
   useEffect(() => {
@@ -240,7 +256,8 @@ export default function SppPanelPage() {
     }
   };
 
-  const windowLabel = (WINDOWS.find(([, v]) => v === window_) || ['—'])[0];
+  const windowLabel = period === 'Custom' && dash?.customFrom && dash?.customTo
+    ? `${fDate(dash.customFrom)} a ${fDate(dash.customTo)}` : period;
   // Short title - the reader already knows it is the valor cuota series -
   // and under the chart what it is expressed in. The window and the rest
   // of the selection are visible in the bar above.
@@ -331,10 +348,10 @@ export default function SppPanelPage() {
 
   // ---- Positions ---------------------------------------------------------
   const periods = pos?.periods || [];
-  const posCompeting = names.filter((a) => operates(a, posFund));
+  const posCompeting = names.filter((a) => operates(a, fund));
   const posTotal = Math.max(2, posCompeting.length);
   const posTraces = useMemo(() => names.map((afp) => {
-    const row = (pos?.rows || []).find((r) => r.fund === posFund && r.afp === afp);
+    const row = (pos?.rows || []).find((r) => r.fund === fund && r.afp === afp);
     if (!row) return null;
     const xs = []; const ys = [];
     periods.forEach((p) => {
@@ -353,7 +370,7 @@ export default function SppPanelPage() {
       hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }).filter(Boolean), [pos, posFund, cfg, house, names, periods]);
+  }).filter(Boolean), [pos, fund, cfg, house, names, periods]);
 
   return (
     <div className="spp-page">
@@ -362,28 +379,6 @@ export default function SppPanelPage() {
         Valor cuota diario del SPP · fuente SBS
         {status?.rows ? ` · ${nInt(status.rows)} fechas (${fDate(status.from)} a ${fDate(status.to)})` : ''}
       </p>
-      <div className="spp-tabs-row">
-        <SppTabs />
-        {/* The PDF report: a single icon, to the right of the tabs. It is
-            what one takes away from the page, not a filter; the text goes
-            in the tooltip and in aria-label. Relative table + alpha YTD/FY
-            per fund, at the control date, built in the browser. */}
-        <button className="btn primary spp-icon" onClick={pdfReport}
-          disabled={generating || !win?.control}
-          aria-label="Descargar el reporte de rentabilidad en PDF"
-          title={generating ? 'Generando el reporte…'
-            : 'Reporte de rentabilidad (PDF): tabla relativa + alpha YTD y FY de cada fondo, a la fecha de control'}>
-          {generating ? (
-            <span className="spp-spinning">…</span>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M8 2v8" /><path d="M4.5 6.5 8 10l3.5-3.5" /><path d="M2.5 12.5v1h11v-1" />
-            </svg>
-          )}
-        </button>
-      </div>
-
       {/* An error shows AS A BAND, not replacing the page: it used to take
           away the controls with which the operator could fix the selection
           that caused it, and nothing cleared it but F5. */}
@@ -395,16 +390,6 @@ export default function SppPanelPage() {
             <input className="date-input" type="date" value={controlDate}
               max={status?.to || undefined}
               onChange={(e) => e.target.value && setControlDate(e.target.value)} /></div>
-          <div className="field"><label>Tipo de fondo</label>
-            <SppSeg items={(cfg?.funds || []).map((f) => [`Fondo ${f}`, f])}
-              value={fund}
-              onChange={(v) => {
-                setFund(v);
-                const valid = selectedAfps.filter((a) => operates(a, v));
-                setSelectedAfps(valid.length ? valid : names.filter((a) => operates(a, v)));
-              }} /></div>
-          <div className="field"><label>Ventana</label>
-            <SppSeg items={WINDOWS} value={window_} onChange={setWindow} /></div>
           <div className="field"><label>Escala</label>
             <SppSeg items={[['Nivel', 'level'], ['Base 100', 'base'], ['Alpha', 'alpha']]}
               value={scale} onChange={setScale} /></div>
@@ -470,23 +455,20 @@ export default function SppPanelPage() {
           without a visible cut the reader keeps changing the top filters and
           wondering why the tables do not move. */}
       <div className="spp-divider" role="separator">
-        <span>Fondo, ventana, escala y AFP mandan hasta aquí · la fecha de control manda en todo el panel</span>
+        <span>Escala y AFP mandan hasta aquí · la fecha de control manda en todo el panel · el fondo y la ventana se eligen en la barra de arriba</span>
       </div>
 
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
           <div className="panel-title">Posiciones mensuales por rendimiento</div>
           <div className="controls" style={{ margin: 0 }}>
-            <div className="field"><label>Tipo de fondo</label>
-              <SppSeg items={(cfg?.funds || []).map((f) => [`Fondo ${f}`, f])}
-                value={posFund} onChange={setPosFund} /></div>
             <div className="field"><label>Vista</label>
               <SppSeg items={[['Tabla', 'table'], ['Gráfico', 'chart']]}
                 value={posView} onChange={setPosView} /></div>
             <div className="field"><label aria-hidden="true">&nbsp;</label>
               {/* Table and chart are the same ranks: one CSV for both. */}
               <DataDownload traces={posTraces} xAxis="periodo"
-                name={`posiciones-fondo-${posFund}`} /></div>
+                name={`posiciones-fondo-${fund}`} /></div>
           </div>
         </div>
         {/* One space, two readings of the same ranks: the heat table says
@@ -521,7 +503,7 @@ export default function SppPanelPage() {
                   heat in its brand ramp; competitors share ONE gray ramp so
                   intensity reads as rank everywhere, not as identity. */}
               {houseFirst(cfg, posCompeting).map((afp) => {
-                const row = (pos?.rows || []).find((r) => r.fund === posFund && r.afp === afp);
+                const row = (pos?.rows || []).find((r) => r.fund === fund && r.afp === afp);
                 if (!row) return null;
                 const isHouse = afp === house;
                 const base = isHouse ? colorOf(cfg, afp, true) : COMPETITOR_GRAY;
@@ -568,13 +550,32 @@ export default function SppPanelPage() {
               </p>
             )}
           </div>
-          {hasBenchmarks && (
-            <div className="controls" style={{ margin: 0 }}>
+          <div className="controls" style={{ margin: 0 }}>
+            {hasBenchmarks && (
               <div className="field"><label>Benchmarks</label>
                 <SppSeg items={[['Mostrar', true], ['Ocultar', false]]}
                   value={showBench} onChange={setShowBench} /></div>
-            </div>
-          )}
+            )}
+            <div className="field"><label aria-hidden="true">&nbsp;</label>
+              {/* The PDF report: what one takes away from these tables - the
+                  relative table + alpha YTD/FY per fund, at the control date,
+                  built in the browser. A single icon; the text goes in the
+                  tooltip and in aria-label. */}
+              <button className="btn primary spp-icon" onClick={pdfReport}
+                disabled={generating || !win?.control}
+                aria-label="Descargar el reporte de rentabilidad en PDF"
+                title={generating ? 'Generando el reporte…'
+                  : 'Reporte de rentabilidad (PDF): tabla relativa + alpha YTD y FY de cada fondo, a la fecha de control'}>
+                {generating ? (
+                  <span className="spp-spinning">…</span>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M8 2v8" /><path d="M4.5 6.5 8 10l3.5-3.5" /><path d="M2.5 12.5v1h11v-1" />
+                  </svg>
+                )}
+              </button></div>
+          </div>
         </div>
 
         {win?.control ? (

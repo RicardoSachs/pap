@@ -10,8 +10,9 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
-// OURS: which routes belong to our dashboards, in one place.
+// OURS: on our dashboards the pill is ours - same clothes, our controls.
 import { isOurDashboard } from '../lib/routes';
+import ModulePill from './ModulePill';
 
 const SOURCES = [['bloomberg', 'Bloomberg'], ['fms', 'FMS']];
 
@@ -34,10 +35,9 @@ export default function ContextPill() {
   }, [open]);
 
   if (!d) return null;
-  // OURS: the valor cuota monitor and the Tradebook read no portfolio,
-  // period or source - they have their own controls - so the whole pill
-  // would be a dead control that looks like it moves the page.
-  if (isOurDashboard(path)) return null;
+  // OURS: our dashboards read no portfolio or source; their pill carries
+  // the fund type, the same quick period and the module's views.
+  if (isOurDashboard(path)) return <ModulePill />;
   const showFund = !(path === '/comparacion' || path === '/comparacion/');
   const allPeriods = [...d.periods, 'Custom'];
   const fundLabel = d.portfolio?.display_name || (d.portfolios.length ? '—' : 'Loading…');

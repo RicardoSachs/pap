@@ -16,7 +16,8 @@ import Link from 'next/link';
 
 import SppSeg from '../../components/SppSeg';
 import DataDownload from '../../components/DataDownload';
-import TradebookTabs from '../../components/TradebookTabs';
+import { useDashboard } from '../../components/DashboardProvider';
+import { useModule } from '../../components/ModuleContext';
 import useShowAll from '../../components/useShowAll';
 import { apiGet } from '../../lib/api';
 import { fDate, nInt } from '../../lib/spp';
@@ -56,7 +57,14 @@ export default function TradebookPanel() {
   const [error, setError] = useState(null);
 
   const [periodo, setPeriodo] = useState('mes');
-  const [fondo, setFondo] = useState('');
+  // Fund and date range come from the floating pill: the fund type
+  // ('all' = every fund) and the quick period shared with the other
+  // dashboards (Custom for an explicit range).
+  const pill = useModule();
+  const dash = useDashboard();
+  const fondo = pill?.fund == null || pill.fund === 'all' ? '' : pill.fund;
+  const desde = dash?.range?.from || '';
+  const hasta = dash?.range?.to || '';
   const [lado, setLado] = useState('');
   const [moneda, setMoneda] = useState('');
   // Arranca en el registro de traders, que es el detallado. Si no hay nada
@@ -64,17 +72,13 @@ export default function TradebookPanel() {
   // vacio teniendo datos en el otro haria pensar que no hay nada.
   const [libro, setLibro] = useState('traders');
   const [trader, setTrader] = useState('');
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
 
-  // El rango inicial lo decide el backend sobre lo que HAY en el libro, no
-  // sobre la fecha de hoy: un libro que se dejó de cargar en marzo abriría
-  // vacío, y el operador leería "sin operaciones" teniendo datos.
+  // La moneda y el libro iniciales los decide el backend sobre lo que HAY
+  // en el libro; el rango de fechas viene de la barra flotante (el periodo
+  // compartido con los demás módulos, o Custom para un rango explícito).
   useEffect(() => {
     apiGet('/api/tradebook/estado').then((e) => {
       setEstado(e);
-      setDesde(e.rango?.desde || '');
-      setHasta(e.rango?.hasta || '');
       if (e.monedas?.length) {
         setMoneda(e.monedas.includes(MONEDA_CASA) ? MONEDA_CASA : e.monedas[0]);
       }
@@ -141,8 +145,6 @@ export default function TradebookPanel() {
           ? ` · ${nInt(estado.filas)} operaciones (${fDate(estado.desde)} a ${fDate(estado.hasta)})`
           : ''}
       </p>
-      <TradebookTabs />
-
       {error && <div className="panel error">Error: {error}</div>}
 
       {vacio ? (
@@ -159,19 +161,10 @@ export default function TradebookPanel() {
         <>
           <div className="panel">
             <div className="controls spp-controls">
-              <div className="field"><label>Desde</label>
-                <input className="date-input" type="date" value={desde}
-                  onChange={(e) => setDesde(e.target.value)} /></div>
-              <div className="field"><label>Hasta</label>
-                <input className="date-input" type="date" value={hasta}
-                  onChange={(e) => setHasta(e.target.value)} /></div>
               <div className="field"><label>Agrupar por</label>
                 <SppSeg items={PERIODOS} value={periodo} onChange={setPeriodo} /></div>
               <div className="field"><label>Lado</label>
                 <SppSeg items={LADOS} value={lado} onChange={setLado} /></div>
-              <div className="field"><label>Fondo</label>
-                <SppSeg items={[['Todos', ''], ...(estado?.fondos || []).map((f) => [`Fondo ${f}`, f])]}
-                  value={fondo} onChange={setFondo} /></div>
               {(estado?.monedas || []).length > 1 && (
                 <div className="field"><label>Moneda</label>
                   <SppSeg items={(estado.monedas || []).map((m) => [m, m])}
@@ -193,7 +186,7 @@ export default function TradebookPanel() {
             {/* Decir la moneda aquí no es decorativo: sin ella las cifras de
                 abajo son ambiguas, y con varias cargadas serían engañosas. */}
             <p className="page-sub dim" style={{ marginTop: 4 }}>
-              Cifras en {moneda || 'todas las monedas'}. Los montos no se
+              Del {fDate(desde)} al {fDate(hasta)} · cifras en {moneda || 'todas las monedas'}. Los montos no se
               convierten entre monedas. Las cifras son del{' '}
               {libro === 'fms' ? 'reporte de FMS' : 'registro de los traders'}:
               las dos vías traen las mismas operaciones a distinto nivel de

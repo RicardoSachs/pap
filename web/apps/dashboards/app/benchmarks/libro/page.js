@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react';
 import { apiGet } from '../../../lib/api';
 import { apiUrl, fDate, nInt } from '../../../lib/spp';
-import BenchmarkTabs from '../../../components/BenchmarkTabs';
+import { useModule } from '../../../components/ModuleContext';
 import SppSeg from '../../../components/SppSeg';
 
 // 0 asks the API for the whole book.
@@ -32,6 +32,18 @@ export default function BenchmarksLibroPage() {
       setSelected((s) => s || items.find((b) => b.points)?.procode || items[0]?.procode || '');
     }).catch((e) => setError(e.message));
   }, []);
+
+  // The pill's fund narrows the books to the indices assigned to it
+  // ('all' = every one); the selection stays inside it.
+  const pill = useModule();
+  const pillFund = pill?.fund ?? 'all';
+  const visible = (list || []).filter((b) => pillFund === 'all' || b.fund === pillFund);
+  useEffect(() => {
+    if (list && !visible.some((b) => b.procode === selected)) {
+      setSelected(visible.find((b) => b.points)?.procode || visible[0]?.procode || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, pillFund]);
 
   useEffect(() => {
     if (!selected) return undefined;
@@ -57,13 +69,12 @@ export default function BenchmarksLibroPage() {
           ? (missing ? `${nInt(rows.length)} fechas · ${nInt(missing)} sin nivel` : `${nInt(rows.length)} fechas · sin huecos`)
           : '—'}
       </p>
-      <BenchmarkTabs />
-
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Benchmark</label>
-            <SppSeg items={(list || []).map((b) => [b.display_name, b.procode])}
-              value={selected} onChange={setSelected} /></div>
+          <div className="field"><label>Benchmark{pillFund === 'all' ? '' : ` · Fondo ${pillFund}`}</label>
+            {visible.length
+              ? <SppSeg items={visible.map((b) => [b.display_name, b.procode])} value={selected} onChange={setSelected} />
+              : <span className="dim">Ningún benchmark vinculado a este fondo.</span>}</div>
           <div className="field"><label>Filas</label>
             <SppSeg items={LIMITS} value={limit} onChange={setLimit} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>

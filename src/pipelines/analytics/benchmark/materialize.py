@@ -46,6 +46,7 @@
 
 import datetime as dt
 import logging
+from bisect import bisect_right
 
 from src.db.queries import update_series_run_metadata
 from src.pipelines.analytics.benchmark import definitions
@@ -101,14 +102,13 @@ UPSERT_HOLDING = """
 
 # ---- The arithmetic: chaining with drift ------------------------------
 
-def _price_at(prices: dict, day) -> float | None:
-    """Forward-filled price: the last quote at or before `day`."""
-    px = None
-    for d in sorted(prices):
-        if d > day:
-            break
-        px = prices[d]
-    return px
+def _price_at(prices: dict, dates: list, day) -> float | None:
+    """Forward-filled price: the last quote at or before `day`.
+    `dates` is sorted(prices), computed once per constituent by the
+    caller: a binary search per lookup instead of a sort, which made
+    chain() quadratic in dates (4.7 s for a 1993-onward benchmark)."""
+    i = bisect_right(dates, day)
+    return prices[dates[i - 1]] if i else None
 
 
 def chain(periods: list[dict], base: float = BASE_LEVEL) -> list[dict]:
@@ -141,6 +141,15 @@ def chain(periods: list[dict], base: float = BASE_LEVEL) -> list[dict]:
     """
     rows: dict = {}
     level = base
+    # sorted(prices) once per price dict, shared across the synthetic
+    # re-strike periods that reuse the same constituent dicts.
+    sorted_dates: dict[int, list] = {}
+
+    def dates_of(c: dict) -> list:
+        key = id(c["prices"])
+        if key not in sorted_dates:
+            sorted_dates[key] = sorted(c["prices"])
+        return sorted_dates[key]
 
     for k, period in enumerate(periods):
         start = period["from"]
@@ -169,7 +178,7 @@ def chain(periods: list[dict], base: float = BASE_LEVEL) -> list[dict]:
 
         holdings = []
         for c in constituents:
-            p0 = _price_at(c["prices"], start)
+            p0 = _price_at(c["prices"], dates_of(c), start)
             if p0 is None or p0 <= 0:
                 raise ValueError(
                     f"'{c['label']}' has no price at or before the "
@@ -180,7 +189,7 @@ def chain(periods: list[dict], base: float = BASE_LEVEL) -> list[dict]:
             marked = []
             value = 0.0
             for c, units in holdings:
-                px = _price_at(c["prices"], d)
+                px = _price_at(c["prices"], dates_of(c), d)
                 if px is None:
                     raise ValueError(
                         f"'{c['label']}' has no price at or before {d}.")

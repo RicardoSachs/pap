@@ -10,12 +10,18 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
+// OURS: our dashboards have sub-routes (/spp/libro, /benchmarks/registro) and
+// an exact match would leave the menu dark inside them.
+import { activeRoute } from '../lib/routes';
 
 const ITEMS = [
   { href: '/prices/', label: 'Prices', icon: '↗' },
   { href: '/positioning/', label: 'Positioning', icon: '▦' },
   { href: '/contribution/', label: 'Contribution', icon: '≡' },
   { href: '/comparacion/', label: 'Comparison', icon: '⇄' },
+  // OURS: the dashboards that do not exist upstream.
+  { href: '/spp/', label: 'SPP Unit Value', icon: '◷' },
+  { href: '/benchmarks/', label: 'Benchmarks', icon: '◈' },
 ];
 const SOON = [
   { label: 'Attribution', icon: '⊞' },
@@ -27,7 +33,7 @@ export default function Sidebar({ expanded, onToggle }) {
   const params = useSearchParams();
   const qs = params.toString();
   const q = qs ? `?${qs}` : '';
-  const isActive = (href) => path === href || path === href.replace(/\/$/, '');
+  const isActive = (href) => activeRoute(path, href);   // OURS: includes sub-routes
 
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : ''}`}>

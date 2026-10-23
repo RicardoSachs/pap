@@ -14,6 +14,7 @@ import { createContext, useContext, useEffect, useState, useMemo, useCallback } 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { apiGet } from '../lib/api';
 import { periodToRange, PERIODS, DEFAULT_PERIOD } from '../lib/period';
+import { isOurDashboard } from '../lib/routes';
 
 const Ctx = createContext(null);
 export const useDashboard = () => useContext(Ctx);
@@ -60,6 +61,11 @@ export default function DashboardProvider({ children }) {
   useEffect(() => {
     if (!hydrated) return;
     try { localStorage.setItem(LS_KEY, JSON.stringify(ctx)); } catch { /* ignore */ }
+    // OURS: the SPP monitor reads no portfolio, period or source, so
+    // stamping them on its URL only produces links and bookmarks loaded
+    // with parameters none of its views reads. The localStorage above
+    // keeps storing the context for the other dashboards.
+    if (isOurDashboard(pathname)) return;
     const sp = new URLSearchParams();
     if (ctx.portfolioId) sp.set('portfolio', ctx.portfolioId);
     sp.set('period', ctx.period);

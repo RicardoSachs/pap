@@ -25,4 +25,23 @@ pipelines:
           - FUND_ASSET_CLASS_FOCUS
           - FUND_GEO_FOCUS
           - FUND_OBJECTIVE_LONG
+  prices:
+    sbs:
+      discovery:
+        # SBS tipo_instrumento values Bloomberg does not cover. Discovery
+        # registers these as entities like any other (they have SBS prices
+        # and the funds hold them) but does NOT write the '/isin/' Bloomberg
+        # parsekyable alias, so dim enrichment never asks about them
+        # (docs/BLOOMBERG_SBS.md §2). Matched case-insensitively with all
+        # whitespace removed, so 'FON. INV. TRAD' and 'FON.INV.TRAD' are one.
+        # These types also map to the first two digits of codigo_sbs.
+        no_bloomberg_coverage:
+          - CD BCRP          # central bank certificates of deposit
+          - CDV BCRP
+          - CD BCRP R
+          - CDLD BCRP
+          - FMAEL            # local alternative / traditional funds
+          - FMAE
+          - FON. INV. TRAD
+          - FON.INV.ALT
         

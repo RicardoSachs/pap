@@ -46,6 +46,26 @@ def test_normal_instrument_gets_isin_parsekyable_alias(monkeypatch):
     assert ("codigo_sbs", "123", "sbs", True) in calls
 
 
+def test_uncovered_instrument_type_gets_no_bridge(monkeypatch):
+    calls = []
+    _patch_registry(monkeypatch, calls)
+    row = pd.Series({"codigo_sbs": "0101", "isin": "PE2000000002",
+                     "tipo_instrumento": "CD BCRP", "emisor": "BCRP", "moneda": "PEN"})
+    discovery._register_normal_instrument(
+        _Conn(), row, ["PX_LAST"], date(2026, 1, 2), "prices", "sbs", "daily")
+
+    assert not [c for c in calls if c[0] == "parsekyable"]
+    assert ("isin", "PE2000000002", "internal", False) in calls   # still registered
+
+
+def test_coverage_match_ignores_case_and_spacing():
+    assert not discovery.bloomberg_covered("fon.inv.trad")
+    assert not discovery.bloomberg_covered("FON. INV. TRAD")
+    assert not discovery.bloomberg_covered(" CDLD BCRP ")
+    assert discovery.bloomberg_covered("AC")
+    assert discovery.bloomberg_covered(None)
+
+
 def test_x_isin_instrument_gets_no_bridge(monkeypatch):
     calls = []
     _patch_registry(monkeypatch, calls)

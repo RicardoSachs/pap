@@ -29,13 +29,13 @@ def iso_date(raw) -> str | None:
 
 def is_yes(flag: str | None) -> bool:
     """The forms' truthy convention for flags sent as text."""
-    return str(flag or "").lower() in ("1", "true", "si", "yes")
+    return str(flag or "").lower() in ("1", "true", "yes", "si")
 
 
 def _too_big(size: int) -> HTTPException:
     return HTTPException(
         status_code=413,
-        detail=f"El archivo pesa {size / 1e6:.1f} MB; el limite son "
+        detail=f"The file weighs {size / 1e6:.1f} MB; the limit is "
                f"{MAX_UPLOAD_BYTES // 10**6} MB.")
 
 
@@ -50,7 +50,7 @@ async def read_upload(upload: UploadFile) -> bytes:
         raise _too_big(upload.size)
     raw = await upload.read()
     if not raw:
-        raise HTTPException(status_code=400, detail="No llego ningun archivo.")
+        raise HTTPException(status_code=400, detail="No file arrived.")
     if len(raw) > MAX_UPLOAD_BYTES:
         raise _too_big(len(raw))
     return raw

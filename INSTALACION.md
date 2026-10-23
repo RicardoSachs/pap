@@ -191,17 +191,17 @@ dashboard sin compilar). Si la API muere al arrancar, su ventana queda
 abierta con el error.
 
 Comprueba: el **Panel** muestra el gráfico y las tablas de rentabilidad
-(vacías hasta cargar el histórico), **Libro** trae fechas desde 1993
+(vacías hasta cargar el histórico), **Book** trae fechas desde 1993
 una vez cargado, y **Tradebook → Registro y carga** descarga su
 plantilla XLSX.
 
-Las vistas de cada módulo (Panel, Libro, Registro...) se cambian en la
+Las vistas de cada módulo (Panel, Book, Registry...) se cambian en la
 **barra flotante** de arriba, la misma de los demás tableros: a la
 izquierda el tipo de fondo, al centro la ventana de tiempo (1M, 3M,
 YTD, 1Y o Custom con dos fechas) y a la derecha la lista de vistas.
 
-**Benchmarks** tiene su propia entrada en el menú: **Panel** y **Libro**
-muestran los índices compuestos y **Registro** los declara y versiona
+**Benchmarks** tiene su propia entrada en el menú: **Panel** y **Book**
+muestran los índices compuestos y **Registry** los declara y versiona
 sus canastas; el rebalanceo es manual: cada versión fija los pesos desde
 su fecha de vigencia hasta la siguiente. La canasta se arma buscando series de
 precios por código, nombre, ticker o ISIN entre todo lo que los

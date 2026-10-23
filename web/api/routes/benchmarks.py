@@ -64,7 +64,7 @@ class SeriesIn(BaseModel):
 
 
 def _not_found(procode: str) -> HTTPException:
-    return HTTPException(status_code=404, detail=f"No hay un benchmark llamado {procode}.")
+    return HTTPException(status_code=404, detail=f"No benchmark named {procode}.")
 
 
 # ---- Reads ---------------------------------------------------------------------
@@ -183,9 +183,9 @@ def post_materialize(procode: str) -> dict:
     if not bench["versions"]:
         raise HTTPException(
             status_code=400,
-            detail=f"{bench['display_name']} no tiene ninguna version todavia: "
-                   "declara su canasta antes de recalcular.")
-    action = f"recalculo de {bench['display_name']}"
+            detail=f"{bench['display_name']} has no version yet: "
+                   "declare its basket before rebuilding.")
+    action = f"rebuild of {bench['display_name']}"
     try:
         task.launch(action, task.with_log(svc.rebuild, procode=procode))
     except RuntimeError as exc:

@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../lib/api';
 import { apiUrl } from '../lib/spp';
 
-export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
+export default function FileFormat({ formatKey, label = 'See the format' }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -69,13 +69,13 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
           aria-label={data?.title || label}>
           <div className="fmt-window" ref={box}>
             <div className="fmt-header">
-              <div className="fmt-title">{data?.title || 'Formato del archivo'}</div>
-              <button type="button" className="fmt-close" aria-label="Cerrar"
+              <div className="fmt-title">{data?.title || 'File format'}</div>
+              <button type="button" className="fmt-close" aria-label="Close"
                 onClick={() => setOpen(false)}>×</button>
             </div>
 
-            {error && <p className="fmt-summary neg">No se pudo leer el formato: {error}</p>}
-            {!data && !error && <div className="loading">Cargando…</div>}
+            {error && <p className="fmt-summary neg">The format could not be read: {error}</p>}
+            {!data && !error && <div className="loading">Loading…</div>}
 
             {data && (
               <div className="fmt-body">
@@ -100,8 +100,8 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
                       </table>
                     </div>
                     <p className="fmt-footer">
-                      <span className="fmt-req">*</span> obligatoria. El orden de
-                      las columnas da igual y las que no se reconozcan se ignoran.
+                      <span className="fmt-req">*</span> required. Column order does not
+                      matter and unrecognized columns are ignored.
                     </p>
                   </>
                 ) : (
@@ -115,7 +115,7 @@ export default function FileFormat({ formatKey, label = 'Ver el formato' }) {
                 {data.template && (
                   <a className="btn primary" href={apiUrl(data.template)}
                     style={{ marginTop: 4, display: 'inline-block' }}>
-                    ↓ Bajar la plantilla · XLSX
+                    ↓ Download the template · XLSX
                   </a>
                 )}
               </div>

@@ -7,6 +7,8 @@
 //
 // The interface names no AFP: names, colors, the house and which funds each
 // one operates all come from /api/spp/config, loaded before anything else.
+// Labels are English, like the upstream dashboards; AFP names and the
+// metric keys are the SBS's own and stay as they come.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -33,7 +35,7 @@ export default function SppPanelPage() {
   const [error, setError] = useState(null);
 
   // The panel reads ONE metric: the price. Fondo (S/) and cuotas are still
-  // stored and the Libro still offers them; here they are the closing
+  // stored and the Book still offers them; here they are the closing
   // table's columns, not a series worth a chart.
   const metric = 'valor_cuota';
   // Fund type and period come from the floating pill (ModuleContext and
@@ -102,7 +104,7 @@ export default function SppPanelPage() {
     const { from, to } = periodWindow(period, controlDate,
       { customFrom: dash?.customFrom, customTo: dash?.customTo, refDates: win?.dates });
     // In Alpha the house is every line's reference: it is always requested,
-    // even when the operator switched it off in "AFP en pantalla".
+    // even when the operator switched it off in "AFPs on screen".
     const afps = (scale === 'alpha' && house && !selectedAfps.includes(house))
       ? [house, ...selectedAfps] : selectedAfps;
     const q = new URLSearchParams({
@@ -189,8 +191,8 @@ export default function SppPanelPage() {
         line: { color, width: 2 },
         // In bps the cumulative IS the line's value; the daily, its step.
         customdata: cumulativeAndDaily(c.y, bps, (y) => y),
-        hovertemplate: `<b>${c.afp}</b><br>Alpha acumulado  %{customdata[0]}`
-          + '<br>Del día  %{customdata[1]}<extra></extra>',
+        hovertemplate: `<b>${c.afp}</b><br>Cumulative alpha  %{customdata[0]}`
+          + '<br>Day  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
     });
@@ -217,7 +219,7 @@ export default function SppPanelPage() {
         base = pts.length ? pts[0][1] : null;
       }
       // Cumulative return since the first point on screen and the day's
-      // change, on the raw valor cuota: the same in Nivel and Base 100.
+      // change, on the raw valor cuota: the same in Level and Base 100.
       const raw = pts.map((p) => p[1]);
       const start = raw[0];
       const returns = raw.map((v, i) => [
@@ -233,8 +235,8 @@ export default function SppPanelPage() {
         legendrank: houseFirst(cfg, onScreen).indexOf(s.afp) + 1,
         line: { color, width: isHouse ? 2.8 : 1.6 },
         customdata: returns,
-        hovertemplate: `<b>${s.afp}</b><br>Rent. acumulada  %{customdata[0]}`
-          + '<br>Rent. diaria  %{customdata[1]}<extra></extra>',
+        hovertemplate: `<b>${s.afp}</b><br>Cumulative return  %{customdata[0]}`
+          + '<br>Daily return  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
     });
@@ -250,23 +252,23 @@ export default function SppPanelPage() {
       // The PDF prints what is on screen: benchmarks only when shown.
       await generateReport({ cfg, windows: { ...win, relative: visibleRows(win.relative) } });
     } catch (e) {
-      setError(`No se pudo generar el reporte: ${e.message}`);
+      setError(`The report could not be generated: ${e.message}`);
     } finally {
       setGenerating(false);
     }
   };
 
   const windowLabel = period === 'Custom' && dash?.customFrom && dash?.customTo
-    ? `${fDate(dash.customFrom)} a ${fDate(dash.customTo)}` : period;
+    ? `${fDate(dash.customFrom)} to ${fDate(dash.customTo)}` : period;
   // Short title - the reader already knows it is the valor cuota series -
   // and under the chart what it is expressed in. The window and the rest
   // of the selection are visible in the bar above.
-  const seriesTitle = scale === 'alpha' ? `Alpha F${fund}` : `Evolución F${fund}`;
+  const seriesTitle = scale === 'alpha' ? `Alpha F${fund}` : `Unit value F${fund}`;
   const seriesFooter = scale === 'alpha'
-    ? `Expresado en puntos básicos: ${house} menos cada AFP`
-    : scale === 'base' ? 'Expresado en base 100'
-      : `Expresado en ${metricName(cfg, metric).toLowerCase()}`;
-  // "Evolución F2 · Expresado en base 100 · 1A" -> a file name
+    ? `In basis points: ${house} minus each AFP`
+    : scale === 'base' ? 'Rebased to 100'
+      : `In ${metricName(cfg, metric).toLowerCase()}`;
+  // "Unit value F2 · Rebased to 100 · 1Y" -> a file name
   const fileNameOf = (t) => t.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -301,7 +303,7 @@ export default function SppPanelPage() {
             <col className="spp-col-afp" />
             {cols.map((c) => <col key={c[0]} />)}
           </colgroup>
-          <thead><tr><th>Fondo</th><th className="spp-afp">AFP</th>
+          <thead><tr><th>Fund</th><th className="spp-afp">AFP</th>
             {cols.map((c) => <th key={c[0]} className={breakClass(c[0]).trim() || undefined}>{c[1]}</th>)}</tr></thead>
           <tbody>
             {funds.map((f) => {
@@ -320,7 +322,7 @@ export default function SppPanelPage() {
                   <tr key={`f${f}-${r.afp}`}
                     className={`${i === 0 ? 'spp-block' : ''} ${isHouse ? 'spp-house' : ''} ${r.benchmark ? 'spp-benchmark' : ''}`.trim()}>
                     {i === 0 && (
-                      <td rowSpan={ofFund.length} className="spp-fund">Fondo {f}</td>
+                      <td rowSpan={ofFund.length} className="spp-fund">Fund {f}</td>
                     )}
                     {/* With the fund in front this is no longer the row's
                         first cell and the global sheet would right-align it. */}
@@ -367,7 +369,7 @@ export default function SppPanelPage() {
       legendrank: houseFirst(cfg, posCompeting).indexOf(afp) + 1,
       line: { color, width: isHouse ? 3.2 : 2 },
       marker: { size: isHouse ? 9 : 7 },
-      hovertemplate: `<b>${afp}</b> · %{x}: puesto %{y}<extra></extra>`,
+      hovertemplate: `<b>${afp}</b> · %{x}: rank %{y}<extra></extra>`,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }).filter(Boolean), [pos, fund, cfg, house, names, periods]);
@@ -378,11 +380,11 @@ export default function SppPanelPage() {
           the one-line subtitle, so every dashboard opens the same way. */}
       <div className="page-brand-block">
         <div className="page-brand-name">Profuturo Analytics</div>
-        <div className="page-dashboard-title">Valor Cuota SPP</div>
+        <div className="page-dashboard-title">SPP Unit Value</div>
       </div>
       <p className="page-sub">
-        Valor cuota diario del SPP · fuente SBS
-        {status?.rows ? ` · ${nInt(status.rows)} fechas (${fDate(status.from)} a ${fDate(status.to)})` : ''}
+        Daily unit value of the SPP funds · SBS source
+        {status?.rows ? ` · ${nInt(status.rows)} dates (${fDate(status.from)} to ${fDate(status.to)})` : ''}
       </p>
       {/* An error shows AS A BAND, not replacing the page: it used to take
           away the controls with which the operator could fix the selection
@@ -391,14 +393,14 @@ export default function SppPanelPage() {
 
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Fecha de control</label>
+          <div className="field"><label>Control date</label>
             <input className="date-input" type="date" value={controlDate}
               max={status?.to || undefined}
               onChange={(e) => e.target.value && setControlDate(e.target.value)} /></div>
-          <div className="field"><label>Escala</label>
-            <SppSeg items={[['Nivel', 'level'], ['Base 100', 'base'], ['Alpha', 'alpha']]}
+          <div className="field"><label>Scale</label>
+            <SppSeg items={[['Level', 'level'], ['Base 100', 'base'], ['Alpha', 'alpha']]}
               value={scale} onChange={setScale} /></div>
-          <div className="field"><label>AFP en pantalla</label>
+          <div className="field"><label>AFPs on screen</label>
             <SppSeg multi items={names.filter((a) => operates(a, fund)).map((a) => [a, a])}
               value={selectedAfps}
               // Over the fund's COMPLETE list, not the selection: so each
@@ -437,7 +439,7 @@ export default function SppPanelPage() {
               xaxis: { hoverformat: '%d %b %Y' },
               yaxis: {
                 type: 'linear',
-                title: scale === 'alpha' ? 'Alpha acumulado (bps)'
+                title: scale === 'alpha' ? 'Cumulative alpha (bps)'
                   : scale === 'base' ? 'Base 100' : metricName(cfg, metric),
                 // In Alpha the zero IS the house: the line marking it is the
                 // reading reference, not noise.
@@ -448,8 +450,8 @@ export default function SppPanelPage() {
             }}
           />
         ) : seriesData == null
-          ? <div className="loading">Cargando…</div>
-          : <p className="page-sub dim">Sin datos para esta selección.</p>}
+          ? <div className="loading">Loading…</div>
+          : <p className="page-sub dim">No data for this selection.</p>}
         {traces.length > 0 && (
           <p className="page-sub dim" style={{ textAlign: 'center', margin: '6px 0 0' }}>{seriesFooter}</p>
         )}
@@ -460,20 +462,20 @@ export default function SppPanelPage() {
           without a visible cut the reader keeps changing the top filters and
           wondering why the tables do not move. */}
       <div className="spp-divider" role="separator">
-        <span>Escala y AFP mandan hasta aquí · la fecha de control manda en todo el panel · el fondo y la ventana se eligen en la barra de arriba</span>
+        <span>Scale and AFPs govern up to here · the control date governs the whole panel · fund and period are set in the bar above</span>
       </div>
 
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <div className="panel-title">Posiciones mensuales por rendimiento</div>
+          <div className="panel-title">Monthly performance ranks</div>
           <div className="controls" style={{ margin: 0 }}>
-            <div className="field"><label>Vista</label>
-              <SppSeg items={[['Tabla', 'table'], ['Gráfico', 'chart']]}
+            <div className="field"><label>View</label>
+              <SppSeg items={[['Table', 'table'], ['Chart', 'chart']]}
                 value={posView} onChange={setPosView} /></div>
             <div className="field"><label aria-hidden="true">&nbsp;</label>
               {/* Table and chart are the same ranks: one CSV for both. */}
-              <DataDownload traces={posTraces} xAxis="periodo"
-                name={`posiciones-fondo-${fund}`} /></div>
+              <DataDownload traces={posTraces} xAxis="period"
+                name={`ranks-fund-${fund}`} /></div>
           </div>
         </div>
         {/* One space, two readings of the same ranks: the heat table says
@@ -487,12 +489,12 @@ export default function SppPanelPage() {
               margin: { l: 50, r: 20, t: 10, b: 50 },
               yaxis: {
                 autorange: 'reversed', dtick: 1, range: [posTotal + 0.5, 0.5],
-                title: 'Puesto', zeroline: false,
+                title: 'Rank', zeroline: false,
               },
               xaxis: { type: 'category' },
             }}
           />
-        ) : <div className="dim">Sin meses cerrados suficientes.</div>)}
+        ) : <div className="dim">Not enough closed months.</div>)}
         {posView === 'table' && (
         <div className="table-wrap spp-windows spp-grid-ranks">
           {/* Same discipline as the windows tables: the AFP column has a set
@@ -538,27 +540,27 @@ export default function SppPanelPage() {
           </table>
         </div>
         )}
-        <p className="page-sub">Puesto 1 al {posTotal} por rendimiento del mes, dentro de cada tipo
-          de fondo{posView === 'table' ? ' — más intenso = mejor puesto; la fila en color es ' : '; la línea gruesa es '}
-          {house}. Cada mes cerrado rinde contra el cierre del mes anterior; el último periodo es el MTD.</p>
+        <p className="page-sub">Rank 1 to {posTotal} by the month's return, within each fund
+          type{posView === 'table' ? ' — darker = better rank; the colored row is ' : '; the thick line is '}
+          {house}. Each closed month is measured against the previous month's close; the last period is the MTD.</p>
       </div>
 
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between' }}>
           <div>
-            <div className="panel-title">Ventanas de rendimiento</div>
+            <div className="panel-title">Performance windows</div>
             {win?.control && (
               <p className="page-sub" style={{ margin: '4px 0 0' }}>
-                Control {fDate(win.dates.t)} · inicio de mes {fDate(win.dates.month)} ·
-                M-1 {fDate(win.dates.month1)} · inicio de año {fDate(win.dates.year)} ·
-                inicio de ejercicio {fDate(win.dates.fy)}
+                Control {fDate(win.dates.t)} · month start {fDate(win.dates.month)} ·
+                M-1 {fDate(win.dates.month1)} · year start {fDate(win.dates.year)} ·
+                fiscal year start {fDate(win.dates.fy)}
               </p>
             )}
           </div>
           <div className="controls" style={{ margin: 0 }}>
             {hasBenchmarks && (
               <div className="field"><label>Benchmarks</label>
-                <SppSeg items={[['Mostrar', true], ['Ocultar', false]]}
+                <SppSeg items={[['Show', true], ['Hide', false]]}
                   value={showBench} onChange={setShowBench} /></div>
             )}
             <div className="field"><label aria-hidden="true">&nbsp;</label>
@@ -568,9 +570,9 @@ export default function SppPanelPage() {
                   tooltip and in aria-label. */}
               <button className="btn primary spp-icon" onClick={pdfReport}
                 disabled={generating || !win?.control}
-                aria-label="Descargar el reporte de rentabilidad en PDF"
-                title={generating ? 'Generando el reporte…'
-                  : 'Reporte de rentabilidad (PDF): tabla relativa + alpha YTD y FY de cada fondo, a la fecha de control'}>
+                aria-label="Download the performance report as PDF"
+                title={generating ? 'Generating the report…'
+                  : 'Performance report (PDF): relative table + YTD and FY alpha of every fund, at the control date'}>
                 {generating ? (
                   <span className="spp-spinning">…</span>
                 ) : (
@@ -586,26 +588,25 @@ export default function SppPanelPage() {
         {win?.control ? (
           <>
             <details className="spp-collapsible" open>
-              <summary>Rendimiento relativo · {house} contra cada competidora{hasBenchmarks && showBench ? ' y sus benchmarks' : ''}</summary>
+              <summary>Relative performance · {house} vs each competitor{hasBenchmarks && showBench ? ' and its benchmarks' : ''}</summary>
               {/* Differences in whole basis points: a tenth of a point between
                   two AFPs is noise, and the decimal only widened the columns. */}
               <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
                 rows={visibleRows(win.relative)} withUnit order={relativeOrder} bpsDigits={0} />
             </details>
             <details className="spp-collapsible">
-              <summary>Rendimiento absoluto</summary>
-              {/* Returns only: the level itself is the Libro's business. */}
+              <summary>Absolute performance</summary>
+              {/* Returns only: the level itself is the Book's business. */}
               <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
                 rows={visibleRows(win.absolute)} withUnit />
-              <p className="page-sub">Días y meses en puntos básicos; de 3M en adelante en
-                porcentaje. Las ventanas móviles cuentan hacia atrás desde la fecha de control.
-                FY es el ejercicio, del 31/10 al 31/10. Las columnas diarias son el movimiento de
-                ese día, no acumulados.</p>
+              <p className="page-sub">Days and months in basis points; from 3M onward in percent.
+                Trailing windows count back from the control date. FY is the fiscal year, 31/10 to
+                31/10. The daily columns are that day's move, not cumulative.</p>
             </details>
           </>
         ) : win == null
-          ? <div className="loading">Cargando…</div>
-          : <div className="page-sub dim">Sin datos en el libro.</div>}
+          ? <div className="loading">Loading…</div>
+          : <div className="page-sub dim">No data in the book.</div>}
       </div>
     </div>
   );

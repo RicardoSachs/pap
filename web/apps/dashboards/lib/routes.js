@@ -23,15 +23,15 @@ export const activeRoute = (path, href) => {
 // sync all read it, so a third module or a new view touches nothing
 // upstream.
 export const MODULES = [
-  { base: '/spp/', label: 'Valor Cuota SPP', views: [
+  { base: '/spp/', label: 'SPP Unit Value', views: [
     { href: '/spp/', label: 'Panel', fund: true, period: true },
-    { href: '/spp/libro/', label: 'Libro', fund: true, fundAll: true },
-    { href: '/spp/carga/', label: 'Registro y carga' },
+    { href: '/spp/libro/', label: 'Book', fund: true, fundAll: true },
+    { href: '/spp/carga/', label: 'Register & load' },
   ] },
   { base: '/benchmarks/', label: 'Benchmarks', views: [
     { href: '/benchmarks/', label: 'Panel', fund: true, fundAll: true, period: true },
-    { href: '/benchmarks/libro/', label: 'Libro', fund: true, fundAll: true },
-    { href: '/benchmarks/registro/', label: 'Registro' },
+    { href: '/benchmarks/libro/', label: 'Book', fund: true, fundAll: true },
+    { href: '/benchmarks/registro/', label: 'Registry' },
   ] },
   { base: '/tradebook/', label: 'Tradebook', views: [
     { href: '/tradebook/', label: 'Panel', fund: true, fundAll: true, period: true },

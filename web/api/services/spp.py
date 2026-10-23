@@ -47,8 +47,8 @@ METRICS = list(SUFFIX)
 # that list also decides which columns are read.
 PANEL_METRICS = ["valor_cuota", "fondo"]
 
-SHORT_MONTHS = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
-                "JUL", "AGO", "SET", "OCT", "NOV", "DIC"]
+SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 # Window keys and labels. Column order is CHRONOLOGICAL, oldest on the left
 # and the control date on the right, so the tables read in the same
@@ -65,9 +65,9 @@ LEVEL_KEYS = ["year1", "year", "month2", "month1", "month",
 # count back from the control date: 3M / 6M / 12M are plain returns, 3A /
 # 5A / 10A are ANNUALIZED (compound rate per year over the window).
 RETURN_KEYS = [
-    ("a10",   "10A",         "pct"),
-    ("a5",    "5A",          "pct"),
-    ("a3",    "3A",          "pct"),
+    ("a10",   "10Y",         "pct"),
+    ("a5",    "5Y",          "pct"),
+    ("a3",    "3Y",          "pct"),
     ("a1",    None,          "pct"),
     ("m12",   "12M",         "pct"),
     ("fy",    "FY",          "pct"),
@@ -82,7 +82,7 @@ RETURN_KEYS = [
     ("d2",    None,          "bps"),
     ("d1",    None,          "bps"),
     ("d0",    None,          "bps"),
-    ("level", "Valor cuota", "level"),
+    ("level", "Unit value",  "level"),
 ]
 # Years behind each annualized window.
 ANNUALIZED_YEARS = {"a3": 3, "a5": 5, "a10": 10}

@@ -10,7 +10,7 @@
 //
 //   const [visible, ShowAll] = useShowAll(rows, 12);
 //   ...render `visible`...
-//   <ShowAll label="fechas" />
+//   <ShowAll label="dates" />
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -22,14 +22,14 @@ export default function useShowAll(items, cap = 12) {
   const list = items || [];
   const visible = all ? list : list.slice(0, cap);
 
-  const ShowAll = ({ label = 'filas', style }) => {
+  const ShowAll = ({ label = 'rows', style }) => {
     if (list.length <= cap) return null;
     return (
       <div className="controls" style={{ marginTop: 10, ...style }}>
         <button className="btn" onClick={() => setAll((v) => !v)}>
           {all
-            ? `Contraer a ${nInt(cap)}`
-            : `Ver las ${nInt(list.length)} ${label} · faltan ${nInt(list.length - cap)}`}
+            ? `Collapse to ${nInt(cap)}`
+            : `Show all ${nInt(list.length)} ${label} · ${nInt(list.length - cap)} more`}
         </button>
       </div>
     );

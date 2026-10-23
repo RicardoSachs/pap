@@ -53,16 +53,16 @@ def _valor_cuota_history() -> dict:
     """The one that comes from no column reader: the SBS's own Excel,
     and what there is to say about the format is not to touch it."""
     return {
-        "title": "Historico de valor cuota (archivo de la SBS)",
+        "title": "Unit value history (the SBS file)",
         "columns": [],
         "notes": [
-            "Descargalo con el boton «Abrir la pagina de la SBS» que esta "
-            "aqui al lado, y elige «Valores cuota desde Agosto 1993».",
-            "Trae las cuatro AFP y los cuatro tipos de fondo en la misma "
-            "hoja; el lector los separa solo.",
-            "Las fechas futuras se descartan y se avisa de ellas.",
-            "Subirlo NO carga nada todavia: primero muestra que cambiaria, y "
-            "la carga se confirma despues.",
+            "Download it with the \"Open the SBS page\" button next to this one, "
+            "and choose \"Valores cuota desde Agosto 1993\".",
+            "It brings the four AFPs and the four fund types on the same "
+            "sheet; the reader splits them on its own.",
+            "Future dates are discarded and reported.",
+            "Uploading it loads NOTHING yet: it first shows what would change, "
+            "and the load is confirmed afterwards.",
         ],
         "template": None,
     }

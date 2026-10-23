@@ -57,7 +57,7 @@ export default function ModulePill() {
   if (!d || !m || !module) return null;
   const showFund = !!view?.fund;
   const showPeriod = !!view?.period;
-  const fundLabel = m.fund === 'all' ? 'Todos los fondos' : `Fondo ${m.fund}`;
+  const fundLabel = m.fund === 'all' ? 'All funds' : `Fund ${m.fund}`;
   const allPeriods = [...d.periods, 'Custom'];
 
   const onPeriod = (p) => {
@@ -113,13 +113,13 @@ export default function ModulePill() {
             {fundAll && (
               <button type="button" className={`pill-dd-item ${m.fund === 'all' ? 'on' : ''}`}
                 onClick={() => { m.setFund('all'); setOpen(null); }}>
-                Todos los fondos
+                All funds
               </button>
             )}
             {funds.map((f) => (
               <button key={f} type="button" className={`pill-dd-item ${m.fund === f ? 'on' : ''}`}
                 onClick={() => { m.setFund(f); setOpen(null); }}>
-                Fondo {f}
+                Fund {f}
               </button>
             ))}
           </div>
@@ -140,17 +140,17 @@ export default function ModulePill() {
           <div className="pill-pop">
             <div className="pill-pop-row">
               <div className="pill-pop-field">
-                <label>Desde</label>
+                <label>From</label>
                 <input type="date" className="date-input" value={tmpFrom} max={tmpTo || undefined} onChange={(e) => setTmpFrom(e.target.value)} />
               </div>
               <div className="pill-pop-field">
-                <label>Hasta</label>
+                <label>To</label>
                 <input type="date" className="date-input" value={tmpTo} min={tmpFrom || undefined} onChange={(e) => setTmpTo(e.target.value)} />
               </div>
             </div>
             <div className="pill-pop-actions">
-              <button type="button" className="btn" onClick={() => setOpen(null)}>Cancelar</button>
-              <button type="button" className="btn active" onClick={applyCustom}>Aplicar</button>
+              <button type="button" className="btn" onClick={() => setOpen(null)}>Cancel</button>
+              <button type="button" className="btn active" onClick={applyCustom}>Apply</button>
             </div>
           </div>
         )}

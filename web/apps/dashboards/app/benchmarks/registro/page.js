@@ -1,6 +1,6 @@
 // web/apps/dashboards/app/benchmarks/registro/page.js
 // ---------------------------------------------------------------------------
-// Benchmarks · Registro: declaring a benchmark, appending versions of its
+// Benchmarks · Registry: declaring a benchmark, appending versions of its
 // basket and materializing the levels. The editor owns the forms; this page
 // gives it the shared background task (one slot for every dashboard) and
 // the module frame.
@@ -22,8 +22,8 @@ export default function BenchmarksRegistroPage() {
         <div className="page-brand-name">Profuturo Analytics</div>
         <div className="page-dashboard-title">Benchmarks</div>
       </div>
-      <p className="page-sub">Registro · las definiciones son append-only: cada cambio es una versión
-        nueva con su fecha de vigencia y su motivo, y los niveles se recalculan desde la primera.</p>
+      <p className="page-sub">Registry · definitions are append-only: every change is a new version
+        with its effective date and its reason, and the levels are rebuilt from the first one.</p>
       <BenchmarkEditor busy={busy} task={task} start={start} onTaskDone={onTaskDone} />
     </div>
   );

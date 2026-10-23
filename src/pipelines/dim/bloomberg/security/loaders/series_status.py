@@ -19,6 +19,11 @@
 #      -> skip, log warning, leave status unchanged
 #
 # Rules:
+#   - Touches ONLY source='bloomberg' series. Status lives per series,
+#     i.e. per source; Bloomberg's view of an instrument's market status
+#     says nothing about whether the SBS vector still prices it, and
+#     SBS-discovered entities now reach enrichment through the '/isin/'
+#     bridge, so an unscoped update would silence their SBS ingest.
 #   - Never overwrites terminal states (inactive, error-hold)
 #   - Never flips backfill-pending to active (fact pipeline owns that)
 #   - suspended is reversible: Bloomberg ACTV flips back to active
@@ -73,8 +78,9 @@ _PROTECTED_TRANSITIONS: dict[str, set[str]] = {
 
 def load_series_status_from_enrichment(conn, df: pd.DataFrame) -> None:
     """
-    Updates series_registry.status for all series belonging to
-    entities in df.
+    Updates series_registry.status for the source='bloomberg' series
+    of the entities in df. Series from other sources (sbs, sbs_spp)
+    are never touched.
 
     df columns:
         entity_id        int
@@ -97,6 +103,7 @@ def load_series_status_from_enrichment(conn, df: pd.DataFrame) -> None:
             SELECT series_id, status
             FROM   series_registry
             WHERE  entity_id = %s
+              AND  source    = 'bloomberg'
             """,
             (int(row["entity_id"]),),
         )

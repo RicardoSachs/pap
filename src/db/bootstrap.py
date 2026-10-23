@@ -342,13 +342,15 @@ def load_series_registry(
 def run_dim_enrichment(
     vendor: Optional[str] = None,
     domain: Optional[str] = None,
+    **run_kwargs,
 ) -> None:
 
     """
     Dispatches dim enrichment pipelines per vendor × domain combination.
     Each pipeline extracts vendor attributes to stg_* then resolves
     into full dim_security / dim_macro rows.
-    Optionally filtered by vendor and/or domain.
+    Optionally filtered by vendor and/or domain. `run_kwargs` are passed
+    to each pipeline's run() (e.g. mode='refresh' for bloomberg/security).
 
     """
     pipelines = _get_enrichment_pipelines(vendor=vendor, domain=domain)
@@ -364,7 +366,7 @@ def run_dim_enrichment(
             f'Running dim enrichment: vendor={pip["vendor"]} domain={pip["domain"]}'
         )
         try:
-            pip['run']()
+            pip['run'](**run_kwargs)
         except Exception as e:
             logger.error(
                 f'Dim enrichment failed vendor={pip["vendor"]} '
@@ -395,11 +397,11 @@ def _get_enrichment_pipelines(
     ]
 
 def _lazy_run(module_path: str):
-    """Returns a zero-argument callable that imports and runs module.run() lazily."""
-    def runner():
+    """Returns a callable that imports and runs module.run(**kwargs) lazily."""
+    def runner(**kwargs):
         import importlib
         mod = importlib.import_module(module_path)
-        mod.run()
+        mod.run(**kwargs)
     return runner
 
 # Master bootstrap ----------

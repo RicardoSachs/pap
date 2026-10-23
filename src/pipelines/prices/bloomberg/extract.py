@@ -53,29 +53,20 @@ def extract_prices(
     loaded_at = datetime.now().isoformat(timespec='seconds')
     all_frames = []
 
-    # Group by (start_date, fields) to batch tickers with same window
-    groups: dict[tuple, list] = {}
-    for sec in valid:
-        key = (
-            sec['start_date'].isoformat()
-            if isinstance(sec['start_date'], date)
-            else sec['start_date'],
-            tuple(sorted(sec.get('fields', ['PX_LAST'])))
-        )
-        groups.setdefault(key, []).append(sec)
+    groups = _request_groups(valid)
 
     logger.info(
-        f'Extracting prices for {len(valid)} securities '
-        f'in {len(groups)} date-window groups.'
+        f'Extracting prices for {len(valid)} series '
+        f'in {len(groups)} (start_date, field) groups.'
     )
 
-    for (start_date_str, fields), group in groups.items():
+    for (start_date_str, field), group in groups.items():
         parsekyables = [s['parsekyable'] for s in group]
         start_date = date.fromisoformat(start_date_str)
 
         logger.info(
             f'BDH call: {len(parsekyables)} tickers | '
-            f'fields={list(fields)} | '
+            f'field={field} | '
             f'{start_date} to {end_date}'
         )
 
@@ -83,7 +74,7 @@ def extract_prices(
             raw_df = fetch_historical_request(
                 data_request(
                     securities=parsekyables,
-                    fields=list(fields),
+                    fields=[field],
                     start_date=str(start_date),
                     end_date=str(end_date)
                 )
@@ -116,6 +107,22 @@ def extract_prices(
     result_df = pd.concat(all_frames, ignore_index=True)
     logger.info(f'Extracted {len(result_df)} price observations total.')
     return result_df
+
+def _request_groups(securities: list[dict]) -> dict[tuple[str, str], list[dict]]:
+    """
+    Groups series by (start_date ISO, field): one BDH call per group.
+    A series_registry row is ONE field, so each series is requested by
+    its own `field`. (The previous key read a `fields` list no caller
+    supplied and defaulted to PX_LAST, so a series registered for any
+    other field was requested as PX_LAST and mapped to 0 fact rows.)
+    """
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for sec in securities:
+        start = sec['start_date']
+        start = start.isoformat() if isinstance(start, date) else start
+        groups.setdefault((start, sec.get('field', 'PX_LAST')), []).append(sec)
+    return groups
+
 
 def _melt_to_long(raw_df: pd.DataFrame, loaded_at: str) -> pd.DataFrame:
     """

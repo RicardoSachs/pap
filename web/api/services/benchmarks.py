@@ -1,6 +1,6 @@
 # web/api/services/benchmarks.py
 # ---------------------------------------------------------------------------
-# Benchmarks service: what the tablero reads about the
+# Benchmarks service: what the tablero reads and writes about the
 # composite indices, over src/pipelines/analytics/benchmark. The analytics
 # module owns the rules (append-only versions, the chaining arithmetic,
 # the three outputs); this module shapes its answers for the screen and
@@ -13,9 +13,11 @@ import logging
 
 import pandas as pd
 
+from src.db import onboard
 from src.db.connection import get_connection
+from src.db.queries import get_entity_id
 from src.pipelines.analytics.benchmark import definitions
-from src.pipelines.analytics.benchmark.materialize import SOURCE_MODEL
+from src.pipelines.analytics.benchmark.materialize import SOURCE_MODEL, materialize
 from src.pipelines.prices.sbs.valor_cuota import afps
 from web.api.services.spp import read as read_book, recent_cut
 
@@ -72,6 +74,28 @@ def get(procode: str) -> dict | None:
         return _summary(conn, bench)
 
 
+def create(procode: str, display_name: str, base_currency: str = "PEN",
+           fund: int | None = None) -> dict:
+    """
+    Creates a benchmark or renames it (the procode is the identity) and,
+    when a fund type is given, assigns it to the house's fund of that
+    type - the block of the return tables it will appear in.
+    """
+    with get_connection() as conn:
+        bench = definitions.ensure_benchmark(conn, procode, display_name, base_currency)
+        if fund is not None:
+            if int(fund) not in afps.funds():
+                raise ValueError(f"Unknown fund type {fund}.")
+            target = afps.procode(afps.house_afp(), int(fund))
+            entity_id = get_entity_id(conn, target, "fund")
+            if entity_id is None:
+                raise ValueError(
+                    f"{target} is not registered yet: load the valor cuota book first.")
+            definitions.assign(conn, bench["portfolio_id"], entity_id)
+            bench = definitions.benchmark_by_procode(conn, bench["procode"])
+        return _summary(conn, bench)
+
+
 def _portfolio_id(conn, procode: str) -> int:
     bench = definitions.benchmark_by_procode(conn, procode)
     if bench is None or bench["portfolio_type"] != definitions.PORTFOLIO_TYPE:
@@ -108,6 +132,34 @@ def changelog(procode: str) -> list[dict]:
              "weight_before": None if r["weight_before"] is None else float(r["weight_before"]),
              "weight_after": None if r["weight_after"] is None else float(r["weight_after"]),
              "weight_delta": float(r["weight_delta"])} for r in rows]
+
+
+def add_version(procode: str, payload: dict) -> int:
+    """Appends one version. ValueError from the writer names the problem."""
+    with get_connection() as conn:
+        pid = _portfolio_id(conn, procode)
+        return definitions.add_version(
+            conn, pid,
+            effective_from=payload["effective_from"],
+            method=payload.get("method") or "buy_and_hold",
+            change_type=payload["change_type"],
+            reason=payload.get("reason"),
+            constituents=payload.get("constituents") or [],
+            rebalance_frequency=payload.get("rebalance_frequency"),
+            support_doc=payload.get("support_doc"),
+            recorded_by=payload.get("recorded_by"),
+            supersedes_version_id=payload.get("supersedes_version_id"),
+        )
+
+
+def rebuild(procode: str) -> dict:
+    """Materializes one benchmark in its own transaction (runs in the task)."""
+    with get_connection() as conn:
+        pid = _portfolio_id(conn, procode)
+        summary = materialize(conn, pid)
+    summary["from"] = str(summary["from"])
+    summary["to"] = str(summary["to"])
+    return summary
 
 
 # ---- The series a basket can draw from -------------------------------------
@@ -194,6 +246,19 @@ def series_catalog(q: str = "", limit: int = 50) -> list[dict]:
     """Pickable series for the basket editor."""
     with get_connection() as conn:
         return _catalog_rows(conn, q, limit)
+
+
+def register_series(payload: dict) -> dict:
+    """
+    Registers a Bloomberg ticker as a priced series (src.db.onboard does
+    the writing) and answers with its catalog row plus `created`. The
+    series has no prices yet: the Bloomberg machine fetches them on its
+    next backfill run.
+    """
+    with get_connection() as conn:
+        result = onboard.register_series(conn, payload)
+        row = _catalog_rows(conn, limit=1, series_id=result["series_id"])[0]
+    return {**row, "created": result["created"]}
 
 
 def levels(procode: str, date_from=None, date_to=None) -> pd.DataFrame:

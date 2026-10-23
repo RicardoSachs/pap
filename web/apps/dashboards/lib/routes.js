@@ -26,10 +26,12 @@ export const MODULES = [
   { base: '/spp/', label: 'Valor Cuota SPP', views: [
     { href: '/spp/', label: 'Panel', fund: true, period: true },
     { href: '/spp/libro/', label: 'Libro', fund: true, fundAll: true },
+    { href: '/spp/carga/', label: 'Registro y carga' },
   ] },
   { base: '/benchmarks/', label: 'Benchmarks', views: [
     { href: '/benchmarks/', label: 'Panel', fund: true, fundAll: true, period: true },
     { href: '/benchmarks/libro/', label: 'Libro', fund: true, fundAll: true },
+    { href: '/benchmarks/registro/', label: 'Registro' },
   ] },
 ];
 

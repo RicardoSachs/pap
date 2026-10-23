@@ -1,0 +1,530 @@
+// web/apps/dashboards/app/benchmarks/registro/BenchmarkEditor.js
+// ---------------------------------------------------------------------------
+// The composite indices (benchmarks, targets): which exist, and the editor
+// of their VERSIONED definition - the Registro view of the Benchmarks module.
+//
+// A benchmark is a portfolio row with a level series; what it is made of
+// lives in append-only versions (dim_benchmark_version). This editor never
+// edits or deletes a version: every change - new weights, a swapped ticker,
+// a correction - is a NEW version with its effective date, a change type
+// and a reason that cannot be blank. The history on the right is the
+// changelog view, read back from the database, not something kept here.
+//
+// Saving a version also materializes the benchmark (levels, valuation and
+// holdings) in the shared background task; the component is handed the
+// task hook by the page that mounts it. Constituents come from ONE catalog:
+// the pipeline's priced series (series_registry / fact_prices), minus the
+// model series themselves. A Bloomberg ticker the pipelines do not carry
+// yet is registered from here too, in a folded block under the search.
+//
+// Rebalancing is MANUAL: the weights a version declares are struck at its
+// effective date and hold until the operator declares the next version -
+// that new version IS the rebalance. In the analytics module this is the
+// buy_and_hold method; fixed_weights (periodic re-strike) is not offered
+// here, though a version carrying it still renders in the history.
+// ---------------------------------------------------------------------------
+'use client';
+
+import { useEffect, useState } from 'react';
+
+import Echo from '../../../components/Echo';
+import Log from '../../../components/Log';
+import SppSeg from '../../../components/SppSeg';
+import useShowAll from '../../../components/useShowAll';
+import { apiGet, apiSend } from '../../../lib/api';
+import { apiUrl, fDate, fTime, nInt, todayLocal } from '../../../lib/spp';
+
+const METHOD = 'buy_and_hold';
+// For reading the history: a version may carry a method or a frequency
+// this editor no longer offers.
+const METHOD_LABELS = {
+  buy_and_hold: 'Rebalanceo manual', fixed_weights: 'Pesos fijos (rebalanceo periódico)', heuristic: 'Heurístico',
+};
+const FREQUENCY_LABELS = { monthly: 'mensual', quarterly: 'trimestral', annual: 'anual' };
+const ENTITY_TYPES = { security: 'Valor (acción, ETF, bono)', index: 'Índice', fund: 'Fondo' };
+const STATUS = {
+  active: 'activa', 'backfill-pending': 'pendiente de histórico', suspended: 'suspendida',
+  inactive: 'inactiva', 'error-hold': 'en error',
+};
+const CHANGE_TYPES = {
+  initial: 'Versión inicial', rebalance: 'Rebalanceo', methodology: 'Cambio de metodología',
+  constituent_change: 'Cambio de componentes', correction: 'Corrección',
+};
+const CHANGE_MARK = { added: '+ nuevo', dropped: '− sale', reweighted: '≠ peso', unchanged: '' };
+
+// Small key/value report table, the same one the rest of the view uses.
+function Report({ rows }) {
+  return (
+    <table className="spp-report"><tbody>
+      {rows.map(([a, b], i) => (
+        <tr key={i}><td>{a}</td><td className="num">{b}</td></tr>
+      ))}
+    </tbody></table>
+  );
+}
+
+const pctOf = (w) => `${(w * 100).toLocaleString('es-PE', { maximumFractionDigits: 2 })} %`;
+
+export default function BenchmarkEditor({ busy, task, start, onTaskDone }) {
+  // ---- which benchmarks exist ----
+  const [list, setList] = useState(null);
+  const [selected, setSelected] = useState('');
+  const loadList = () => apiGet('/api/benchmarks')
+    .then((j) => {
+      const items = j.benchmarks || [];
+      setList(items);
+      setSelected((s) => (s && items.some((b) => b.procode === s)) ? s : (items[0]?.procode || ''));
+    })
+    .catch(() => setList([]));
+  const current = (list || []).find((b) => b.procode === selected) || null;
+
+  // ---- create / rename, and the house fund it is the benchmark of ----
+  const [newProcode, setNewProcode] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newFund, setNewFund] = useState(null);
+  const [funds, setFunds] = useState([0, 1, 2, 3]);
+  const [houseName, setHouseName] = useState('');
+  const [createEcho, setCreateEcho] = useState('');
+
+  // The fund follows the code: an existing benchmark brings its own, a
+  // new code ending in _F{n} proposes n; otherwise the operator picks.
+  useEffect(() => {
+    const code = newProcode.trim().toUpperCase();
+    const existing = (list || []).find((b) => b.procode === code);
+    if (existing && existing.fund != null) { setNewFund(existing.fund); return; }
+    const m = /_F(\d)$/.exec(code);
+    if (m) setNewFund(Number(m[1]));
+  }, [newProcode, list]);
+
+  const createBenchmark = async () => {
+    setCreateEcho('');
+    const r = await apiSend('/api/benchmarks', 'POST',
+      { procode: newProcode.trim().toUpperCase(), display_name: newName.trim(), fund: newFund });
+    if (!r.ok) { setCreateEcho({ ok: false, text: r.data.detail }); return; }
+    setCreateEcho({ ok: true, text: `${r.data.procode}: «${r.data.display_name}» · Fondo ${r.data.fund}.` });
+    setNewProcode(''); setNewName(''); setNewFund(null);
+    await loadList();
+    setSelected(r.data.procode);
+  };
+
+  // ---- versions of the selected benchmark ----
+  const [versions, setVersions] = useState([]);
+  const [changelog, setChangelog] = useState([]);
+  const loadVersions = (procode) => {
+    if (!procode) { setVersions([]); setChangelog([]); return; }
+    const p = encodeURIComponent(procode);
+    apiGet(`/api/benchmarks/${p}/versions`).then((j) => setVersions(j.versions || [])).catch(() => setVersions([]));
+    apiGet(`/api/benchmarks/${p}/changelog`).then((j) => setChangelog(j.changelog || [])).catch(() => setChangelog([]));
+  };
+  const latest = versions.length ? versions[versions.length - 1] : null;
+
+  // ---- the new version form ----
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [changeType, setChangeType] = useState('rebalance');
+  const [reason, setReason] = useState('');
+  const [supportDoc, setSupportDoc] = useState('');
+  const [recordedBy, setRecordedBy] = useState('');
+  const [constituents, setConstituents] = useState([]);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState(null);
+  const [fxCatalog, setFxCatalog] = useState([]);
+  const [saveEcho, setSaveEcho] = useState('');
+
+  useEffect(() => {
+    setEffectiveFrom(todayLocal());
+    // A ten-year history is the usual starting point for a new ticker.
+    setTStart(`${Number(todayLocal().slice(0, 4)) - 10}-01-01`);
+    loadList();
+    // A small catalog, always loaded, for the FX selectors.
+    apiGet('/api/benchmarks/series?limit=200').then((j) => setFxCatalog(j.series || [])).catch(() => {});
+    // The house and its fund types, for the assignment.
+    apiGet('/api/spp/config').then((c) => {
+      if (c.funds?.length) setFunds(c.funds);
+      setHouseName(c.house || '');
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => { loadVersions(selected); setSaveEcho(''); }, [selected]);
+
+  // The first version of a benchmark is 'initial'; afterwards the operator
+  // says what kind of change it is.
+  useEffect(() => {
+    setChangeType(versions.length ? 'rebalance' : 'initial');
+  }, [versions.length]);
+
+  const [visibleResults, ShowMoreResults] = useShowAll(results || [], 8);
+
+  const searchSeries = async () => {
+    try {
+      const j = await apiGet(`/api/benchmarks/series?q=${encodeURIComponent(query)}`);
+      setResults(j.series || []);
+    } catch { setResults([]); }
+  };
+
+  // `points` travels with the row so a constituent that has no prices yet
+  // (a ticker registered but not fetched) is flagged in the basket: the
+  // materialization would fail loud on it.
+  const addConstituent = (s) => {
+    if (constituents.some((c) => c.series_id === s.series_id)) return;
+    setConstituents([...constituents, {
+      label: s.label, series_id: s.series_id, detail: s.detail, weight: '', fx_series_id: '',
+      points: s.points,
+    }]);
+  };
+
+  // ---- a Bloomberg ticker the pipelines do not carry yet ----
+  // Writes the registry only (entity, Bloomberg identifier, PX_LAST series
+  // as backfill-pending); the Bloomberg machine fetches the history on its
+  // next backfill run. Until then the series shows "sin precios".
+  const [tProcode, setTProcode] = useState('');
+  const [tName, setTName] = useState('');
+  const [tTicker, setTTicker] = useState('');
+  const [tType, setTType] = useState('security');
+  const [tStart, setTStart] = useState('');
+  const [tickerEcho, setTickerEcho] = useState('');
+  const canRegister = tProcode.trim() && tName.trim() && tTicker.trim() && tStart && !busy;
+
+  const registerTicker = async () => {
+    setTickerEcho('');
+    const r = await apiSend('/api/benchmarks/series', 'POST', {
+      procode: tProcode.trim().toUpperCase(), name: tName.trim(), parsekyable: tTicker.trim(),
+      default_start_date: tStart, entity_type: tType,
+    });
+    if (!r.ok) { setTickerEcho({ ok: false, text: r.data.detail }); return; }
+    const s = r.data;
+    setTickerEcho({
+      ok: true,
+      text: s.created
+        ? `${s.procode} (${s.ticker}) registrada, pendiente de histórico: la máquina Bloomberg la traerá en su próxima corrida de backfill.`
+        : `${s.procode} ya estaba registrada (${STATUS[s.status] || s.status}).`,
+    });
+    if (s.created) { setTProcode(''); setTName(''); setTTicker(''); }
+    // Show it where it will be picked from.
+    setQuery(s.procode);
+    const j = await apiGet(`/api/benchmarks/series?q=${encodeURIComponent(s.procode)}`).catch(() => null);
+    if (j) setResults(j.series || []);
+  };
+
+  const weightSum = constituents.reduce((a, c) => a + (Number(c.weight) || 0), 0);
+  const sumOk = Math.abs(weightSum - 1) < 1e-6 || Math.abs(weightSum - 100) < 1e-4;
+  const canSave = !!current && constituents.length > 0 && sumOk && !!effectiveFrom
+    && reason.trim().length > 0 && !busy;
+
+  // Loads the latest version's basket into the form, to adjust and save as
+  // a new version - the only way to "edit" an append-only definition.
+  const loadLatest = () => {
+    if (!latest) return;
+    setConstituents(latest.constituents.map((c) => ({
+      label: c.label, series_id: c.series_id,
+      detail: `${c.field} · ${c.source} · ${c.procode}`,
+      weight: String(+(c.weight * 100).toFixed(4)),
+      fx_series_id: c.fx_series_id ? String(c.fx_series_id) : '',
+    })));
+    setSaveEcho({ ok: true, text: `Canasta de la versión ${latest.version_id} cargada en el editor; guardar crea una versión nueva.` });
+  };
+
+  const materialize = async (procode, label) => {
+    const r = await apiSend(`/api/benchmarks/${encodeURIComponent(procode)}/materialize`, 'POST');
+    if (!r.ok) { setSaveEcho({ ok: false, text: r.data.detail }); return; }
+    setSaveEcho({ ok: true, text: `Recalculando ${label}…` });
+    start(r.data.action, onTaskDone((t) => {
+      loadList();
+      setSaveEcho(t.error
+        ? { ok: false, text: `El recálculo falló y la serie anterior sigue intacta: ${t.error}` }
+        : { ok: true, text: `${label} recalculado desde sus versiones.` });
+    }));
+  };
+
+  const saveVersion = async () => {
+    if (!current) return;
+    setSaveEcho('');
+    const body = {
+      effective_from: effectiveFrom,
+      method: METHOD,
+      rebalance_frequency: null,
+      change_type: changeType,
+      reason: reason.trim(),
+      support_doc: supportDoc.trim() || null,
+      recorded_by: recordedBy.trim() || null,
+      supersedes_version_id: latest ? latest.version_id : null,
+      constituents: constituents.map((c) => ({
+        label: c.label, series_id: c.series_id, weight: Number(c.weight),
+        fx_series_id: c.fx_series_id ? Number(c.fx_series_id) : null,
+      })),
+    };
+    const r = await apiSend(`/api/benchmarks/${encodeURIComponent(current.procode)}/versions`, 'POST', body);
+    if (!r.ok) { setSaveEcho({ ok: false, text: r.data.detail }); return; }
+    setReason(''); setSupportDoc('');
+    loadVersions(current.procode);
+    setSaveEcho({ ok: true, text: `Versión ${r.data.version_id} guardada, vigente desde ${fDate(effectiveFrom)}.` });
+    await materialize(current.procode, current.display_name);
+  };
+
+  // Changelog rows of one version, by series, for the marks in the history.
+  const changesOf = (versionId) => {
+    const out = {};
+    changelog.filter((r) => r.version_id === versionId).forEach((r) => { out[r.series_id] = r; });
+    return out;
+  };
+
+  return (
+    <>
+      {/* ===== a · which exist ===== */}
+      <div className="panel">
+        <div className="panel-title">Benchmarks declarados</div>
+        <p className="page-sub">Cada índice compuesto es un portafolio con su serie de niveles.
+          Declararlo le pone nombre, lo vincula a un fondo de la casa (aparece en las tablas de
+          rendimiento de ese fondo, en el Panel SPP) y registra su serie; su canasta se define
+          por <b>versiones</b>, en el editor de abajo.</p>
+
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Código</th><th>Nombre</th><th>Fondo</th><th className="num">Versiones</th>
+              <th className="num">Días calculados</th><th>Desde</th><th>Hasta</th><th className="num">Último nivel</th></tr></thead>
+            <tbody>
+              {list === null && <tr><td colSpan={8} className="dim">Cargando…</td></tr>}
+              {list && !list.length && <tr><td colSpan={8} className="dim">Ningún benchmark declarado todavía.</td></tr>}
+              {(list || []).map((b) => (
+                <tr key={b.procode} style={b.procode === selected ? { fontWeight: 700 } : undefined}>
+                  <td className="mono">{b.procode}</td>
+                  <td>{b.display_name}</td>
+                  <td className={b.fund == null ? 'neg' : ''}>{b.fund == null ? 'sin vincular' : `Fondo ${b.fund}`}</td>
+                  <td className="num">{nInt(b.versions)}</td>
+                  <td className={`num ${b.points ? '' : 'dim'}`}>{b.points ? nInt(b.points) : 'sin calcular'}</td>
+                  <td>{fDate(b.from)}</td>
+                  <td>{fDate(b.to)}</td>
+                  <td className="num">{b.last_level == null ? '—'
+                    : b.last_level.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="controls spp-controls" style={{ marginTop: 12 }}>
+          <div className="field" style={{ flex: '0 1 220px' }}>
+            <label htmlFor="b-procode">Código (procode)</label>
+            <input id="b-procode" className="date-input mono" placeholder="p. ej. SPP_BENCH_F2"
+              value={newProcode} onChange={(e) => setNewProcode(e.target.value)} /></div>
+          <div className="field" style={{ flex: '1 1 260px' }}>
+            <label htmlFor="b-name">Nombre</label>
+            <input id="b-name" className="date-input" placeholder="p. ej. Renta mixta global 60/40"
+              value={newName} onChange={(e) => setNewName(e.target.value)} /></div>
+          <div className="field"><label>Benchmark de {houseName || 'la casa'}</label>
+            <SppSeg items={funds.map((f) => [`Fondo ${f}`, f])} value={newFund} onChange={setNewFund} /></div>
+          <div className="field"><label aria-hidden="true">&nbsp;</label>
+            <button className="btn primary" disabled={!newProcode.trim() || !newName.trim() || newFund == null || busy}
+              title={newFund == null ? 'Elige el fondo del que es benchmark' : undefined}
+              onClick={createBenchmark}>
+              {(list || []).some((b) => b.procode === newProcode.trim().toUpperCase()) ? 'Renombrar' : 'Declarar benchmark'}</button></div>
+        </div>
+        <Echo echo={createEcho} />
+      </div>
+
+      {/* ===== b · the versioned definition ===== */}
+      <div className="spp-two-up">
+        <div className="panel">
+          <div className="panel-title">Nueva versión de «{current?.display_name || '—'}»</div>
+          <p className="page-sub">La canasta es <b>append-only</b>: cambiar pesos o componentes no edita
+            nada, crea una versión nueva desde su fecha de vigencia, con un motivo. El rebalanceo es
+            <b> manual</b>: los pesos que declaras rigen desde esa fecha hasta la siguiente versión, que
+            es la que rebalancea. Los niveles se recalculan desde la primera versión (base 100) y nunca
+            se cargan a mano.</p>
+
+          <div className="controls spp-controls">
+            <div className="field"><label>Benchmark</label>
+              <SppSeg items={(list || []).map((b) => [b.display_name, b.procode])}
+                value={selected} onChange={setSelected} /></div>
+          </div>
+          <div className="controls spp-controls" style={{ marginTop: 8 }}>
+            <div className="field"><label htmlFor="v-from">Vigente desde</label>
+              <input id="v-from" className="date-input" type="date" value={effectiveFrom}
+                onChange={(e) => setEffectiveFrom(e.target.value)} /></div>
+            <div className="field"><label htmlFor="v-type">Tipo de cambio</label>
+              <select id="v-type" className="select" value={changeType}
+                disabled={!versions.length}
+                onChange={(e) => setChangeType(e.target.value)}>
+                {Object.entries(CHANGE_TYPES)
+                  .filter(([k]) => (versions.length ? k !== 'initial' : k === 'initial'))
+                  .map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select></div>
+          </div>
+          <div className="controls spp-controls" style={{ marginTop: 8 }}>
+            <div className="field" style={{ flex: '1 1 320px' }}>
+              <label htmlFor="v-reason">Motivo (obligatorio)</label>
+              <input id="v-reason" className="date-input" placeholder="p. ej. Comité trimestral: sobreponderar renta variable"
+                value={reason} onChange={(e) => setReason(e.target.value)} /></div>
+            <div className="field" style={{ flex: '1 1 200px' }}>
+              <label htmlFor="v-doc">Documento de respaldo</label>
+              <input id="v-doc" className="date-input" placeholder="ruta en la red (opcional)"
+                value={supportDoc} onChange={(e) => setSupportDoc(e.target.value)} /></div>
+            <div className="field" style={{ flex: '0 1 160px' }}>
+              <label htmlFor="v-by">Registrado por</label>
+              <input id="v-by" className="date-input" placeholder="iniciales"
+                value={recordedBy} onChange={(e) => setRecordedBy(e.target.value)} /></div>
+          </div>
+          {latest && (
+            <p className="page-sub dim" style={{ marginTop: 6 }}>
+              Reemplaza a la versión {latest.version_id} (vigente desde {fDate(latest.effective_from)}).
+              {' '}<button type="button" className="btn" style={{ marginLeft: 6 }} onClick={loadLatest}>
+                Cargar su canasta en el editor</button>
+            </p>
+          )}
+
+          <div className="controls" style={{ marginTop: 10 }}>
+            <input className="date-input" placeholder="Buscar serie (código, ticker, nombre, ISIN)…"
+              aria-label="Buscar serie"
+              value={query} onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && searchSeries()} />
+            <button className="btn" onClick={searchSeries}>Buscar</button>
+          </div>
+          {results && (
+            <div className="table-wrap" style={{ marginTop: 8 }}>
+              <table><tbody>
+                {visibleResults.map((s) => (
+                  <tr key={s.series_id}>
+                    <td className="mono">{s.label}</td>
+                    <td className="dim">{s.detail}</td>
+                    <td className={s.points ? 'dim' : 'neg'}>
+                      {s.points ? `${fDate(s.from)} – ${fDate(s.to)} · ${nInt(s.points)} precios` : 'sin precios todavía'}
+                    </td>
+                    <td><button className="btn" onClick={() => addConstituent(s)}>+ Agregar</button></td>
+                  </tr>
+                ))}
+                {!results.length && <tr><td className="dim">Sin resultados. Las series nuevas se registran en la pestaña <b>Series</b>.</td></tr>}
+              </tbody></table>
+            </div>
+          )}
+          {results && <ShowMoreResults label="series encontradas" />}
+
+          <details className="spp-collapsible">
+            <summary>¿No aparece el ticker? Regístralo desde Bloomberg</summary>
+            <p className="page-sub dim" style={{ marginTop: 4 }}>Se da de alta en el registro de la base
+              como serie PX_LAST diaria, pendiente de histórico. Este tablero no habla con Bloomberg: la
+              máquina con terminal trae el histórico en su próxima corrida de backfill y la deja activa.</p>
+            <div className="controls spp-controls">
+              <div className="field" style={{ flex: '0 1 150px' }}>
+                <label htmlFor="t-procode">Código</label>
+                <input id="t-procode" className="date-input mono" placeholder="SPY_US"
+                  value={tProcode} onChange={(e) => setTProcode(e.target.value)} /></div>
+              <div className="field" style={{ flex: '1 1 200px' }}>
+                <label htmlFor="t-name">Nombre</label>
+                <input id="t-name" className="date-input" placeholder="SPDR S&P 500 ETF"
+                  value={tName} onChange={(e) => setTName(e.target.value)} /></div>
+              <div className="field" style={{ flex: '0 1 190px' }}>
+                <label htmlFor="t-ticker">Ticker Bloomberg</label>
+                <input id="t-ticker" className="date-input mono" placeholder="SPY US Equity"
+                  value={tTicker} onChange={(e) => setTTicker(e.target.value)} /></div>
+              <div className="field"><label htmlFor="t-type">Tipo</label>
+                <select id="t-type" className="select" value={tType} onChange={(e) => setTType(e.target.value)}>
+                  {Object.entries(ENTITY_TYPES).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                </select></div>
+              <div className="field"><label htmlFor="t-start">Histórico desde</label>
+                <input id="t-start" className="date-input" type="date" value={tStart}
+                  onChange={(e) => setTStart(e.target.value)} /></div>
+              <div className="field"><label aria-hidden="true">&nbsp;</label>
+                <button className="btn" disabled={!canRegister} onClick={registerTicker}>Registrar</button></div>
+            </div>
+            <Echo echo={tickerEcho} />
+          </details>
+
+          <div className="table-wrap" style={{ marginTop: 10 }}>
+            <table>
+              <thead><tr><th>Componente</th><th>Serie</th><th className="num">Peso</th>
+                <th>FX (opcional)</th><th></th></tr></thead>
+              <tbody>
+                {constituents.length ? constituents.map((c, i) => (
+                  <tr key={c.series_id}>
+                    <td className="mono">{c.label}</td>
+                    <td className="dim">{c.detail}{c.points === 0 && <> · <b className="neg">sin precios</b></>}</td>
+                    <td className="num">
+                      <input className="date-input" type="number" min="0" step="0.01"
+                        style={{ width: 90 }} value={c.weight} aria-label={`Peso de ${c.label}`}
+                        onChange={(e) => setConstituents(
+                          constituents.map((x, j) => (j === i ? { ...x, weight: e.target.value } : x)))} />
+                    </td>
+                    <td>
+                      <select className="select" value={c.fx_series_id} aria-label={`FX de ${c.label}`}
+                        onChange={(e) => setConstituents(
+                          constituents.map((x, j) => (j === i ? { ...x, fx_series_id: e.target.value } : x)))}>
+                        <option value="">— sin conversión —</option>
+                        {fxCatalog.map((s) => (
+                          <option key={s.series_id} value={String(s.series_id)}>{s.label} · {s.field} · {s.source}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td><button className="btn danger"
+                      onClick={() => setConstituents(constituents.filter((_, j) => j !== i))}>Quitar</button></td>
+                  </tr>
+                )) : <tr><td colSpan={5} className="dim">Busca series y agrégalas a la canasta.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <p className="page-sub">Suma de pesos: <b className={sumOk ? 'pos' : 'neg'}>
+            {weightSum.toLocaleString('es-PE', { maximumFractionDigits: 4 })}</b> (debe ser 1 o 100)</p>
+
+          <div className="controls">
+            <button className="btn primary" disabled={!canSave} onClick={saveVersion}
+              title={reason.trim() ? undefined : 'Escribe el motivo de la versión'}>
+              Guardar versión y recalcular</button>
+            <button className="btn" disabled={!current || !versions.length || busy}
+              onClick={() => materialize(current.procode, current.display_name)}>
+              Recalcular «{current?.display_name || '—'}»</button>
+          </div>
+          <Echo echo={saveEcho} />
+          {/* The materialization runs in the shared task; its trail shows here. */}
+          {task && <Log task={task} />}
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">Serie calculada</div>
+          <p className="page-sub">
+            {current?.points
+              ? `${nInt(current.points)} fechas · ${fDate(current.from)} a ${fDate(current.to)} · último nivel ${
+                current.last_level.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
+              : 'Todavía no hay serie calculada: guarda una versión y recalcula.'}
+          </p>
+          {current?.points > 0 && (
+            <div className="controls" style={{ marginBottom: 12 }}>
+              <a className="btn" href={apiUrl(`/api/benchmarks/${encodeURIComponent(current.procode)}/export`)}>
+                ↓ Bajar la serie · XLSX</a>
+            </div>
+          )}
+
+          <div className="panel-title">Historial de versiones</div>
+          <p className="page-sub">Cada versión rige desde su fecha hasta la siguiente. Nada se borra:
+            una corrección es otra versión que dice a cuál reemplaza y por qué.</p>
+          {versions.length ? [...versions].reverse().map((v) => {
+            const changes = changesOf(v.version_id);
+            const dropped = Object.values(changes).filter((r) => r.change === 'dropped');
+            return (
+              <div key={v.version_id} style={{ marginBottom: 14 }}>
+                <div className="panel-title" style={{ fontSize: 13 }}>
+                  Versión {v.version_id} · desde {fDate(v.effective_from)} · {CHANGE_TYPES[v.change_type] || v.change_type}
+                </div>
+                <p className="page-sub" style={{ margin: '2px 0 6px' }}>
+                  <b>{v.reason}</b>
+                  {' · '}{METHOD_LABELS[v.method] || v.method}
+                  {v.rebalance_frequency ? ` (${FREQUENCY_LABELS[v.rebalance_frequency] || v.rebalance_frequency})` : ''}
+                  {v.supersedes_version_id ? ` · reemplaza a la ${v.supersedes_version_id}` : ''}
+                  {' · registrada el '}{fTime(v.created_at)}{v.recorded_by ? ` por ${v.recorded_by}` : ''}
+                  {v.support_doc ? <> · <span className="mono">{v.support_doc}</span></> : null}
+                </p>
+                <Report rows={[
+                  ...v.constituents.map((c) => {
+                    const ch = changes[c.series_id];
+                    const mark = ch ? CHANGE_MARK[ch.change] : '';
+                    const before = ch && ch.change === 'reweighted' ? ` (antes ${pctOf(ch.weight_before)})` : '';
+                    return [`${c.label}${c.fx_series_id ? ' (con FX)' : ''}${mark ? ` · ${mark}` : ''}`,
+                      `${pctOf(c.weight)}${before}`];
+                  }),
+                  ...dropped.map((r) => [`${r.label} · ${CHANGE_MARK.dropped}`, `antes ${pctOf(r.weight_before)}`]),
+                ]} />
+              </div>
+            );
+          }) : <p className="page-sub dim">Ninguna versión todavía.</p>}
+        </div>
+      </div>
+    </>
+  );
+}

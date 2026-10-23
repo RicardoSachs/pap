@@ -6,9 +6,14 @@
 // inside a Suspense boundary for static export.
 // ---------------------------------------------------------------------------
 import './globals.css';
+// OURS: our global-scope rules live in a separate sheet loaded after
+// globals.css, which stays verbatim as it comes from upstream.
+import './styles/overrides.css';
 import { Suspense } from 'react';
 import { Inter, IBM_Plex_Mono } from 'next/font/google';
 import DashboardProvider from '../components/DashboardProvider';
+// OURS: the fund type our dashboards share through the floating pill.
+import ModuleProvider from '../components/ModuleContext';
 import Shell from '../components/Shell';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
@@ -29,7 +34,9 @@ export default function RootLayout({ children }) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         <Suspense fallback={null}>
           <DashboardProvider>
-            <Shell>{children}</Shell>
+            <ModuleProvider>
+              <Shell>{children}</Shell>
+            </ModuleProvider>
           </DashboardProvider>
         </Suspense>
       </body>

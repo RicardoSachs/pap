@@ -1,0 +1,91 @@
+/* app/spp/spp.css */
+/* ===========================================================================
+   OURS. What belongs to the Valor Cuota SPP tablero, and only that.
+
+   It lived at the end of globals.css, mixed with the base design system, and
+   every new version of the interface meant rescuing it by hand. Now
+   app/spp/layout.js loads it, the one place that needs it.
+
+   The widgets this tablero shares with the others (sub-tab bar, segmented
+   buttons, collapsibles, the two-column grid, report tables, the task log)
+   moved to app/styles/widgets.css when the second module appeared. What is
+   left here makes no sense outside the valor cuota.
+   =========================================================================== */
+
+/* AFP color chip in tables. */
+.spp-chip {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  margin-right: 7px; vertical-align: baseline;
+}
+
+/* Windows tables. Fixed layout so the relative and the absolute tables
+   share one column grid: the fund and AFP columns have set widths and the
+   window columns split the rest equally. The minimum width keeps every
+   figure on one line (seventeen windows at 13px); below it the wrapper
+   scrolls horizontally instead of clipping digits. */
+.spp-windows table { table-layout: fixed; width: 100%; }
+.spp-grid-windows table { min-width: 1240px; }   /* seventeen windows */
+.spp-grid-ranks table { min-width: 920px; }      /* thirteen months */
+.spp-windows col.spp-col-fund { width: 70px; }
+.spp-windows col.spp-col-afp { width: 112px; }
+.spp-windows col.spp-col-name { width: 130px; }  /* chip + AFP name */
+.spp-windows th, .spp-windows td { padding: 8px 6px; }
+/* Rank cells are centered; their month headers too. */
+.spp-grid-ranks th:not(:first-child) { text-align: center; }
+.spp-section td {
+  background: var(--s3); font-weight: 600; letter-spacing: .02em;
+  border-top: 1px solid var(--s4);
+}
+
+/* Monthly rank cells. */
+.spp-rank { text-align: center; }
+
+/* Cut between what the top filters govern and what carries its own
+   controls: a line with the explanation in the middle. */
+.spp-divider {
+  display: flex; align-items: center; gap: 14px;
+  margin: 26px 0 22px; color: var(--text-secondary); font-size: 12px;
+}
+.spp-divider::before, .spp-divider::after {
+  content: ''; flex: 1; border-top: 1px solid var(--s4);
+}
+.spp-divider span { white-space: nowrap; }
+@media (max-width: 720px) { .spp-divider span { white-space: normal; text-align: center; } }
+
+/* Windows: the fund is one cell spanning its AFP rows. The first row of
+   each block carries a stronger line so the groups read without a title
+   row. */
+.spp-windows td.spp-fund {
+  vertical-align: middle; text-align: left; font-weight: 600;
+  color: var(--text-secondary); white-space: nowrap;
+  border-right: 1px solid var(--s4);
+}
+.spp-windows tr.spp-block td { border-top: 2px solid var(--s4); }
+.spp-windows tbody tr.spp-block:first-child td { border-top: none; }
+.spp-windows th.spp-afp, .spp-windows td.spp-afp { text-align: left; }
+.spp-windows tr.spp-house td { font-weight: 700; }
+/* Benchmark rows inside a fund's block: an index, not an AFP. */
+.spp-windows tr.spp-benchmark td.spp-afp { font-style: italic; color: var(--text-secondary); }
+.spp-windows tr.spp-benchmark td { border-top: 1px dashed var(--s4); }
+/* A thick rule where the unit changes (percent | basis points | level), so
+   two scales never read as one. */
+.spp-windows th.spp-unit-break, .spp-windows td.spp-unit-break {
+  border-left: 3px solid var(--text-secondary);
+}
+
+/* Chart header: centered title and the data button on the right. Three
+   columns 1fr auto 1fr, so the button does not pull the title off center. */
+.spp-chart-header {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 12px; margin-bottom: 12px;
+}
+.spp-chart-header > :last-child { justify-self: end; }
+
+/* The house row, shaded in its color besides bold. The fund cell spans the
+   whole block and is not the house's: excluded. */
+.spp-windows tr.spp-house td:not(.spp-fund) {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.btn.spp-icon { padding: 7px 9px; line-height: 0; }
+.spp-spinning { display: inline-block; font-size: 14px; line-height: 16px; }

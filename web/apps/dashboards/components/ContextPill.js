@@ -10,6 +10,9 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useDashboard } from './DashboardProvider';
+// OURS: on our dashboards the pill is ours - same clothes, our controls.
+import { isOurDashboard } from '../lib/routes';
+import ModulePill from './ModulePill';
 
 const SOURCES = [['bloomberg', 'Bloomberg'], ['fms', 'FMS']];
 
@@ -32,6 +35,9 @@ export default function ContextPill() {
   }, [open]);
 
   if (!d) return null;
+  // OURS: our dashboards read no portfolio or source; their pill carries
+  // the fund type, the same quick period and the module's views.
+  if (isOurDashboard(path)) return <ModulePill />;
   const showFund = !(path === '/comparacion' || path === '/comparacion/');
   const allPeriods = [...d.periods, 'Custom'];
   const fundLabel = d.portfolio?.display_name || (d.portfolios.length ? '—' : 'Loading…');

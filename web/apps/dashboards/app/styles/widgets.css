@@ -1,0 +1,132 @@
+/* app/styles/widgets.css */
+/* ===========================================================================
+   OURS. The widgets our dashboards share: the sub-tab bar, the segmented
+   buttons, the collapsibles, the two-column grid, the report tables and the
+   task log.
+
+   They were born in app/spp/spp.css and left it when the second dashboard
+   appeared: they are not the valor cuota monitor's, they are how we build a
+   dashboard, and every module needs them identical. The alternatives were
+   duplicating them or having one module load another's sheet, and neither
+   survives a third module.
+
+   They stay OUT of globals.css on purpose, for the same reason as spp.css:
+   the upstream pages do not need them, and mixing them into the base design
+   system would mean rescuing them by hand on every update. The layout of
+   each module that uses them loads this file.
+
+   The classes keep the .spp- prefix: it means "ours", not "the SPP monitor's".
+   =========================================================================== */
+
+/* Segmented button groups (metric / fund / window / period...). */
+.spp-controls { flex-wrap: wrap; row-gap: 12px; }
+.spp-seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.spp-seg-btn {
+  padding: 5px 10px; border: 1px solid var(--s4); border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-family: var(--font-sans); font-size: 12px; cursor: pointer;
+}
+.spp-seg-btn:hover { color: var(--text-primary); }
+.spp-seg-btn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+/* Collapsible sections inside a panel. */
+.spp-collapsible { margin-top: 14px; }
+.spp-collapsible > summary {
+  cursor: pointer; color: var(--text-secondary); font-size: 13px;
+  padding: 6px 0; user-select: none;
+}
+.spp-collapsible[open] > summary { color: var(--text-primary); }
+
+/* Background-task log. */
+.spp-log {
+  margin-top: 10px; padding: 10px 12px; background: var(--s0);
+  border: 1px solid var(--s4); border-radius: 6px; font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* Write views: act on the left, see on the right. Collapses on narrow screens.
+   minmax(0, 1fr), not 1fr: a bare 1fr is minmax(auto, 1fr), and `auto` lets
+   a wide table on the right push the split over - so two rows of the same
+   page had their seam in two different places. With 0 as the floor the
+   halves are halves, and a table that does not fit scrolls inside its
+   panel (.table-wrap has overflow-x: auto) instead of widening it. */
+.spp-two-up {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;
+  margin-bottom: 16px;
+}
+.spp-two-up .panel { margin-bottom: 0; min-width: 0; }
+@media (max-width: 1100px) { .spp-two-up { grid-template-columns: 1fr; } }
+
+/* Small key/value report tables (review reports, run status). */
+.spp-report { border-collapse: collapse; margin-top: 10px; min-width: 60%; }
+.spp-report td {
+  padding: 5px 12px 5px 0; border-bottom: 1px solid var(--s4);
+  font-size: 13px; color: var(--text-secondary);
+}
+.spp-report td.num {
+  text-align: right; color: var(--text-primary);
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+
+/* ----- File format: icon + window ------------------------------------------
+   Here and not in a module's sheet because every site that receives a file
+   uses it, across modules. */
+.fmt-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0;
+  background: transparent; border: 1px solid var(--s4); border-radius: 6px;
+  color: var(--text-secondary); cursor: pointer; transition: all .15s;
+}
+.fmt-icon:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-tint); }
+
+/* The backdrop dims what is behind: the window carries a wide table and
+   without this it blends with the page's own tables. */
+.fmt-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, .55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 6vh 16px 16px;
+}
+.fmt-window {
+  background: var(--s1); border: var(--card-border); border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .5);
+  width: min(920px, 100%);
+  /* Only the table, so it no longer grows: the max-height stays as a net,
+     for the spreadsheet that one day brings thirty columns. */
+  max-height: 88vh; overflow-y: auto;
+  padding: 18px 20px 20px;
+}
+.fmt-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.fmt-title { font-size: 15px; font-weight: 600; }
+.fmt-summary { color: var(--text-secondary); font-size: 13px; margin: 6px 0 0; max-width: 70ch; }
+.fmt-close {
+  background: transparent; border: none; color: var(--text-secondary);
+  font-size: 24px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.fmt-close:hover { color: var(--text-primary); }
+.fmt-body { margin-top: 14px; }
+.fmt-example table { font-size: 12px; }
+.fmt-example th { white-space: nowrap; }
+.fmt-example td { white-space: nowrap; font-family: var(--font-mono); }
+.fmt-req { color: var(--brand); margin-left: 2px; }
+.fmt-footer { font-size: 12px; color: var(--text-muted); margin: 8px 0 14px; }
+.fmt-notes { margin: 14px 0 0; padding-left: 18px; }
+.fmt-notes li { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; max-width: 80ch; }
+
+/* ----- Long forms: labelled groups ------------------------------------------
+   A twelve-field form in three rows reads like soup; grouped by what they
+   ask (who, what, how much, when) it reads like a record. The label wears
+   the same tone as the field labels, one notch stronger, so it orders
+   without competing with them. */
+.spp-group { margin-top: 14px; }
+.spp-group:first-of-type { margin-top: 10px; }
+.spp-group-title {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-muted); font-weight: 600; margin-bottom: 6px;
+  padding-bottom: 4px; border-bottom: 1px solid var(--s3);
+}
+
+/* The header of every file upload: children align to the center so the
+   icon (28px), the buttons and the file input sit on one line, which
+   .controls (align-items: flex-end) does not guarantee. */
+.upload-header { align-items: center; margin-top: 10px; }

@@ -1,0 +1,56 @@
+/* app/styles/overrides.css */
+/* ===========================================================================
+   OURS. Our global-scope rules, loaded AFTER globals.css.
+
+   globals.css is the upstream design system and stays verbatim: when a new
+   version arrives it is replaced whole and this file survives. Only what
+   globals.css lacks, or has differently for the whole site, goes here. Each
+   dashboard keeps its own sheet (app/spp/spp.css) and what they share lives
+   in styles/widgets.css.
+
+   The tokens (--brand, --positive, --negative, --warning, --card-border) are
+   defined by globals.css since upstream release 0.1.8 under the same names
+   our dashboards use: no bridge needed.
+   =========================================================================== */
+
+/* .dim means "fainter than the surrounding text" everywhere, so it has to
+   win over .page-sub's own color: same specificity, and .page-sub is
+   declared later in globals.css, so the combination silently did nothing. */
+.page-sub.dim { color: var(--text-muted); }
+
+/* Weight follows consequence: one default action per panel, and the ones
+   that delete or overwrite say so before they are clicked. The primary
+   action wears the BRAND color; the destructive one, the semantic negative.
+   Never the other way round: the brand does not mean danger. */
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.btn.primary:hover { background: var(--brand-dark); border-color: var(--brand-dark); color: #fff; }
+.btn.primary:disabled { background: var(--brand); }
+.btn.danger { color: var(--negative); }
+.btn.danger:hover { border-color: var(--negative); color: var(--negative); }
+
+/* NO box of ours scrolls vertically on its own: it grows with its content
+   and the page is what scrolls. How much is shown is decided by the expand
+   and collapse buttons (components/useShowAll.js), not by a scrollbar.
+   HORIZONTAL scroll stays, and is not optional: a fifty-column table without
+   it would overflow the whole page.
+
+   globals.css ships .table-wrap with max-height: 62vh; it has to be undone by
+   hand or the vertical scroll comes back with every update. Border, radius
+   and shadow ARE inherited. Scoped to OUR pages (.spp-page, .bm-page): the
+   upstream tables keep their scroll box. */
+.spp-page .table-wrap, .bm-page .table-wrap {
+  overflow-x: auto; overflow-y: visible; max-height: none;
+}
+
+/* Two classes globals.css does not ship and the pages DO use. They were in
+   the previous design system and got lost in the change; without them the
+   warning renders as plain text and stops warning, a failure that breaks
+   nothing and so nobody notices. .flag-warn is used by the upstream prices
+   view and by several places in the SPP tablero; .combo-meta by the
+   security search. SEMANTIC warning color, not the brand: it says "look at
+   this". */
+.flag-warn { color: var(--warning); }
+.combo-meta {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-secondary);
+}

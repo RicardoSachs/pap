@@ -1,9 +1,9 @@
 // web/apps/dashboards/app/benchmarks/page.js
 // ---------------------------------------------------------------------------
 // Benchmarks · Panel: one composite index at a time - its level series over
-// a window, in level or base 100, next to the house fund of the same type
-// when the procode names one (SPP_BENCH_F2 -> PROFUTURO Fondo 2); the
-// returns over the standard windows; and the composition in force.
+// a window, in level or base 100, next to the house fund it is assigned to
+// (SPP_BENCH_F2 -> PROFUTURO Fund 2); the returns over the standard
+// windows; and the composition in force.
 //
 // Everything comes from /api/benchmarks (levels, versions) and, for the
 // overlay, /api/spp/series. Nothing here is written.
@@ -26,12 +26,12 @@ import { chartTheme } from '../../lib/theme';
 const PlotlyChart = dynamic(() => import('../../components/PlotlyChart'), { ssr: false });
 
 const METHODS = {
-  buy_and_hold: 'Rebalanceo manual', fixed_weights: 'Pesos fijos (rebalanceo periódico)', heuristic: 'Heurístico',
+  buy_and_hold: 'Manual rebalancing', fixed_weights: 'Fixed weights (periodic rebalancing)', heuristic: 'Heuristic',
 };
-const RETURN_WINDOWS = [['MTD', 'mtd'], ['YTD', 'ytd'], ['FY', 'fy'], ['1A', 1], ['3A', 3], ['5A', 5]];
+const RETURN_WINDOWS = [['MTD', 'mtd'], ['YTD', 'ytd'], ['FY', 'fy'], ['1Y', 1], ['3Y', 3], ['5Y', 5]];
 
 // The fund type a benchmark is paired with: the assignment made in
-// Registro, or, for an index declared before assignments existed, its
+// Registry, or, for an index declared before assignments existed, its
 // procode suffix.
 const fundOf = (procode) => {
   const m = /_F(\d)$/.exec(procode || '');
@@ -161,9 +161,9 @@ export default function BenchmarksPanelPage() {
 
   const latest = versions.length ? versions[versions.length - 1] : null;
   const windowLabel = period === 'Custom' && dash?.customFrom && dash?.customTo
-    ? `${fDate(dash.customFrom)} a ${fDate(dash.customTo)}` : period;
+    ? `${fDate(dash.customFrom)} to ${fDate(dash.customTo)}` : period;
   const title = `${current?.display_name || '—'}`;
-  const footer = scale === 'base' ? 'Expresado en base 100' : 'Expresado en nivel';
+  const footer = scale === 'base' ? 'Rebased to 100' : 'In level';
   const fileName = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -176,22 +176,22 @@ export default function BenchmarksPanelPage() {
         <div className="page-dashboard-title">Benchmarks</div>
       </div>
       <p className="page-sub">
-        Índices compuestos de la mesa · {list ? `${nInt(list.length)} declarados` : '—'}
-        {current?.points ? ` · ${current.display_name}: ${nInt(current.points)} fechas (${fDate(current.from)} a ${fDate(current.to)})` : ''}
+        The desk's composite indices · {list ? `${nInt(list.length)} declared` : '—'}
+        {current?.points ? ` · ${current.display_name}: ${nInt(current.points)} dates (${fDate(current.from)} to ${fDate(current.to)})` : ''}
       </p>
       {error && <div className="panel error">Error: {error}</div>}
 
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Benchmark{pillFund === 'all' ? '' : ` · Fondo ${pillFund}`}</label>
+          <div className="field"><label>Benchmark{pillFund === 'all' ? '' : ` · Fund ${pillFund}`}</label>
             {visible.length
               ? <SppSeg items={visible.map((b) => [b.display_name, b.procode])} value={selected} onChange={setSelected} />
-              : <span className="dim">Ningún benchmark vinculado a este fondo.</span>}</div>
-          <div className="field"><label>Escala</label>
-            <SppSeg items={[['Nivel', 'level'], ['Base 100', 'base']]} value={scale} onChange={setScale} /></div>
+              : <span className="dim">No benchmark assigned to this fund.</span>}</div>
+          <div className="field"><label>Scale</label>
+            <SppSeg items={[['Level', 'level'], ['Base 100', 'base']]} value={scale} onChange={setScale} /></div>
           {fund != null && houseName && (
-            <div className="field"><label>Comparar</label>
-              <SppSeg items={[[`${houseName} F${fund}`, true], ['Solo el índice', false]]}
+            <div className="field"><label>Compare</label>
+              <SppSeg items={[[`${houseName} F${fund}`, true], ['Index only', false]]}
                 value={compare} onChange={setCompare} /></div>
           )}
         </div>
@@ -211,23 +211,23 @@ export default function BenchmarksPanelPage() {
                 margin: { l: 70, r: 20, t: 10, b: 60 },
                 hovermode: 'x unified',
                 xaxis: { hoverformat: '%d %b %Y' },
-                yaxis: { type: 'linear', title: scale === 'base' ? 'Base 100' : 'Nivel' },
+                yaxis: { type: 'linear', title: scale === 'base' ? 'Base 100' : 'Level' },
               }}
             />
           ) : levels === null
-            ? <div className="loading">Cargando…</div>
-            : <p className="page-sub dim">Sin niveles calculados para este benchmark: declara una versión y recalcula en <b>Registro</b>.</p>}
+            ? <div className="loading">Loading…</div>
+            : <p className="page-sub dim">No computed levels for this benchmark: declare a version and rebuild in <b>Registry</b>.</p>}
           {traces.length > 0 && (
             <p className="page-sub dim" style={{ textAlign: 'center', margin: '6px 0 0' }}>
-              {footer}{scale === 'base' && house?.length ? ` · ${houseName} F${fund} en punteado, desde la primera fecha común` : ''}
+              {footer}{scale === 'base' && house?.length ? ` · ${houseName} F${fund} dotted, from the first common date` : ''}
             </p>
           )}
         </div>
 
         <div className="panel">
-          <div className="panel-title">Rendimiento</div>
-          <p className="page-sub">Al último nivel calculado{lastDate ? ` (${fDate(lastDate)})` : ''}; cada ventana parte del
-            último cierre anterior a su inicio.</p>
+          <div className="panel-title">Performance</div>
+          <p className="page-sub">At the last computed level{lastDate ? ` (${fDate(lastDate)})` : ''}; each window
+            starts at the last close before its start.</p>
           <table className="spp-report"><tbody>
             {RETURN_WINDOWS.map(([label, w]) => {
               const r = windowReturn(levels, w);
@@ -236,32 +236,32 @@ export default function BenchmarksPanelPage() {
                   <td className={`num ${r == null ? 'dim' : sign(shownValue(r, 'pct'))}`}>{fmtReturn(r, 'pct')}</td></tr>
               );
             })}
-            <tr><td>Último nivel</td><td className="num">{current?.last_level == null ? '—'
+            <tr><td>Last level</td><td className="num">{current?.last_level == null ? '—'
               : current.last_level.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td></tr>
           </tbody></table>
 
-          <div className="panel-title" style={{ marginTop: 16 }}>Composición vigente</div>
+          <div className="panel-title" style={{ marginTop: 16 }}>Current composition</div>
           {latest ? (
             <>
               <p className="page-sub" style={{ margin: '2px 0 6px' }}>
-                Versión {latest.version_id} · desde {fDate(latest.effective_from)} · {METHODS[latest.method] || latest.method}
+                Version {latest.version_id} · from {fDate(latest.effective_from)} · {METHODS[latest.method] || latest.method}
                 {latest.rebalance_frequency ? ` (${latest.rebalance_frequency})` : ''}
-                {' · '}<b>{latest.reason}</b> · registrada el {fTime(latest.created_at)}
-                {latest.recorded_by ? ` por ${latest.recorded_by}` : ''}
+                {' · '}<b>{latest.reason}</b> · recorded {fTime(latest.created_at)}
+                {latest.recorded_by ? ` by ${latest.recorded_by}` : ''}
               </p>
               <table className="spp-report"><tbody>
                 {latest.constituents.map((c) => (
                   <tr key={c.series_id}>
-                    <td>{c.label}{c.fx_series_id ? ' (con FX)' : ''} <span className="dim">· {c.procode} · {c.source}</span></td>
+                    <td>{c.label}{c.fx_series_id ? ' (with FX)' : ''} <span className="dim">· {c.procode} · {c.source}</span></td>
                     <td className="num">{(c.weight * 100).toLocaleString('es-PE', { maximumFractionDigits: 2 })} %</td>
                   </tr>
                 ))}
               </tbody></table>
               <p className="page-sub dim" style={{ marginTop: 8 }}>
-                {versions.length} versión(es) en total; el historial completo está en <b>Registro</b>.
+                {versions.length} version(s) in total; the full history is in <b>Registry</b>.
               </p>
             </>
-          ) : <p className="page-sub dim">Sin versiones declaradas.</p>}
+          ) : <p className="page-sub dim">No versions declared.</p>}
         </div>
       </div>
     </div>

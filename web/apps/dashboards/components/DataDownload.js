@@ -6,12 +6,12 @@
 // That is why it receives the Plotly traces and asks the API for nothing:
 // the view already carries its conversion - level, base 100, alpha in bps,
 // ranks - and what the operator wants in Excel is THAT reading, not the raw
-// series they already have in the Libro. One column per trace (its legend
+// series they already have in the Book. One column per trace (its legend
 // name), one row per X value, in order of appearance. Where a trace has no
 // value for that X, the cell is empty.
 //
 // UTF-8 with BOM so Excel reads the accents; comma as separator, the same
-// as the CSV the Libro exports from the server.
+// as the CSV the Book exports from the server.
 // ---------------------------------------------------------------------------
 'use client';
 
@@ -20,7 +20,7 @@ const esc = (v) => {
   return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 };
 
-export function csvFromTraces(traces, xAxis = 'fecha') {
+export function csvFromTraces(traces, xAxis = 'date') {
   const xs = [];
   const seen = new Set();
   traces.forEach((t) => (t.x || []).forEach((x) => {
@@ -55,11 +55,11 @@ export function downloadText(name, text, type = 'text/csv;charset=utf-8') {
  * chart title says (scale, fund, window), because the file is looked at
  * later, far from the screen that produced it.
  */
-export default function DataDownload({ traces, name, xAxis = 'fecha', label = '↓ Datos · CSV' }) {
+export default function DataDownload({ traces, name, xAxis = 'date', label = '↓ Data · CSV' }) {
   const any = Array.isArray(traces) && traces.some((t) => t.x?.length);
   return (
     <button type="button" className="btn" disabled={!any}
-      title={any ? 'Baja lo que muestra el gráfico, con su conversión' : 'Sin datos que bajar'}
+      title={any ? 'Download what the chart shows, with its conversion' : 'Nothing to download'}
       onClick={() => downloadText(`${name}.csv`, csvFromTraces(traces, xAxis))}>
       {label}
     </button>

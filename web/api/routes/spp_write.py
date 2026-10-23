@@ -63,11 +63,11 @@ def post_scrape(body: ScrapeRequest | None = None) -> dict:
     if not scraper_enabled():
         raise HTTPException(
             status_code=503,
-            detail=f"El scraper no esta habilitado en esta maquina ({machine_id()}). "
-                   "Pon SCRAPER_ENABLED=true en el archivo .env del proyecto y "
-                   "reinicia la API (la configuracion se cachea al arrancar).")
+            detail=f"The scraper is not enabled on this machine ({machine_id()}). "
+                   "Set SCRAPER_ENABLED=true in the project's .env and restart "
+                   "the API (the configuration is cached at startup).")
     force = bool(body and body.force)
-    return _launch("extraccion SBS", task.with_log(run_daily, force=force))
+    return _launch("SBS scrape", task.with_log(run_daily, force=force))
 
 
 # ---- Manual registration -----------------------------------------------------
@@ -104,11 +104,11 @@ async def post_history_review(file: UploadFile = File(...)) -> dict:
 def post_history_load(body: HistoryLoad) -> dict:
     """Second half: write the reviewed file, in the chosen mode."""
     if body.mode not in LOAD_MODES:
-        raise HTTPException(status_code=400, detail=f"Modo no valido: {body.mode}")
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {body.mode}")
     stored = task.read_upload(body.token)
     if stored is None:
         raise HTTPException(
             status_code=410,
-            detail="El archivo revisado ya no esta en memoria. Vuelve a subirlo.")
-    return _launch(f"carga historica ({body.mode})",
+            detail="The reviewed file is no longer in memory. Upload it again.")
+    return _launch(f"history load ({body.mode})",
                    task.with_log(load_history, content=stored["data"], mode=body.mode))

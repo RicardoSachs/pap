@@ -1,6 +1,6 @@
 // web/apps/dashboards/app/benchmarks/libro/page.js
 // ---------------------------------------------------------------------------
-// Benchmarks · Libro: one index's levels day by day, over the SAME date grid
+// Benchmarks · Book: one index's levels day by day, over the SAME date grid
 // as the valor cuota book, because the question it answers is "which days
 // is the index missing": listing only the days it has would hide exactly
 // what one is looking for. One book at a time, with the XLSX of the whole
@@ -15,7 +15,7 @@ import { useModule } from '../../../components/ModuleContext';
 import SppSeg from '../../../components/SppSeg';
 
 // 0 asks the API for the whole book.
-const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['Todas', 0]];
+const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['All', 0]];
 
 export default function BenchmarksLibroPage() {
   const [list, setList] = useState(null);
@@ -70,39 +70,39 @@ export default function BenchmarksLibroPage() {
         <div className="page-dashboard-title">Benchmarks</div>
       </div>
       <p className="page-sub">
-        Libro de {bench?.display_name || '—'} · {rows.length
-          ? (missing ? `${nInt(rows.length)} fechas · ${nInt(missing)} sin nivel` : `${nInt(rows.length)} fechas · sin huecos`)
+        Book of {bench?.display_name || '—'} · {rows.length
+          ? (missing ? `${nInt(rows.length)} dates · ${nInt(missing)} without level` : `${nInt(rows.length)} dates · no gaps`)
           : '—'}
       </p>
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Benchmark{pillFund === 'all' ? '' : ` · Fondo ${pillFund}`}</label>
+          <div className="field"><label>Benchmark{pillFund === 'all' ? '' : ` · Fund ${pillFund}`}</label>
             {visible.length
               ? <SppSeg items={visible.map((b) => [b.display_name, b.procode])} value={selected} onChange={setSelected} />
-              : <span className="dim">Ningún benchmark vinculado a este fondo.</span>}</div>
-          <div className="field"><label>Filas</label>
+              : <span className="dim">No benchmark assigned to this fund.</span>}</div>
+          <div className="field"><label>Rows</label>
             <SppSeg items={LIMITS} value={limit} onChange={setLimit} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>
             {selected && (
               <a className="btn" href={apiUrl(`/api/benchmarks/${encodeURIComponent(selected)}/export`)}>
-                ↓ Bajar la serie · XLSX</a>
+                ↓ Download the series · XLSX</a>
             )}</div>
         </div>
         <p className="page-sub dim" style={{ marginTop: 10, marginBottom: 0 }}>
-          Las fechas son las del libro de valor cuota: así un día sin nivel se ve como un hueco
-          en vez de desaparecer de la lista. El nivel lo produce el recálculo de la canasta,
-          en <b>Registro</b>.
+          The dates are the unit value book's: a day without a level shows as a gap
+          instead of vanishing from the list. The level comes from rebuilding the basket,
+          in <b>Registry</b>.
         </p>
       </div>
 
       {error && <div className="panel error">Error: {error}</div>}
 
       <div className="panel">
-        {loading ? <div className="loading">Cargando…</div> : (
+        {loading ? <div className="loading">Loading…</div> : (
           <div className="table-wrap spp-windows">
             <table>
               <thead>
-                <tr><th>Fecha</th>{columns.map((c) => <th key={c.col} className="num">{c.label}</th>)}</tr>
+                <tr><th>Date</th>{columns.map((c) => <th key={c.col} className="num">{c.label}</th>)}</tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
@@ -119,7 +119,7 @@ export default function BenchmarksLibroPage() {
                 ))}
                 {!rows.length && (
                   <tr><td colSpan={columns.length + 1} className="dim">
-                    {list && !list.length ? 'Ningún benchmark declarado.' : 'No hay fechas en el libro todavía.'}</td></tr>
+                    {list && !list.length ? 'No benchmark declared.' : 'No dates in the book yet.'}</td></tr>
                 )}
               </tbody>
             </table>

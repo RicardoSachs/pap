@@ -25,5 +25,5 @@ def get_format(key: str) -> dict:
     except KeyError:
         raise HTTPException(
             status_code=404,
-            detail=f"No hay un formato llamado '{key}'. Los que hay: "
+            detail=f"No format named '{key}'. The ones there are: "
                    + ", ".join(sorted(svc.FORMATS))) from None

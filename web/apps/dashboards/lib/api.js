@@ -18,14 +18,14 @@ export async function apiGet(path) {
 // What each status code means IN THIS APP, used only when the API sent no
 // `detail` of its own - when it did, that one is more concrete than this.
 const STATUS_HINTS = {
-  400: 'Los datos enviados no son validos.',
-  404: 'Esa operacion no existe en la API. Suele ser que la pagina quedo '
-    + 'de una version mas nueva que la API: cierra y vuelve a abrir el tablero.',
-  409: 'La operacion choca con el estado actual: o hay otra corriendo, o lo '
-    + 'que intentas cambiar esta en uso.',
-  410: 'Lo revisado ya no esta en memoria; vuelve a subir el archivo.',
-  413: 'El archivo es demasiado grande.',
-  503: 'Esta maquina no puede hacer eso (falta el permiso en el .env).',
+  400: 'The data sent is not valid.',
+  404: 'That operation does not exist in the API. Usually the page is from a '
+    + 'newer version than the API: close and reopen the dashboard.',
+  409: 'The operation clashes with the current state: another one is running, or '
+    + 'what you are trying to change is in use.',
+  410: 'The reviewed file is no longer in memory; upload it again.',
+  413: 'The file is too large.',
+  503: 'This machine cannot do that (the permission is missing in .env).',
 };
 const explainStatus = (status) => STATUS_HINTS[status]
   || `La API respondio ${status}. El detalle esta en la ventana de la API.`;
@@ -62,7 +62,7 @@ export async function apiSend(path, method, body, isForm = false) {
     return {
       ok: false,
       status: 0,
-      data: { detail: 'No se pudo hablar con la API (¿se cerró la ventana de la API?). No se guardó nada.' },
+      data: { detail: 'Could not reach the API (was its window closed?). Nothing was saved.' },
     };
   }
 }

@@ -1,7 +1,7 @@
 // web/apps/dashboards/app/spp/report.js
 // ---------------------------------------------------------------------------
-// The "Reporte de rentabilidad": a PDF built in the browser from what the
-// Panel already knows how to compute, at the chosen control date.
+// The performance report: a PDF built in the browser from what the Panel
+// already knows how to compute, at the chosen control date.
 //
 //   Page 1      the relative-return table (the house against each
 //               competitor), in blocks per fund, as on screen.
@@ -56,7 +56,7 @@ function paperLayout(title, subtitle) {
     legend: { orientation: 'h', y: -0.22, font },
     xaxis: { gridcolor: '#e6e6e6', linecolor: '#cccccc', tickfont: font },
     yaxis: {
-      title: 'Alpha acumulado (bps)', gridcolor: '#e6e6e6', linecolor: '#cccccc',
+      title: 'Cumulative alpha (bps)', gridcolor: '#e6e6e6', linecolor: '#cccccc',
       zeroline: true, zerolinecolor: '#666', zerolinewidth: 1.5, ticksuffix: ' bps',
       tickfont: font,
     },
@@ -110,15 +110,15 @@ export async function generateReport({ cfg, windows }) {
 
   // ---- Page 1: the relative table -------------------------------------------
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(30);
-  doc.text(latin1(`Reporte de rentabilidad · ${fDate(date)}`), M, 15);
+  doc.text(latin1(`Performance report · ${fDate(date)}`), M, 15);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GRAY);
   doc.text(doc.splitTextToSize(latin1(
-    `Rendimiento relativo · ${house} contra cada competidora · inicio de mes ${fDate(windows.dates.month)}`
-    + ` · M-1 ${fDate(windows.dates.month1)} · inicio de año ${fDate(windows.dates.year)}`
-    + ` · inicio de ejercicio ${fDate(windows.dates.fy)}`), W - 2 * M), M, 20);
+    `Relative performance · ${house} vs each competitor · month start ${fDate(windows.dates.month)}`
+    + ` · M-1 ${fDate(windows.dates.month1)} · year start ${fDate(windows.dates.year)}`
+    + ` · fiscal year start ${fDate(windows.dates.fy)}`), W - 2 * M), M, 20);
 
   // The filed page keeps the thirteen columns it was laid out for: the
-  // trailing windows (3M ... 10A annualized) stay on screen.
+  // trailing windows (3M ... 10Y annualized) stay on screen.
   const TRAILING = new Set(['a10', 'a5', 'a3', 'm12', 'm6', 'm3']);
   const cols = (windows.return_columns || []).filter((c) => c[2] !== 'level' && !TRAILING.has(c[0]));
   const order = houseFirst(cfg, names);
@@ -130,7 +130,7 @@ export async function generateReport({ cfg, windows }) {
     rows.forEach((r, i) => {
       const row = [];
       if (i === 0) {
-        row.push({ content: `Fondo ${f}`, rowSpan: rows.length,
+        row.push({ content: `Fund ${f}`, rowSpan: rows.length,
           styles: { valign: 'middle', fontStyle: 'bold', textColor: GRAY, halign: 'left' } });
       }
       row.push(latin1(r.afp));
@@ -141,7 +141,7 @@ export async function generateReport({ cfg, windows }) {
   });
   autoTable(doc, {
     startY: 26, margin: { left: M, right: M },
-    head: [['Fondo', 'AFP', ...cols.map((c) => latin1(c[1]))]],
+    head: [['Fund', 'AFP', ...cols.map((c) => latin1(c[1]))]],
     body, theme: 'grid',
     // Thirteen columns in 19 cm: 6-point type, the smallest that prints
     // legibly, and tight cells; a wide AFP column for the house in bold.
@@ -170,7 +170,7 @@ export async function generateReport({ cfg, windows }) {
   doc.setFontSize(7); doc.setTextColor(...GRAY);
   // Split to the page width: in one piece it ran off the right edge.
   const note = doc.splitTextToSize(latin1(
-    'Hasta meses en puntos básicos; FY, YTD y año pasado en porcentaje.'), W - 2 * M);
+    'Up to months in basis points; FY, YTD and last year in percent.'), W - 2 * M);
   doc.text(note, M, doc.lastAutoTable.finalY + 6);
 
   // ---- Alpha: all the YTD, then all the FY; two funds per page -------------
@@ -181,29 +181,29 @@ export async function generateReport({ cfg, windows }) {
     for (let i = 0; i < funds.length; i += PER_PAGE) {
       doc.addPage();
       doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(30);
-      doc.text(latin1(`Alpha acumulado ${label} · ${house} contra cada AFP`), M, 15);
+      doc.text(latin1(`Cumulative alpha ${label} · ${house} vs each AFP`), M, 15);
       let y = 22;
       for (const f of funds.slice(i, i + PER_PAGE)) {
         const g = seriesPerChart.find((x) => x.f === f && x.label === label);
         const title = `Alpha F${f} · ${label}`;
-        const subtitle = `del ${fDate(from)} al ${fDate(date)} · puntos básicos, ${house} menos cada AFP`;
+        const subtitle = `from ${fDate(from)} to ${fDate(date)} · basis points, ${house} minus each AFP`;
         const img = g ? await alphaImage(Plotly, { series: g.series, house, cfg, title, subtitle }) : null;
         if (img) {
           // 'FAST' = Flate: jsPDF stores the PNG uncompressed unless asked.
           doc.addImage(img, 'PNG', M, y, imgWidth, imgHeight, undefined, 'FAST');
         } else {
           doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GRAY);
-          doc.text(latin1(`${title}: sin datos suficientes en la ventana.`), M, y + 10);
+          doc.text(latin1(`${title}: not enough data in the window.`), M, y + 10);
         }
         y += imgHeight + 10;
       }
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GRAY);
-      doc.text(latin1(`Expresado en puntos básicos: ${house} menos cada AFP, acumulado desde el`
-        + ` primer día de la ventana con dato en todas.`), M, y - 2);
+      doc.text(latin1(`In basis points: ${house} minus each AFP, cumulative from the first`
+        + ` day of the window with data in every series.`), M, y - 2);
     }
   }
 
-  // "dd-mm-aaaa": Windows does not allow "/" in a file name.
-  doc.save(`Reporte de rentabilidad ${fDate(date).replace(/\//g, '-')}.pdf`);
+  // "dd-mm-yyyy": Windows does not allow "/" in a file name.
+  doc.save(`Performance report ${fDate(date).replace(/\//g, '-')}.pdf`);
   return { pages: 1 + funds.length, charts: funds.length * spans.length };
 }

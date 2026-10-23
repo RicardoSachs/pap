@@ -47,7 +47,7 @@ def launch(action: str, func, **kwargs) -> None:
     """
     with _lock:
         if _task["active"]:
-            raise RuntimeError(f"Ya hay una operacion en curso: {_task['action']}")
+            raise RuntimeError(f"An operation is already running: {_task['action']}")
         _task.update(active=True, action=action, result=None, error=None)
         _task["log"].clear()
 
@@ -56,9 +56,9 @@ def launch(action: str, func, **kwargs) -> None:
 
     def run() -> None:
         try:
-            record(f"Iniciando {action}...")
+            record(f"Starting {action}...")
             _task["result"] = func(log=record, **kwargs)
-            record("Listo.")
+            record("Done.")
         except Exception as exc:
             _task["error"] = str(exc)
             record(f"ERROR: {exc}")

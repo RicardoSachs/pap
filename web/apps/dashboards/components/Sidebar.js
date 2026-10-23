@@ -20,7 +20,7 @@ const ITEMS = [
   { href: '/contribution/', label: 'Contribution', icon: '≡' },
   { href: '/comparacion/', label: 'Comparison', icon: '⇄' },
   // OURS: the dashboards that do not exist upstream.
-  { href: '/spp/', label: 'Valor Cuota SPP', icon: '◷' },
+  { href: '/spp/', label: 'SPP Unit Value', icon: '◷' },
   { href: '/benchmarks/', label: 'Benchmarks', icon: '◈' },
 ];
 const SOON = [

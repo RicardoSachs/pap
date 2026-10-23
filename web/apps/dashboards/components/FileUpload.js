@@ -39,10 +39,10 @@ const FileUpload = forwardRef(function FileUpload({
   actions = null,
   echo = '',
   footer = null,
-  previewTitle = 'Vista previa del archivo',
+  previewTitle = 'File preview',
   previewStatus = null,
   preview = null,
-  previewEmpty = 'Elige un archivo y aquí verás lo que trae, antes de que nada toque la base.',
+  previewEmpty = 'Choose a file and you will see what it brings here, before anything touches the database.',
 }, ref) {
   return (
     <div className="spp-two-up">
@@ -55,12 +55,12 @@ const FileUpload = forwardRef(function FileUpload({
         <div className="controls upload-header">
           <FileFormat formatKey={format} />
           {template && (
-            <a className="btn" href={apiUrl(template)}>↓ Plantilla · XLSX</a>
+            <a className="btn" href={apiUrl(template)}>↓ Template · XLSX</a>
           )}
           <input ref={ref} type="file" accept={accept} className="date-input"
-            aria-label="Archivo a cargar" onChange={onChange} />
-          {/* No sheet selector: the reader takes the first one. A "Hoja
-              (opcional)" box was one more question for the operator and
+            aria-label="File to upload" onChange={onChange} />
+          {/* No sheet selector: the reader takes the first one. A "Sheet
+              (optional)" box was one more question for the operator and
               almost never had an answer other than the first. */}
           {fileName && <span className="page-sub dim" style={{ margin: 0 }}>{fileName}</span>}
         </div>

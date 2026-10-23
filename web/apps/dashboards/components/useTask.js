@@ -57,7 +57,7 @@ export default function useTask() {
           setTask((t) => ({
             ...(t || {}),
             active: false,
-            error: 'Se perdió el seguimiento de la tarea (sin conexión con la API); puede seguir corriendo en el servidor. Recarga la página para reconectar.',
+            error: 'Lost track of the task (no connection with the API); it may still be running on the server. Reload the page to reconnect.',
           }));
         }
       }

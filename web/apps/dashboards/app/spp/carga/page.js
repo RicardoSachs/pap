@@ -1,6 +1,6 @@
 // web/apps/dashboards/app/spp/carga/page.js
 // ---------------------------------------------------------------------------
-// SPP tablero · Registro y carga: everything that writes.
+// SPP tablero · Register & load: everything that writes.
 //
 // One grammar for the whole view, ported from the monitor: on the LEFT you
 // act, on the RIGHT you see - and no file reaches the database without
@@ -39,10 +39,10 @@ function Sample({ sample, title }) {
   if (!sample || !sample.rows?.length) return null;
   return (
     <div style={{ marginTop: 12 }}>
-      <div className="panel-title">{title} · {nInt(sample.total)} fechas en total</div>
+      <div className="panel-title">{title} · {nInt(sample.total)} dates in total</div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Fecha</th>{sample.columns.map((c) => <th key={c} className="num">{c}</th>)}</tr></thead>
+          <thead><tr><th>Date</th>{sample.columns.map((c) => <th key={c} className="num">{c}</th>)}</tr></thead>
           <tbody>
             {visible.map((r) => (
               <tr key={r[0]}>
@@ -58,7 +58,7 @@ function Sample({ sample, title }) {
           </tbody>
         </table>
       </div>
-      <ShowAll label="filas del archivo" />
+      <ShowAll label="file rows" />
     </div>
   );
 }
@@ -81,9 +81,9 @@ export default function SppCargaPage() {
   };
 
   // ---- scrape ----
-  // The unattended run (Windows task at 16:00, with retries) has no box on
-  // screen: it leaves its trail in data/spp/scrape.log and in the task log.
-  // Only the hand launch lives here.
+  // The unattended run (scheduler job at 16:00, with retries) has no box on
+  // screen: it leaves its trail in job_runs and in the task log. Only the
+  // hand launch lives here.
   const [scrapeEcho, setScrapeEcho] = useState('');
 
   const scrape = async (force) => {
@@ -92,9 +92,9 @@ export default function SppCargaPage() {
     // 7 business days and replaces what is already in the book, including
     // hand corrections.
     if (force && !window.confirm(
-      'Correr y sobrescribir: vuelve a leer los últimos 7 días hábiles y '
-      + 'REEMPLAZA lo que ya esté en el libro para esas fechas, incluidas '
-      + 'las correcciones hechas a mano. ¿Continuar?')) return;
+      'Run and overwrite: re-reads the last 7 business days and REPLACES what '
+      + 'the book already holds for those dates, hand corrections included. '
+      + 'Continue?')) return;
     setScrapeEcho('');
     const r = await apiSend('/api/spp/scrape', 'POST', { force });
     if (!r.ok) { setScrapeEcho({ ok: false, text: r.data.detail }); return; }
@@ -137,7 +137,7 @@ export default function SppCargaPage() {
     if (!cfg || !rDate || !rAfp) return undefined;
     const funds = fundsOf(rAfp);
     setRValues(Object.fromEntries(funds.map((f) => [f, ''])));
-    setRCurrent(`${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)} — cargando…`);
+    setRCurrent(`${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)} — loading…`);
     setRNeighbors({ funds, dates: [], series: {} });
     // The previous write's result does not describe the new selection.
     setRMessage(null);
@@ -164,8 +164,8 @@ export default function SppCargaPage() {
       });
       setRValues(vals);
       setRCurrent(loaded
-        ? `${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)} — ${loaded} de ${funds.length} fondos ya registrados.`
-        : `${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)} — sin datos ese día.`);
+        ? `${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)} — ${loaded} of ${funds.length} funds already registered.`
+        : `${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)} — no data on that day.`);
       const dates = [...new Set(funds.flatMap((f) => series[f].map((p) => p[0])))]
         .sort().slice(-9).reverse();
       setRNeighbors({ funds, dates, series });
@@ -173,7 +173,7 @@ export default function SppCargaPage() {
     }).catch(() => {
       if (!current) return;
       setRPreload('error');
-      setRCurrent('No se pudo leer el libro para precargar; el registro queda bloqueado hasta reconectar.');
+      setRCurrent('The book could not be read to preload the boxes; registering stays blocked until the API is back.');
     });
     return () => { current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -189,11 +189,11 @@ export default function SppCargaPage() {
 
   const register = async (clearAll) => {
     if (!clearAll && !Object.values(rValues).some((v) => String(v).trim() !== '')) {
-      setRMessage({ ok: false, text: 'No hay ningún valor escrito. Para borrar la fecha usa «Anular la fecha».' });
+      setRMessage({ ok: false, text: 'No value typed. To clear the date use "Clear the date".' });
       return;
     }
     if (clearAll && !window.confirm(
-      `Anular ${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)}: borra los valores de todos sus fondos en esa fecha. ¿Continuar?`)) return;
+      `Clear ${rAfp} · ${metricName(cfg, rMetric)} · ${fDate(rDate)}: deletes the values of all its funds on that date. Continue?`)) return;
     const values = buildValues(fundsOf(rAfp), rValues, clearAll);
     const r = await apiSend('/api/spp/values', 'POST', {
       date: rDate, afp: rAfp, metric: rMetric, values,
@@ -203,11 +203,11 @@ export default function SppCargaPage() {
     const saved = Object.keys(x.saved).length;
     setRMessage({
       ok: true,
-      text: `${saved} valor(es) guardados`
-        + (x.deleted.length ? ` · ${x.deleted.length} borrados` : '')
+      text: `${saved} value(s) saved`
+        + (x.deleted.length ? ` · ${x.deleted.length} deleted` : '')
         + ` · ${x.afp} · ${metricName(cfg, x.metric)} · ${fDate(x.date)}`
-        + (x.new_row ? ' · fila nueva en el libro' : '')
-        + (x.row_deleted ? ' · la fecha quedó sin datos y salió del libro' : ''),
+        + (x.new_row ? ' · new row in the book' : '')
+        + (x.row_deleted ? ' · the date was left without data and dropped from the book' : ''),
     });
     setRTick((t) => t + 1);   // reload the boxes and neighbors with what was written
     loadStatus();
@@ -215,7 +215,7 @@ export default function SppCargaPage() {
 
   // ---- historical load ----
   const hRef = useRef(null);
-  const [hName, setHName] = useState('Ningún archivo seleccionado');
+  const [hName, setHName] = useState('No file selected');
   const [hReport, setHReport] = useState(null);
   const [hToken, setHToken] = useState(null);
   const [hEcho, setHEcho] = useState('');
@@ -223,7 +223,7 @@ export default function SppCargaPage() {
   const reviewHistory = async () => {
     const f = hRef.current?.files?.[0];
     if (!f) return;
-    setHName(`${f.name} · revisando…`); setHReport(null); setHToken(null); setHEcho('');
+    setHName(`${f.name} · reviewing…`); setHReport(null); setHToken(null); setHEcho('');
     const fd = new FormData(); fd.append('file', f);
     const r = await apiSend('/api/spp/history/review', 'POST', fd, true);
     if (!r.ok) {
@@ -231,7 +231,7 @@ export default function SppCargaPage() {
       setHEcho({ ok: false, text: r.data.detail });
       return;
     }
-    setHName(`${f.name} · revisado, nada escrito todavía`);
+    setHName(`${f.name} · reviewed, nothing written yet`);
     setHReport(r.data.report);
     setHToken(r.data.token);
   };
@@ -239,31 +239,31 @@ export default function SppCargaPage() {
   const loadHistory = async (mode) => {
     if (!hToken || !hReport) return;
     const msg = mode === 'missing'
-      ? 'Cargar lo que falta: agrega fechas nuevas y rellena celdas vacías. No modifica ningún valor que ya tenga dato. ¿Continuar?'
-      : `Cargar y corregir: además de agregar lo que falta, REEMPLAZA ${nInt(hReport.changed_cells)} celda(s) que difieren del archivo. ¿Continuar?`;
+      ? 'Load what is missing: adds new dates and fills empty cells. Changes no value that already has data. Continue?'
+      : `Load and correct: besides adding what is missing, REPLACES ${nInt(hReport.changed_cells)} cell(s) that differ from the file. Continue?`;
     if (!window.confirm(msg)) return;
     const r = await apiSend('/api/spp/history/load', 'POST', { token: hToken, mode });
     if (!r.ok) { setHEcho({ ok: false, text: r.data.detail }); return; }
-    setHEcho({ ok: true, text: 'Guardando en la base…' });
+    setHEcho({ ok: true, text: 'Saving to the database…' });
     start(r.data.action, onTaskDone((t) => {
       if (t.error) {
-        setHEcho({ ok: false, text: 'La carga falló y no se guardó nada nuevo. Puedes reintentar sin volver a subir el archivo.' });
+        setHEcho({ ok: false, text: 'The load failed and nothing new was saved. You can retry without uploading the file again.' });
       } else {
-        setHEcho({ ok: true, text: `Cargado en modo ${mode === 'missing' ? 'solo lo que falta' : 'corregir'}.` });
+        setHEcho({ ok: true, text: `Loaded in ${mode === 'missing' ? 'missing-only' : 'correct'} mode.` });
         setHToken(null);
       }
     }));
   };
 
   const historyRows = (i) => [
-    ['Archivo', `${i.file} · ${nInt(Math.round(i.bytes / 1024))} KB`],
-    ['Contenido', `${nInt(i.dates)} fechas · ${i.series} series · ${nInt(i.values)} valores`],
-    ['Rango', `${fDate(i.from)} a ${fDate(i.to)}`],
-    ['Fechas nuevas', `${nInt(i.new_dates)}${i.new_cells ? ` · ${nInt(i.new_cells)} valores` : ''}`],
-    ['Ya en el libro', nInt(i.known_dates)],
-    ['Celdas vacías que se llenarían', nInt(i.fill_cells)],
-    ['Celdas que difieren del libro', nInt(i.changed_cells)],
-    ['Celdas idénticas', nInt(i.unchanged_cells)],
+    ['File', `${i.file} · ${nInt(Math.round(i.bytes / 1024))} KB`],
+    ['Content', `${nInt(i.dates)} dates · ${i.series} series · ${nInt(i.values)} values`],
+    ['Range', `${fDate(i.from)} to ${fDate(i.to)}`],
+    ['New dates', `${nInt(i.new_dates)}${i.new_cells ? ` · ${nInt(i.new_cells)} values` : ''}`],
+    ['Already in the book', nInt(i.known_dates)],
+    ['Empty cells that would be filled', nInt(i.fill_cells)],
+    ['Cells that differ from the book', nInt(i.changed_cells)],
+    ['Identical cells', nInt(i.unchanged_cells)],
   ];
 
   const metricStep = rMetric === 'valor_cuota' ? '0.0000001' : '0.01';
@@ -274,27 +274,27 @@ export default function SppCargaPage() {
           the one-line subtitle, so every dashboard opens the same way. */}
       <div className="page-brand-block">
         <div className="page-brand-name">Profuturo Analytics</div>
-        <div className="page-dashboard-title">Valor Cuota SPP</div>
+        <div className="page-dashboard-title">SPP Unit Value</div>
       </div>
-      <p className="page-sub">Registro y carga · a la izquierda se actúa, a la derecha se ve.
-        Ningún archivo llega a la base sin haberse mostrado antes.</p>
+      <p className="page-sub">Register & load · act on the left, see on the right.
+        No file reaches the database without having been shown first.</p>
 
       {/* ===== 1 · Manual registration of valor cuota ===== */}
       <div className="spp-two-up">
         <div className="panel">
-          <div className="panel-title">Valor cuota · registro manual</div>
-          <p className="page-sub">Una AFP y una fecha, sus fondos a la vez. Los cuadros se
-            precargan con lo que ya hay: escribir uno lo reemplaza y <b>dejarlo vacío borra
-            ese dato</b>. Si la fecha queda sin ningún valor, sale del libro.</p>
+          <div className="panel-title">Unit value · manual registration</div>
+          <p className="page-sub">One AFP and one date, all its funds at once. The boxes are
+            preloaded with what is already there: typing one replaces it and <b>leaving it
+            empty deletes that value</b>. If the date is left with no value, it drops from the book.</p>
           <div className="controls spp-controls">
-            <div className="field"><label htmlFor="r-date">Fecha</label>
+            <div className="field"><label htmlFor="r-date">Date</label>
               <input id="r-date" className="date-input" type="date" value={rDate}
                 onChange={(e) => setRDate(e.target.value)} /></div>
             <div className="field"><label htmlFor="r-afp">AFP</label>
               <select id="r-afp" className="select" value={rAfp} onChange={(e) => setRAfp(e.target.value)}>
                 {names.map((a) => <option key={a} value={a}>{a}</option>)}
               </select></div>
-            <div className="field"><label htmlFor="r-metric">Métrica</label>
+            <div className="field"><label htmlFor="r-metric">Metric</label>
               <select id="r-metric" className="select" value={rMetric}
                 onChange={(e) => setRMetric(e.target.value)}>
                 {metricsOf(cfg).map(([label, v]) => <option key={v} value={v}>{label}</option>)}
@@ -302,7 +302,7 @@ export default function SppCargaPage() {
           </div>
           <div className="controls spp-controls" style={{ marginTop: 10 }}>
             {fundsOf(rAfp).map((f) => (
-              <div className="field" key={f}><label htmlFor={`r-fund-${f}`}>Fondo {f}</label>
+              <div className="field" key={f}><label htmlFor={`r-fund-${f}`}>Fund {f}</label>
                 <input id={`r-fund-${f}`} className="date-input" type="number" min="0"
                   step={metricStep}
                   placeholder={rMetric === 'valor_cuota' ? '0.0000000' : '0.00'}
@@ -312,22 +312,22 @@ export default function SppCargaPage() {
           </div>
           <div className="controls" style={{ marginTop: 12 }}>
             <button className="btn primary" disabled={rPreload !== 'ok' || busy}
-              title={busy ? 'Espera a que termine la operación en curso' : undefined}
-              onClick={() => register(false)}>Registrar valores</button>
+              title={busy ? 'Wait for the running operation to finish' : undefined}
+              onClick={() => register(false)}>Register values</button>
             <button className="btn danger" disabled={rPreload !== 'ok' || busy}
-              title={busy ? 'Espera a que termine la operación en curso' : undefined}
-              onClick={() => register(true)}>Anular la fecha</button>
+              title={busy ? 'Wait for the running operation to finish' : undefined}
+              onClick={() => register(true)}>Clear the date</button>
           </div>
           <Echo echo={rMessage} />
         </div>
 
         <div className="panel">
-          <div className="panel-title">En el libro</div>
-          <p className="page-sub">{rCurrent || 'Elige fecha, AFP y métrica.'}</p>
-          <div className="panel-title" style={{ marginTop: 12 }}>Cierres vecinos</div>
+          <div className="panel-title">In the book</div>
+          <p className="page-sub">{rCurrent || 'Choose a date, an AFP and a metric.'}</p>
+          <div className="panel-title" style={{ marginTop: 12 }}>Neighboring closes</div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Fecha</th>
+              <thead><tr><th>Date</th>
                 {rNeighbors.funds.map((f) => <th key={f} className="num">F{f}</th>)}</tr></thead>
               <tbody>
                 {rNeighbors.dates.length ? rNeighbors.dates.map((d) => (
@@ -339,7 +339,7 @@ export default function SppCargaPage() {
                         {hit ? fmtMetric(hit[1], rMetric, rMetric !== 'valor_cuota') : '—'}</td>;
                     })}
                   </tr>
-                )) : <tr><td colSpan={rNeighbors.funds.length + 1} className="dim">Sin cierres cerca.</td></tr>}
+                )) : <tr><td colSpan={rNeighbors.funds.length + 1} className="dim">No closes nearby.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -349,101 +349,101 @@ export default function SppCargaPage() {
       {/* ===== 2 · Daily scrape ===== */}
       <div className="spp-two-up">
         <div className="panel">
-          <div className="panel-title">Valor cuota · extracción diaria</div>
-          <p className="page-sub">Lee la página de variables SPP (últimos 7 días hábiles) e
-            inserta solo lo que falta, con las tres métricas. Corre sola cada día a las
-            16:00 (y reintenta a las 16:30 y 17:00 si la SBS aún no publicó); aquí se lanza
-            a mano. Toma unos 20–90 s.</p>
+          <div className="panel-title">Unit value · daily scrape</div>
+          <p className="page-sub">Reads the SPP variables page (last 7 business days) and
+            inserts only what is missing, with the three metrics. It runs on its own every day
+            at 16:00 (and retries at 16:30 and 17:00 if the SBS has not published yet); here it
+            is launched by hand. It takes about 20–90 s.</p>
           <div className="controls">
             <button className="btn primary" disabled={busy}
-              onClick={() => scrape(false)}>Correr extracción</button>
+              onClick={() => scrape(false)}>Run scrape</button>
             <button className="btn danger" disabled={busy}
-              onClick={() => scrape(true)}>Correr y sobrescribir</button>
+              onClick={() => scrape(true)}>Run and overwrite</button>
           </div>
           <p className="page-sub flag-warn" style={{ marginTop: 10 }}>
-            La SBS está detrás del WAF Imperva: <b>se abrirá una ventana de Chrome</b> en la
-            máquina donde corre la API. No la cierres mientras corre.
+            The SBS sits behind the Imperva WAF: <b>a Chrome window will open</b> on the
+            machine running the API. Do not close it while it runs.
           </p>
           <Echo echo={scrapeEcho} />
         </div>
 
         <div className="panel">
-          <div className="panel-title">Última corrida automática</div>
-          {lastScrape === undefined ? <p className="page-sub dim">Cargando…</p>
+          <div className="panel-title">Last unattended run</div>
+          {lastScrape === undefined ? <p className="page-sub dim">Loading…</p>
             : lastScrape === null
-              ? <p className="page-sub dim">El scheduler no ha corrido la extracción todavía.</p>
+              ? <p className="page-sub dim">The scheduler has not run the scrape yet.</p>
               : (
                 <p className="page-sub">
-                  {fTime(lastScrape.started_at)} en {lastScrape.machine_id} ·{' '}
+                  {fTime(lastScrape.started_at)} on {lastScrape.machine_id} ·{' '}
                   <b className={lastScrape.status === 'success' ? 'pos' : lastScrape.status === 'error' ? 'neg' : ''}>
-                    {lastScrape.status === 'success' ? 'correcta' : lastScrape.status === 'error' ? 'con error' : lastScrape.status}
+                    {lastScrape.status === 'success' ? 'succeeded' : lastScrape.status === 'error' ? 'failed' : lastScrape.status}
                   </b>
-                  {lastScrape.run_date ? ` · día esperado ${fDate(lastScrape.run_date)}` : ''}
+                  {lastScrape.run_date ? ` · expected day ${fDate(lastScrape.run_date)}` : ''}
                   {lastScrape.error ? <><br /><span className="neg">{lastScrape.error}</span></> : null}
                 </p>
               )}
 
-          <div className="panel-title" style={{ marginTop: 14 }}>Bitácora</div>
+          <div className="panel-title" style={{ marginTop: 14 }}>Log</div>
           <Log task={task} />
 
-          <div className="panel-title" style={{ marginTop: 14 }}>Tramos sin dato</div>
-          <p className="page-sub">Días hábiles consecutivos sin valor cuota. Los tramos de 1–2
-            días se omiten: son feriados peruanos, no información faltante.</p>
+          <div className="panel-title" style={{ marginTop: 14 }}>Gaps</div>
+          <p className="page-sub">Consecutive business days without unit value. Runs of 1–2
+            days are left out: they are Peruvian holidays, not missing information.</p>
           {(status?.gaps || []).length ? (
             <Report rows={status.gaps.map((g) =>
-              [`${fDate(g.from)} a ${fDate(g.to)}`, `${g.days} d.h.`])} />
-          ) : <p className="page-sub dim">Sin tramos abiertos.</p>}
+              [`${fDate(g.from)} to ${fDate(g.to)}`, `${g.days} bd`])} />
+          ) : <p className="page-sub dim">No open gaps.</p>}
         </div>
       </div>
 
       {/* ===== 3 · Historical load from Excel ===== */}
       <FileUpload
         ref={hRef}
-        title="Valor cuota · carga histórica por Excel"
-        description={<>El archivo de la SBS <b>tal como se descarga</b> («Valores cuota desde
-          Agosto 1993», hoja «Valor cuota diario»). Trae solo valor cuota, y una celda vacía
-          se deja como está: el Excel nunca borra.</>}
+        title="Unit value · historical load from Excel"
+        description={<>The SBS file <b>as downloaded</b> ("Valores cuota desde Agosto 1993",
+          sheet "Valor cuota diario"). It brings the unit value only, and an empty cell is
+          left as it is: the Excel never deletes.</>}
         format="valor_cuota_history"
         accept=".xls,.xlsx"
         onChange={reviewHistory}
         fileName={hName}
         actions={hToken && (<>
           <button className="btn primary" disabled={busy}
-            onClick={() => loadHistory('missing')}>Cargar lo que falta</button>
+            onClick={() => loadHistory('missing')}>Load what is missing</button>
           <button className="btn danger" disabled={busy}
-            onClick={() => loadHistory('replace')}>Cargar y corregir</button>
+            onClick={() => loadHistory('replace')}>Load and correct</button>
         </>)}
         echo={hEcho}
         footer={<>
           <a className="btn" target="_blank" rel="noreferrer"
             href="https://www.sbs.gob.pe/app/stats/EstadisticaSistemaFinancieroResultadosHist.asp?c=FP-130706&Y=0">
-            Abrir la página de la SBS</a>
-          <a className="btn" href={apiUrl('/api/spp/export')}>↓ Bajar todo el libro · CSV</a>
+            Open the SBS page</a>
+          <a className="btn" href={apiUrl('/api/spp/export')}>↓ Download the whole book · CSV</a>
         </>}
-        previewStatus={hReport && `${hReport.file} · ${nInt(hReport.dates)} fechas · ${fDate(hReport.from)} a ${fDate(hReport.to)}. Nada se ha guardado.`}
+        previewStatus={hReport && `${hReport.file} · ${nInt(hReport.dates)} dates · ${fDate(hReport.from)} to ${fDate(hReport.to)}. Nothing has been saved.`}
         preview={hReport && (<>
           <Report rows={historyRows(hReport)} />
           {hReport.changed_cells > 0 && (
             <div style={{ marginTop: 8 }}>
-              <p className="page-sub"><b>{nInt(hReport.changed_cells)}</b> celda(s)
-                tienen hoy un valor distinto al del archivo. Solo cambian con
-                «Cargar y corregir»:</p>
+              <p className="page-sub"><b>{nInt(hReport.changed_cells)}</b> cell(s)
+                hold a value today that differs from the file. They only change with
+                "Load and correct":</p>
               <Report rows={hReport.examples.map((e) =>
                 [`${fDate(e.date)} · ${e.series}`, `${e.book} → ${e.file}`])} />
             </div>
           )}
           {hReport.total_future > 0 && (
-            <p className="page-sub">Se descartaron <b>{hReport.total_future}</b> fecha(s)
-              futuras: {hReport.future_dates.join(', ')}.</p>
+            <p className="page-sub"><b>{hReport.total_future}</b> future date(s) were
+              discarded: {hReport.future_dates.join(', ')}.</p>
           )}
           {hReport.unknown_afps?.length > 0 && (
-            <p className="page-sub flag-warn">El archivo trae AFP que no están en el
-              registro: <b>{hReport.unknown_afps.join(', ')}</b>. Sus datos no se
-              cargarán hasta darlas de alta en config/afps.yaml.</p>
+            <p className="page-sub flag-warn">The file carries AFPs that are not in the
+              registry: <b>{hReport.unknown_afps.join(', ')}</b>. Their data will not load
+              until they are declared in config/afps.yaml.</p>
           )}
-          <Sample sample={hReport.sample} title="Últimas filas del archivo" />
+          <Sample sample={hReport.sample} title="Last rows of the file" />
         </>)}
-        previewEmpty="Elige el Excel de la SBS y aquí verás lo que trae, antes de que nada toque la base."
+        previewEmpty="Choose the SBS Excel and you will see what it brings here, before anything touches the database."
       />
 
     </div>

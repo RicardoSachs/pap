@@ -14,17 +14,19 @@ import { BASE } from './api';
 // Absolute URL for download links (CSV/XLSX) that bypass fetch.
 export const apiUrl = (path) => `${BASE}${path}`;
 
-// FALLBACKS only, for the instant before /api/spp/config arrives: the metric
-// universe and its labels are owned by the backend (cfg.metrics). 'Cuotas' is
-// neither here nor there: the figure exists and the closing table shows it,
-// but charting it says nothing. METRIC_NAMES keeps it because the API still
-// accepts metric=cuotas and it has to be called something.
+// The metric universe is owned by the backend (cfg.metrics); the labels
+// are ours, in English like the rest of the dashboards, keyed by the SBS's
+// own metric names. 'cuotas' is neither here nor there: the figure exists
+// and the closing table shows it, but charting it says nothing;
+// METRIC_NAMES keeps it because the API still accepts metric=cuotas and it
+// has to be called something. METRICS is the fallback for the instant
+// before the config arrives.
 export const METRICS = [
-  ['Valor cuota', 'valor_cuota'],
-  ['Fondo (S/)', 'fondo'],
+  ['Unit value', 'valor_cuota'],
+  ['Fund size (S/)', 'fondo'],
 ];
 export const METRIC_NAMES = {
-  valor_cuota: 'Valor cuota', cuotas: 'Cuotas', fondo: 'Fondo (S/)',
+  valor_cuota: 'Unit value', cuotas: 'Units', fondo: 'Fund size (S/)',
 };
 
 // The ONE neutral gray of the house-vs-grays scheme (charts, heatmap,
@@ -53,10 +55,10 @@ export const colorOf = (cfg, afp, solid = false) => {
   return a ? (solid ? a.color_solid : a.color) : GRAY_HEX;
 };
 export const metricsOf = (cfg) =>
-  (cfg?.metrics?.length ? cfg.metrics.map((m) => [m.label, m.key]) : METRICS);
+  (cfg?.metrics?.length ? cfg.metrics.map((m) => [METRIC_NAMES[m.key] || m.label, m.key]) : METRICS);
 export const metricName = (cfg, key) =>
-  (cfg?.metrics || []).find((m) => m.key === key)?.label
-    || METRIC_NAMES[key] || key;
+  METRIC_NAMES[key]
+    || (cfg?.metrics || []).find((m) => m.key === key)?.label || key;
 
 // Ordered by what they span. FY is the fiscal year, 31/10 to 31/10: it goes
 // after YTD because it is almost always longer - only in November and

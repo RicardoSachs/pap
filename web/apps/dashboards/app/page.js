@@ -82,8 +82,8 @@ const MODULES = [
   { key: 'contribution', name: 'Contribution', href: '/contribution/', status: 'YTD · Fondo 1', live: true },
   { key: 'comparison', name: 'Comparison', href: '/comparacion/', status: 'Select securities to begin', live: false },
   // OURS: the dashboards that do not exist upstream.
-  { key: 'spp', name: 'Valor Cuota SPP', href: '/spp/', status: 'Diario · fuente SBS', live: true },
-  { key: 'benchmarks', name: 'Benchmarks', href: '/benchmarks/', status: 'Índices compuestos · versiones', live: true },
+  { key: 'spp', name: 'SPP Unit Value', href: '/spp/', status: 'Daily · SBS source', live: true },
+  { key: 'benchmarks', name: 'Benchmarks', href: '/benchmarks/', status: 'Composite indices · versions', live: true },
 ];
 
 export default function Home() {

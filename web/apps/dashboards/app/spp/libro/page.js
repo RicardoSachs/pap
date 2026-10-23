@@ -1,6 +1,6 @@
 // web/apps/dashboards/app/spp/libro/page.js
 // ---------------------------------------------------------------------------
-// SPP tablero · Libro: the stored valor cuota, day by day, filtered by
+// SPP tablero · Book: the stored valor cuota, day by day, filtered by
 // metric / fund / row count, with a CSV of exactly what is shown. The
 // benchmark books live in the Benchmarks module.
 // ---------------------------------------------------------------------------
@@ -13,7 +13,7 @@ import SppSeg from '../../../components/SppSeg';
 import { useModule } from '../../../components/ModuleContext';
 
 // 0 asks the API for the whole book.
-const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['Todas', 0]];
+const LIMITS = [['60', 60], ['250', 250], ['1000', 1000], ['All', 0]];
 
 export default function SppLibroPage() {
   const [cfg, setCfg] = useState(null);
@@ -59,31 +59,31 @@ export default function SppLibroPage() {
           the one-line subtitle, so every dashboard opens the same way. */}
       <div className="page-brand-block">
         <div className="page-brand-name">Profuturo Analytics</div>
-        <div className="page-dashboard-title">Valor Cuota SPP</div>
+        <div className="page-dashboard-title">SPP Unit Value</div>
       </div>
       <p className="page-sub">
-        Libro de valores cuota · {rows.length ? `${nInt(rows.length)} filas en pantalla` : '—'}
+        Book of unit values · {rows.length ? `${nInt(rows.length)} rows on screen` : '—'}
       </p>
       <div className="panel">
         <div className="controls spp-controls">
-          <div className="field"><label>Métrica</label>
-            <SppSeg items={[...metricsOf(cfg), ['Todas', 'all']]}
+          <div className="field"><label>Metric</label>
+            <SppSeg items={[...metricsOf(cfg), ['All', 'all']]}
               value={metric} onChange={setMetric} /></div>
-          <div className="field"><label>Filas</label>
+          <div className="field"><label>Rows</label>
             <SppSeg items={LIMITS} value={limit} onChange={setLimit} /></div>
           <div className="field"><label aria-hidden="true">&nbsp;</label>
-            <a className="btn" href={downloadUrl}>↓ Bajar lo que veo · CSV</a></div>
+            <a className="btn" href={downloadUrl}>↓ Download what I see · CSV</a></div>
         </div>
       </div>
 
       {error && <div className="panel error">Error: {error}</div>}
 
       <div className="panel">
-        {loading ? <div className="loading">Cargando…</div> : (
+        {loading ? <div className="loading">Loading…</div> : (
           <div className="table-wrap spp-windows">
             <table>
               <thead>
-                <tr><th>Fecha</th>{columns.map((c) => <th key={c.col} className="num">{header(c)}</th>)}</tr>
+                <tr><th>Date</th>{columns.map((c) => <th key={c.col} className="num">{header(c)}</th>)}</tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
@@ -97,7 +97,7 @@ export default function SppLibroPage() {
                   </tr>
                 ))}
                 {!rows.length && (
-                  <tr><td colSpan={columns.length + 1} className="dim">El libro está vacío.</td></tr>
+                  <tr><td colSpan={columns.length + 1} className="dim">The book is empty.</td></tr>
                 )}
               </tbody>
             </table>

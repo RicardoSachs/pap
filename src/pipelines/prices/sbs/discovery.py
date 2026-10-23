@@ -35,6 +35,10 @@
 # '/isin/' form stays an alias. Pass 0 re-touches existing instruments
 # every run, so entities discovered before this existed get the alias
 # on the next SBS run - no migration needed.
+# Instrument types Bloomberg does not cover (BCRP certificates, local
+# funds; config/pipelines.yaml prices.sbs.discovery.no_bloomberg_coverage)
+# are registered like any other but get NO alias, so enrichment never
+# spends a request on them.
 # ---------------------------------------------------------------
 
 import logging
@@ -44,6 +48,7 @@ from typing import Optional
 import pandas as pd
 
 from src.db.connection import get_connection
+from src.shared.config_loader import load_pipelines
 from src.db.queries import (
     get_or_create_entity_id,
     upsert_entity_identifier,
@@ -207,7 +212,9 @@ def _register_securities(
                             conn, entity_id, "isin", isin, "internal",
                             is_primary=False, seen_date=seen,
                         )
-                        _upsert_bloomberg_isin_alias(conn, entity_id, isin, seen)
+                        _upsert_bloomberg_isin_alias(
+                            conn, entity_id, isin, seen, row.get("tipo_instrumento")
+                        )
                     registered_existing += _register_series(
                         conn, entity_id, fields, run_date, domain, source, frequency
                     )
@@ -340,7 +347,7 @@ def _register_normal_instrument(
             conn, entity_id, "isin", isin, "internal",
             is_primary=False, seen_date=seen,
         )
-        _upsert_bloomberg_isin_alias(conn, entity_id, isin, seen)
+        _upsert_bloomberg_isin_alias(conn, entity_id, isin, seen, tipo_instrumento)
 
     return _register_series(
         conn, entity_id, fields, run_date, domain, source, frequency
@@ -654,12 +661,36 @@ def bloomberg_isin_parsekyable(isin: str) -> str:
     return f"/isin/{isin}"
 
 
-def _upsert_bloomberg_isin_alias(conn, entity_id: int, isin: str, seen: date) -> None:
+def _no_bloomberg_coverage() -> frozenset[str]:
+    """Normalised tipo_instrumento values Bloomberg does not cover (config)."""
+    cfg = load_pipelines().get("pipelines", {}).get("prices", {}).get("sbs", {})
+    values = cfg.get("discovery", {}).get("no_bloomberg_coverage") or []
+    return frozenset(_norm_tipo(v) for v in values)
+
+
+def _norm_tipo(val) -> str:
+    """'FON. INV. TRAD' and 'fon.inv.trad' compare equal: upper, no whitespace."""
+    return "".join(str(val).split()).upper()
+
+
+def bloomberg_covered(tipo_instrumento) -> bool:
+    """False for instrument types configured as not covered by Bloomberg.
+    Unknown or missing type counts as covered (let Bloomberg decide)."""
+    tipo = _clean(tipo_instrumento)
+    return tipo is None or _norm_tipo(tipo) not in _no_bloomberg_coverage()
+
+
+def _upsert_bloomberg_isin_alias(
+    conn, entity_id: int, isin: str, seen: date, tipo_instrumento=None,
+) -> None:
     """
     Records the '/isin/<ISIN>' form as a Bloomberg parsekyable ALIAS
     (is_primary=False): current only while the entity has no other
     parsekyable, never demoting a real ticker. See the module banner.
+    Skipped for instrument types Bloomberg does not cover.
     """
+    if not bloomberg_covered(tipo_instrumento):
+        return
     upsert_entity_identifier(
         conn, entity_id, "parsekyable", bloomberg_isin_parsekyable(isin),
         "bloomberg", is_primary=False, seen_date=seen,

@@ -21,6 +21,12 @@ const STATUS_HINTS = {
   400: 'The data sent is not valid.',
   404: 'That operation does not exist in the API. Usually the page is from a '
     + 'newer version than the API: close and reopen the dashboard.',
+  // A POST that no API route answers falls through to the static bundle,
+  // which only serves GET: the API on this port is an older one (another
+  // folder, or started before an update).
+  405: 'The API answering on this port does not have this route: it is an older '
+    + 'API, from another folder or started before the update. Close every API window '
+    + 'and relaunch the dashboard from this folder.',
   409: 'The operation clashes with the current state: another one is running, or '
     + 'what you are trying to change is in use.',
   410: 'The reviewed file is no longer in memory; upload it again.',
@@ -28,7 +34,7 @@ const STATUS_HINTS = {
   503: 'This machine cannot do that (the permission is missing in .env).',
 };
 const explainStatus = (status) => STATUS_HINTS[status]
-  || `La API respondio ${status}. El detalle esta en la ventana de la API.`;
+  || `The API responded ${status}. The detail is in the API window.`;
 
 // Mutating counterpart of apiGet (JSON body or FormData), used by the write
 // views. Returns {ok, status, data} instead of throwing so callers can show

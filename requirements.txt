@@ -17,5 +17,7 @@ playwright
 openpyxl
 exchange_calendars
 apscheduler<4
-# FastAPI file uploads (bulk Bloomberg series registration)
+
+# FastAPI multipart uploads: the SBS history file that
+# /api/spp/history/review receives (web/api/routes/spp_write.py).
 python-multipart

@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  COMPETITOR_GRAY, alphaOf, colorOf, periodWindow, fDate, fmtReturn,
+  COMPETITOR_GRAY, alphaOf, colorOf, periodWindow, fDate, fmtMetric, fmtReturn,
   grayLine, nInt, metricName, operates as operatesCfg, houseFirst, sign,
   shownValue,
 } from '../../lib/spp';
@@ -198,8 +198,32 @@ export default function SppPanelPage() {
     });
   };
 
+  // The name and the last value at the end of every line, so the chart
+  // reads without the legend: 'lines+text' with the text on the last point
+  // only, clipping off so it sits past the axis in the right margin.
+  const endLabel = (name, y) => {
+    if (y == null) return '';
+    const value = scale === 'alpha' ? `${y >= 0 ? '+' : ''}${y.toFixed(1)} bps`
+      : scale === 'base' ? y.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : fmtMetric(y, metric, true);
+    return `${name}  ${value}`;
+  };
+  const withEndLabel = (trace) => {
+    const ys = trace.y || [];
+    if (!ys.length) return trace;
+    const last = ys.length - 1;
+    return {
+      ...trace,
+      mode: 'lines+text',
+      text: ys.map((y, i) => (i === last ? endLabel(trace.name, y) : '')),
+      textposition: 'middle right',
+      textfont: { color: trace.line?.color, size: 11 },
+      cliponaxis: false,
+    };
+  };
+
   const traces = useMemo(() => {
-    if (scale === 'alpha') return alphaTraces();
+    if (scale === 'alpha') return alphaTraces().map(withEndLabel);
     const withData = series.filter((s) => s.points.length);
     let baseDate = null;
     if (scale === 'base' && withData.length) {
@@ -239,7 +263,7 @@ export default function SppPanelPage() {
           + '<br>Daily return  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
-    });
+    }).map(withEndLabel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [series, scale, cfg, house]);
 
@@ -287,8 +311,8 @@ export default function SppPanelPage() {
     // its color; competitors, neutral.
     const afpOrder = order || relativeOrder;
     const funds = (cfg?.funds || []).filter((f) => rows.some((r) => r.fund === f));
-    // A thick rule where the unit changes (percent -> basis points -> the
-    // level), so the eye does not read +1.00% and +19 bps as one scale.
+    // A thick rule where the unit changes (basis points -> percent -> the
+    // level), so the eye does not read +19 bps and +1.00% as one scale.
     const unitBreak = new Set(cols
       .filter((c, i) => withUnit && i > 0 && c[2] !== cols[i - 1][2]).map((c) => c[0]));
     const breakClass = (key) => (unitBreak.has(key) ? ' spp-unit-break' : '');
@@ -430,8 +454,9 @@ export default function SppPanelPage() {
             data={traces}
             layout={{
               // " bps" lengthens the axis labels: without the extra margin
-              // the minus sign is clipped and -200 reads as 200.
-              margin: { l: scale === 'alpha' ? 95 : 70, r: 20, t: 10, b: 60 },
+              // the minus sign is clipped and -200 reads as 200. The right
+              // margin holds the end-of-line labels (name and value).
+              margin: { l: scale === 'alpha' ? 95 : 70, r: 150, t: 10, b: 60 },
               // One label per date with a block per AFP, like the price
               // viewer's card: the date on top and, below, each AFP with
               // its cumulative and its day.
@@ -491,7 +516,10 @@ export default function SppPanelPage() {
                 autorange: 'reversed', dtick: 1, range: [posTotal + 0.5, 0.5],
                 title: 'Rank', zeroline: false,
               },
-              xaxis: { type: 'category' },
+              // The API's order, newest first; by first appearance a trace
+              // missing a month would have pushed that month to the end.
+              xaxis: { type: 'category', categoryorder: 'array',
+                categoryarray: periods.map((p) => p.label) },
             }}
           />
         ) : <div className="dim">Not enough closed months.</div>)}
@@ -542,7 +570,7 @@ export default function SppPanelPage() {
         )}
         <p className="page-sub">Rank 1 to {posTotal} by the month's return, within each fund
           type{posView === 'table' ? ' — darker = better rank; the colored row is ' : '; the thick line is '}
-          {house}. Each closed month is measured against the previous month's close; the last period is the MTD.</p>
+          {house}. Newest on the left: the MTD first, then each closed month measured against the previous month's close.</p>
       </div>
 
       <div className="panel">
@@ -599,9 +627,9 @@ export default function SppPanelPage() {
               {/* Returns only: the level itself is the Book's business. */}
               <WindowsTable cols={(win.return_columns || []).filter((c) => c[2] !== 'level')}
                 rows={visibleRows(win.absolute)} withUnit />
-              <p className="page-sub">Days and months in basis points; from 3M onward in percent.
-                Trailing windows count back from the control date. FY is the fiscal year, 31/10 to
-                31/10. The daily columns are that day's move, not cumulative.</p>
+              <p className="page-sub">Newest on the left. Up to 6M in basis points; from YTD on in
+                percent. Trailing windows count back from the control date. FY is the fiscal year,
+                31/10 to 31/10. The daily columns are that day's move, not cumulative.</p>
             </details>
           </>
         ) : win == null

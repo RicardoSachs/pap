@@ -58,7 +58,8 @@ SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 # swap places in the second half of the year; the column does not move
 # with the calendar - reordering it twice a year would cost more than it
 # clarifies. Same for FY, which overtakes the calendar year only in
-# November and December.) The positions table and chart run the same way.
+# November and December.) The monthly positions keep the chronological
+# order, oldest month on the left and the MTD last, like a time axis.
 LEVEL_KEYS = ["t", "t1", "t2", "t3", "t4", "t5",
               "month", "month1", "month2", "year", "year1"]
 # (key, fixed label or None for a date label, unit). Up to 6M the figures
@@ -814,9 +815,6 @@ def positions(day=None, months: int = 24, metric: str = "valor_cuota") -> dict:
         })
     periods.append({"key": "MTD", "label": "MTD",
                     "start": by_month[closed[-1]], "end": control})
-    # Newest first, like the return tables: MTD on the left, then the
-    # closed months back in time.
-    periods.reverse()
 
     values = _at(reg, [p["start"] for p in periods] + [p["end"] for p in periods])
 

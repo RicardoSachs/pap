@@ -516,7 +516,7 @@ export default function SppPanelPage() {
                 autorange: 'reversed', dtick: 1, range: [posTotal + 0.5, 0.5],
                 title: 'Rank', zeroline: false,
               },
-              // The API's order, newest first; by first appearance a trace
+              // The API's chronological order; by first appearance a trace
               // missing a month would have pushed that month to the end.
               xaxis: { type: 'category', categoryorder: 'array',
                 categoryarray: periods.map((p) => p.label) },
@@ -570,7 +570,7 @@ export default function SppPanelPage() {
         )}
         <p className="page-sub">Rank 1 to {posTotal} by the month's return, within each fund
           type{posView === 'table' ? ' — darker = better rank; the colored row is ' : '; the thick line is '}
-          {house}. Newest on the left: the MTD first, then each closed month measured against the previous month's close.</p>
+          {house}. Each closed month is measured against the previous month's close; the last period is the MTD.</p>
       </div>
 
       <div className="panel">

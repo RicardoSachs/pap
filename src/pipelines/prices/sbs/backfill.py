@@ -416,7 +416,8 @@ def _load_facts(spec: BackfillSpec, start: date, end: date) -> dict[str, int]:
         for stg_col, field in spec.field_map.items():
             stmt = sql.SQL("""
                 INSERT INTO fact_prices (series_id, date, price, source)
-                SELECT sr.series_id, s.date, s.{col}, 'sbs'
+                SELECT DISTINCT ON (sr.series_id, s.date)
+                       sr.series_id, s.date, s.{col}, 'sbs'
                 FROM (
                     SELECT DISTINCT ON ({keys}, date) *
                     FROM {stg}
@@ -432,6 +433,11 @@ def _load_facts(spec: BackfillSpec, start: date, end: date) -> dict[str, int]:
                   AND sr.field     = %(field)s
                   AND sr.source    = 'sbs'
                 WHERE s.{col} IS NOT NULL
+                -- Identifiers are multi-valued: two codes in one file can
+                -- resolve to one entity (re-coding, shared ISIN). Keep one
+                -- row per (series_id, date) - the current code wins - or
+                -- ON CONFLICT raises CardinalityViolation.
+                ORDER BY sr.series_id, s.date, di.is_primary DESC, s.loaded_at DESC
                 ON CONFLICT (series_id, date) DO UPDATE
                     SET price = EXCLUDED.price, source = EXCLUDED.source
                     WHERE fact_prices.price IS DISTINCT FROM EXCLUDED.price

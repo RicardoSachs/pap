@@ -87,3 +87,36 @@ def test_enrichment_promotes_parsekyable_but_not_isin():
              for _, r in out.iterrows()}
     assert flags["parsekyable"] == ("BAP PE Equity", "bloomberg", True)
     assert flags["isin"] == ("PE1000000001", "internal", False)
+
+
+def test_coexisting_code_means_second_listing_not_recode(monkeypatch):
+    # ISIN resolves to entity 7, whose code "251017" is alive in the same
+    # file as the new code "751017": two listings, so a NEW entity (42)
+    # must be created instead of gluing the code onto entity 7.
+    calls = []
+    created = []
+    _patch_registry(monkeypatch, calls, resolved=7)
+    monkeypatch.setattr(discovery, "get_or_create_entity_id",
+                        lambda *a, **k: created.append(a) or 42)
+    monkeypatch.setattr(discovery, "_entity_sbs_codes", lambda conn, eid: {"251017"})
+    row = pd.Series({"codigo_sbs": "751017", "isin": "CA1363851017",
+                     "tipo_instrumento": "ACC EXTRANJERO", "emisor": "CNQ", "moneda": "CAD"})
+
+    discovery._register_normal_instrument(
+        _Conn(), row, ["PX_LAST"], date(2026, 1, 2), "prices", "sbs", "daily",
+        file_codes=frozenset({"251017", "751017"}))
+    assert created, "second listing must get its own entity"
+
+    # Same ISIN but the old code is NOT in the file: a re-code, link it.
+    created.clear()
+    discovery._register_normal_instrument(
+        _Conn(), row, ["PX_LAST"], date(2026, 1, 2), "prices", "sbs", "daily",
+        file_codes=frozenset({"751017"}))
+    assert not created, "re-code must reuse the ISIN's entity"
+
+
+def test_synthetic_isin_is_any_trailing_letter():
+    assert discovery._is_x_isin("PE100000000X")
+    assert discovery._is_x_isin("CA136385101C")
+    assert not discovery._is_x_isin("CA1363851017")
+    assert not discovery._is_x_isin(None)

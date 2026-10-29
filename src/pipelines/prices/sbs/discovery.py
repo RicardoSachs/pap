@@ -180,6 +180,10 @@ def _register_securities(
     new_instruments = instruments[
         ~instruments["codigo_sbs"].astype(str).isin(existing)
     ]
+    # Every code alive in this file (or span): the coexistence test in
+    # _register_normal_instrument needs it to tell a re-code from a
+    # second listing.
+    file_codes = frozenset(instruments["codigo_sbs"].astype(str).str.strip())
 
     # ===================== PASS 0: existing instruments =====================
     # The entity and identifiers already exist (e.g. from vector_completo),
@@ -256,7 +260,8 @@ def _register_securities(
         with get_connection() as conn:
             for _, row in normal_rows.iterrows():
                 registered += _register_normal_instrument(
-                    conn, row, fields, run_date, domain, source, frequency
+                    conn, row, fields, run_date, domain, source, frequency,
+                    file_codes,
                 )
 
     # Pass 2: X-ISINs (always separate entities, after Pass 1)
@@ -287,11 +292,21 @@ def _register_normal_instrument(
     domain: str,
     source: str,
     frequency: str,
+    file_codes: frozenset[str] = frozenset(),
 ) -> int:
     """
     Registers a normal ISIN instrument.
     Attempts to resolve against existing entity via ISIN.
     Creates new entity if not found.
+
+    Coexistence test: an ISIN identifies an issue, not a listing, so a
+    new code sharing an ISIN with an existing entity is EITHER a re-code
+    (SBS renumbered the instrument) OR a second listing (same issue,
+    other market/currency - e.g. CNQ in USD and in CAD). A re-code
+    replaces the old code; a second listing trades alongside it. So if
+    any code of the matched entity is alive in the same file
+    (file_codes), the new code is a separate instrument and gets its
+    own entity. Linking it would blend two price series into one.
     """
     codigo_sbs       = str(row["codigo_sbs"]).strip()
     isin             = _clean(row.get("isin"))
@@ -308,6 +323,16 @@ def _register_normal_instrument(
         # logger.info(
         #     f'entity_id found from isin:{entity_id}'
         #     f'isin:{isin}') #
+
+    if entity_id is not None and file_codes:
+        coexisting = _entity_sbs_codes(conn, entity_id) & file_codes - {codigo_sbs}
+        if coexisting:
+            logger.info(
+                f"SBS {codigo_sbs}: ISIN {isin} is owned by entity_id={entity_id} "
+                f"whose code(s) {sorted(coexisting)} trade in the same file - "
+                f"second listing, not a re-code. Creating a separate entity."
+            )
+            entity_id = None
 
     if entity_id is None:
         #logger.info('Creating entity')
@@ -648,12 +673,29 @@ def _resolve_by_isin_prefix(conn, prefix: str) -> Optional[int]:
     return None
 
 
+def _entity_sbs_codes(conn, entity_id: int) -> set[str]:
+    """All codigo_sbs values (current and aliases) recorded for an entity."""
+    cur = conn.execute(
+        """
+        SELECT id_value FROM dim_entity_identifiers
+        WHERE entity_id = %s AND id_type = 'codigo_sbs' AND source = 'sbs'
+        """,
+        (entity_id,),
+    )
+    return {r["id_value"] for r in cur.fetchall()}
+
+
 def _is_x_isin(val) -> bool:
-    """Returns True if val is an SBS X-ISIN (12 chars ending in X)."""
+    """
+    True if val is an SBS synthetic ISIN: 12 chars whose last char is a
+    letter. A real ISIN always ends in a numeric check digit; SBS swaps
+    it for a letter to mint a variant of the parent issue (X for its
+    X-ISINs, C seen on CAD listings of dual-listed equities, ...).
+    """
     if val is None:
         return False
     s = str(val).strip().upper()
-    return len(s) == 12 and s.endswith("X")
+    return len(s) == 12 and s[-1].isalpha()
 
 
 def bloomberg_isin_parsekyable(isin: str) -> str:

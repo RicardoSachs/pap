@@ -201,9 +201,9 @@ export default function SppPanelPage() {
   // The name and the last value at the end of every line, so the chart
   // reads without the legend. Annotations, not trace text: Plotly does not
   // keep texts apart, and two AFPs closing a point from each other wrote
-  // one label over the other. Each label anchors on its line's last point,
-  // the labels are then spread so neighbours sit a line of type apart, and
-  // a thin leader joins a moved label to its point.
+  // one label over the other. Each label starts at its line's last value
+  // and the labels are then spread, in the order of the returns, so that
+  // neighbours sit a line of type apart.
   const endLabel = (name, y) => {
     if (y == null) return '';
     const value = scale === 'alpha' ? `${y >= 0 ? '+' : ''}${y.toFixed(1)} bps`
@@ -298,15 +298,14 @@ export default function SppPanelPage() {
     }
     return {
       yRange: [lo, hi],
-      // The annotation sits on the point (x, anchor); ax/ay move the text
-      // in pixels, ay positive downwards, and the arrow with no head is the
-      // leader back to the point.
+      // The text sits at the spread position, a little right of the last
+      // date, with no leader: the stack keeps the order of the returns,
+      // which is what the eye needs to pair a label with its line.
       endLabels: labels.map((l) => ({
-        x: l.x, y: l.anchor, xref: 'x', yref: 'y', text: l.text,
+        x: l.x, y: l.y, xref: 'x', yref: 'y', text: l.text, xshift: 10,
         xanchor: 'left', yanchor: 'middle', align: 'left',
         font: { color: l.color, size: 11 },
-        showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: l.color,
-        ax: 10, ay: (l.anchor - l.y) * pxPerUnit,
+        showarrow: false,
       })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

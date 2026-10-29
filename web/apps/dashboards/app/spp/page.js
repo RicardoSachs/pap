@@ -199,8 +199,11 @@ export default function SppPanelPage() {
   };
 
   // The name and the last value at the end of every line, so the chart
-  // reads without the legend: 'lines+text' with the text on the last point
-  // only, clipping off so it sits past the axis in the right margin.
+  // reads without the legend. Annotations, not trace text: Plotly does not
+  // keep texts apart, and two AFPs closing a point from each other wrote
+  // one label over the other. Each label anchors on its line's last point,
+  // the labels are then spread so neighbours sit a line of type apart, and
+  // a thin leader joins a moved label to its point.
   const endLabel = (name, y) => {
     if (y == null) return '';
     const value = scale === 'alpha' ? `${y >= 0 ? '+' : ''}${y.toFixed(1)} bps`
@@ -208,22 +211,9 @@ export default function SppPanelPage() {
         : fmtMetric(y, metric, true);
     return `${name}  ${value}`;
   };
-  const withEndLabel = (trace) => {
-    const ys = trace.y || [];
-    if (!ys.length) return trace;
-    const last = ys.length - 1;
-    return {
-      ...trace,
-      mode: 'lines+text',
-      text: ys.map((y, i) => (i === last ? endLabel(trace.name, y) : '')),
-      textposition: 'middle right',
-      textfont: { color: trace.line?.color, size: 11 },
-      cliponaxis: false,
-    };
-  };
 
   const traces = useMemo(() => {
-    if (scale === 'alpha') return alphaTraces().map(withEndLabel);
+    if (scale === 'alpha') return alphaTraces();
     const withData = series.filter((s) => s.points.length);
     let baseDate = null;
     if (scale === 'base' && withData.length) {
@@ -263,9 +253,64 @@ export default function SppPanelPage() {
           + '<br>Daily return  %{customdata[1]}<extra></extra>',
         hoverlabel: { bordercolor: color },
       };
-    }).map(withEndLabel);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [series, scale, cfg, house]);
+
+  // The y range is set by hand - the data span plus 5%, and the zero in
+  // Alpha - so the pixels per unit are known and the labels can be kept a
+  // line of type apart. The plot area's height is read from Plotly once
+  // drawn (the legend under the axis takes part of the bottom margin, so
+  // it is not the chart height minus the margins); 309 px is what the
+  // 420 px chart measures today, used until the first measurement.
+  const [plotPx, setPlotPx] = useState(309);
+  const measurePlot = (_, gd) => {
+    const len = gd?._fullLayout?.yaxis?._length;
+    if (len && Math.abs(len - plotPx) > 1) setPlotPx(len);
+  };
+  const LABEL_GAP_PX = 14;
+  // Top-down pass: each label at least a gap under the one above;
+  // bottom-up pass: the stack does not run past the floor.
+  const { yRange, endLabels } = useMemo(() => {
+    let lo = Infinity; let hi = -Infinity;
+    traces.forEach((t) => (t.y || []).forEach((v) => {
+      if (v == null) return;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }));
+    if (!Number.isFinite(lo)) return { yRange: undefined, endLabels: [] };
+    if (scale === 'alpha') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+    const pad = (hi - lo || Math.abs(hi) || 1) * 0.05;
+    lo -= pad; hi += pad;
+    const pxPerUnit = plotPx / (hi - lo);
+    const gap = LABEL_GAP_PX / pxPerUnit;
+    const labels = traces
+      .filter((t) => t.y?.length && t.y[t.y.length - 1] != null)
+      .map((t) => ({
+        x: t.x[t.x.length - 1], anchor: t.y[t.y.length - 1], color: t.line?.color,
+        text: endLabel(t.name, t.y[t.y.length - 1]),
+      }))
+      .sort((a, b) => b.anchor - a.anchor);
+    labels.forEach((l, i) => { l.y = i ? Math.min(l.anchor, labels[i - 1].y - gap) : l.anchor; });
+    for (let i = labels.length - 1; i >= 0; i -= 1) {
+      const floor = i === labels.length - 1 ? lo + gap / 2 : labels[i + 1].y + gap;
+      labels[i].y = Math.max(labels[i].y, floor);
+    }
+    return {
+      yRange: [lo, hi],
+      // The annotation sits on the point (x, anchor); ax/ay move the text
+      // in pixels, ay positive downwards, and the arrow with no head is the
+      // leader back to the point.
+      endLabels: labels.map((l) => ({
+        x: l.x, y: l.anchor, xref: 'x', yref: 'y', text: l.text,
+        xanchor: 'left', yanchor: 'middle', align: 'left',
+        font: { color: l.color, size: 11 },
+        showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: l.color,
+        ax: 10, ay: (l.anchor - l.y) * pxPerUnit,
+      })),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traces, scale, plotPx]);
 
   const ct = chartTheme();
 
@@ -452,11 +497,14 @@ export default function SppPanelPage() {
         {traces.length ? (
           <PlotlyChart
             data={traces}
+            onInitialized={measurePlot}
             layout={{
               // " bps" lengthens the axis labels: without the extra margin
               // the minus sign is clipped and -200 reads as 200. The right
-              // margin holds the end-of-line labels (name and value).
+              // margin holds the end-of-line labels (name and value). Top
+              // and bottom margins are part of the label spacing above.
               margin: { l: scale === 'alpha' ? 95 : 70, r: 150, t: 10, b: 60 },
+              annotations: endLabels,
               // One label per date with a block per AFP, like the price
               // viewer's card: the date on top and, below, each AFP with
               // its cumulative and its day.
@@ -471,6 +519,7 @@ export default function SppPanelPage() {
                 zeroline: scale === 'alpha',
                 zerolinecolor: ct.muted, zerolinewidth: 1.5,
                 ticksuffix: scale === 'alpha' ? ' bps' : '',
+                range: yRange,
               },
             }}
           />

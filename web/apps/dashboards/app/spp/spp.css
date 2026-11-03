@@ -106,3 +106,11 @@
 .spp-hover-name { font-weight: 600; }
 .spp-hover-kv { display: flex; gap: 10px; }
 .spp-hover-kv > span:first-child { color: var(--text-secondary); }
+
+/* Monthly rank among AFPs: the rank over the month's return in each cell,
+   the house row framed in its color. */
+.spp-grid-ranks td.spp-rank { padding: 5px 4px; }
+.spp-ranks-cell { display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.spp-ranks-rank { font-size: 15px; font-weight: 700; }
+.spp-ranks-ret { font-size: 11px; opacity: 0.9; }
+.spp-ranks-house td.spp-rank { outline: 2px solid var(--brand); outline-offset: -2px; }

@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { apiGet } from '../../lib/api';
 import {
-  COMPETITOR_GRAY, alphaOf, colorOf, periodWindow, fDate, fmtMetric, fmtReturn,
+  alphaOf, colorOf, periodWindow, fDate, fmtMetric, fmtReturn,
   grayLine, nInt, metricName, operates as operatesCfg, houseFirst, sign,
   shownValue,
 } from '../../lib/spp';
@@ -59,7 +59,6 @@ export default function SppPanelPage() {
   // fund published); cuotas and fondo do not count for that.
   const [controlDate, setControlDate] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [posView, setPosView] = useState('table');
   // The benchmarks assigned to each fund are rows of the return tables;
   // this switch takes them off without another request.
   const [showBench, setShowBench] = useState(true);
@@ -474,6 +473,16 @@ export default function SppPanelPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }).filter(Boolean), [pos, fund, cfg, house, names, periods]);
+  // The line under the table: how often the house finished first and its
+  // average rank over the periods it has a rank for.
+  const houseSummary = (() => {
+    const row = (pos?.rows || []).find((r) => r.fund === fund && r.afp === house);
+    const ranks = periods.map((p) => row?.ranks?.[p.key]).filter((r) => r != null);
+    if (!ranks.length) return '';
+    const firsts = ranks.filter((r) => r === 1).length;
+    const avg = ranks.reduce((s, r) => s + r, 0) / ranks.length;
+    return `${house} first in ${firsts} of ${ranks.length} periods · average rank ${avg.toFixed(1)}.`;
+  })();
 
   return (
     <div className="spp-page">
@@ -600,73 +609,53 @@ export default function SppPanelPage() {
 
       <div className="panel">
         <div className="controls" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
-          <div className="panel-title">Monthly performance ranks</div>
-          <div className="controls" style={{ margin: 0 }}>
-            <div className="field"><label>View</label>
-              <SppSeg items={[['Table', 'table'], ['Chart', 'chart']]}
-                value={posView} onChange={setPosView} /></div>
-            <div className="field"><label aria-hidden="true">&nbsp;</label>
-              {/* Table and chart are the same ranks: one CSV for both. */}
-              <DataDownload traces={posTraces} xAxis="period"
-                name={`ranks-fund-${fund}`} /></div>
+          <div className="panel-title">Monthly rank among AFPs</div>
+          <div className="controls" style={{ margin: 0, alignItems: 'center', gap: 14 }}>
+            <span className="dim" style={{ fontSize: 12 }}>Fund {fund} · 1 = best return of the month</span>
+            <DataDownload traces={posTraces} xAxis="period" name={`ranks-fund-${fund}`} />
           </div>
         </div>
-        {/* One space, two readings of the same ranks: the heat table says
-            WHO was where each month; the lines say how each one MOVED.
-            Both at once said it twice, and the panel was two screens tall. */}
-        {posView === 'chart' && (posTraces.length ? (
-          <PlotlyChart
-            data={posTraces}
-            style={{ height: '300px' }}
-            layout={{
-              margin: { l: 50, r: 20, t: 10, b: 50 },
-              yaxis: {
-                autorange: 'reversed', dtick: 1, range: [posTotal + 0.5, 0.5],
-                title: 'Rank', zeroline: false,
-              },
-              // The API's chronological order; by first appearance a trace
-              // missing a month would have pushed that month to the end.
-              xaxis: { type: 'category', categoryorder: 'array',
-                categoryarray: periods.map((p) => p.label) },
-            }}
-          />
-        ) : <div className="dim">Not enough closed months.</div>)}
-        {posView === 'table' && (
+        {/* One reading: each cell says WHERE the AFP finished that month and
+            WITH WHAT return, shaded by rank on one ramp for every row, so
+            intensity reads as rank, not as identity. The house row is
+            framed in its color. The line chart that once sat beside this
+            table said the same thing twice. */}
+        {periods.length ? (
         <div className="table-wrap spp-windows spp-grid-ranks">
-          {/* Same discipline as the windows tables: the AFP column has a set
-              width and every month takes an equal share. */}
           <table>
             <colgroup>
               <col className="spp-col-name" />
               {periods.map((p) => <col key={p.key} />)}
             </colgroup>
-            <thead><tr><th>AFP</th>{periods.map((p) => <th key={p.key}>{p.label}</th>)}</tr></thead>
+            <thead><tr><th /> {periods.map((p) => <th key={p.key}>{p.label}</th>)}</tr></thead>
             <tbody>
-              {/* House row first (it is the question this table answers),
-                  heat in its brand ramp; competitors share ONE gray ramp so
-                  intensity reads as rank everywhere, not as identity. */}
               {houseFirst(cfg, posCompeting).map((afp) => {
                 const row = (pos?.rows || []).find((r) => r.fund === fund && r.afp === afp);
                 if (!row) return null;
                 const isHouse = afp === house;
-                const base = isHouse ? colorOf(cfg, afp, true) : COMPETITOR_GRAY;
                 return (
-                  <tr key={afp}>
-                    <td><span className="spp-chip"
-                      style={{ background: inkOf(afp, posCompeting) }} />
-                      <b style={{ color: isHouse ? colorOf(cfg, afp, true) : 'inherit' }}>{afp}</b></td>
+                  <tr key={afp} className={isHouse ? 'spp-ranks-house' : undefined}>
+                    <td><b style={{ color: isHouse ? colorOf(cfg, afp, true) : 'inherit' }}>{afp}</b></td>
                     {periods.map((p) => {
                       const rank = row.ranks[p.key];
                       if (!rank) return <td key={p.key} className="num dim">—</td>;
+                      const ret = row.returns?.[p.key];
+                      // Rank 1 almost solid ink, the last rank a faint wash.
                       const t = posTotal < 2 ? 1 : 1 - (rank - 1) / (posTotal - 1);
-                      const share = Math.round(7 + 93 * t);
+                      const share = Math.round(12 + 78 * t);
                       return (
-                        <td key={p.key} className="num spp-rank"
+                        <td key={p.key} className="spp-rank"
                           style={{
-                            background: `color-mix(in srgb, ${base} ${share}%, transparent)`,
-                            color: share >= 60 ? '#fff' : 'inherit',
-                            fontWeight: rank === 1 ? 700 : 500,
-                          }}>{rank}</td>
+                            background: `color-mix(in srgb, var(--text-primary) ${share}%, transparent)`,
+                            color: share >= 50 ? 'var(--s2)' : 'var(--text-primary)',
+                          }}>
+                          <div className="spp-ranks-cell">
+                            <span className="spp-ranks-rank">{rank}</span>
+                            <span className="spp-ranks-ret">
+                              {ret == null ? '—' : `${ret >= 0 ? '+' : '−'}${Math.abs(ret * 100).toFixed(1)}%`}
+                            </span>
+                          </div>
+                        </td>
                       );
                     })}
                   </tr>
@@ -675,10 +664,9 @@ export default function SppPanelPage() {
             </tbody>
           </table>
         </div>
-        )}
-        <p className="page-sub">Rank 1 to {posTotal} by the month's return, within each fund
-          type{posView === 'table' ? ' — darker = better rank; the colored row is ' : '; the thick line is '}
-          {house}. Each closed month is measured against the previous month's close; the last period is the MTD.</p>
+        ) : <div className="dim">Not enough closed months.</div>}
+        <p className="page-sub">{houseSummary} Each closed month is measured against the previous
+          month&apos;s close; the last period is the MTD.</p>
       </div>
 
       <div className="panel">

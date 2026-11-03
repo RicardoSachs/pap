@@ -182,19 +182,21 @@ export default function SppPanelPage() {
     // they are equal lines. Same ink, but the tones spread end to end (the
     // normal spread bunches them so the house stands out), and all solid:
     // dashed strokes read as data with holes.
-    const order = houseFirst(cfg, onScreen).filter((a) => a !== house);
+    const order = houseFirst(cfg, onScreen).filter((a) => a !== house && !series.find((s) => s.afp === a)?.benchmark);
     const toneOf = (afp) => {
       const i = order.indexOf(afp);
       const a = order.length < 2 ? 0.9 : 0.95 - (0.6 * i) / (order.length - 1);
       return grayLine(a.toFixed(2));
     };
     return alphaOf(series, house).map((c) => {
-      const color = toneOf(c.afp);
+      const isBench = !!series.find((s) => s.afp === c.afp)?.benchmark;
+      const color = isBench ? chartTheme().text : toneOf(c.afp);
       return {
         // Only the AFP: the title already says everything is against the house.
         x: c.x, y: c.y, type: 'scatter', mode: 'lines', name: c.afp,
         legendrank: houseFirst(cfg, onScreen).indexOf(c.afp) + 1,
-        line: { color, width: 2 },
+        line: { color, width: 2, dash: isBench ? 'dash' : 'solid' },
+        benchmark: isBench,
         // In bps the cumulative IS the line's value; the daily, its step.
         customdata: cumulativeAndDaily(c.y, (y) => y),
         hoverinfo: 'none',
@@ -226,10 +228,12 @@ export default function SppPanelPage() {
       const starts = withData.map((s) => s.points[0][0]);
       baseDate = starts.reduce((m, d) => (d > m ? d : m), starts[0]);
     }
-    const onScreen = withData.map((s) => s.afp);
+    const onScreen = withData.filter((s) => !s.benchmark).map((s) => s.afp);
     return withData.map((s) => {
       const isHouse = s.afp === house;
-      const color = inkOf(s.afp, onScreen);
+      // The fund's assigned benchmark: a dashed line in the text color,
+      // neither the house's red nor a competitor's gray.
+      const color = s.benchmark ? chartTheme().text : inkOf(s.afp, onScreen);
       let pts = s.points;
       let base = null;
       if (scale === 'base') {
@@ -251,9 +255,10 @@ export default function SppPanelPage() {
         // legendrank puts the house first in the LEGEND while the trace
         // order (house last) keeps its line drawn on top of the grays.
         legendrank: houseFirst(cfg, onScreen).indexOf(s.afp) + 1,
-        line: { color, width: isHouse ? 2.8 : 1.6 },
+        line: { color, width: isHouse ? 2.8 : 1.6, dash: s.benchmark ? 'dash' : 'solid' },
         customdata: returns,
         hoverinfo: 'none',
+        benchmark: !!s.benchmark,
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -273,14 +278,14 @@ export default function SppPanelPage() {
   const LABEL_GAP_PX = 14;
   // Top-down pass: each label at least a gap under the one above;
   // bottom-up pass: the stack does not run past the floor.
-  const { yRange, endLabels } = useMemo(() => {
+  const { yRange, xRange, endLabels } = useMemo(() => {
     let lo = Infinity; let hi = -Infinity;
     traces.forEach((t) => (t.y || []).forEach((v) => {
       if (v == null) return;
       if (v < lo) lo = v;
       if (v > hi) hi = v;
     }));
-    if (!Number.isFinite(lo)) return { yRange: undefined, endLabels: [] };
+    if (!Number.isFinite(lo)) return { yRange: undefined, xRange: undefined, endLabels: [] };
     if (scale === 'alpha') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
     const pad = (hi - lo || Math.abs(hi) || 1) * 0.05;
     lo -= pad; hi += pad;
@@ -289,7 +294,7 @@ export default function SppPanelPage() {
     const labels = traces
       .filter((t) => t.y?.length && t.y[t.y.length - 1] != null)
       .map((t) => ({
-        x: t.x[t.x.length - 1], anchor: t.y[t.y.length - 1], color: t.line?.color,
+        name: t.name, anchor: t.y[t.y.length - 1], color: t.line?.color,
         text: endLabel(t.name, t.y[t.y.length - 1]),
       }))
       .sort((a, b) => b.anchor - a.anchor);
@@ -298,15 +303,25 @@ export default function SppPanelPage() {
       const floor = i === labels.length - 1 ? lo + gap / 2 : labels[i + 1].y + gap;
       labels[i].y = Math.max(labels[i].y, floor);
     }
+    // The x range ends on the last date, so the lines run to the edge of
+    // the grid and the labels sit just outside it, in the right margin.
+    let x0 = null; let x1 = null;
+    traces.forEach((t) => {
+      if (!t.x?.length) return;
+      if (x0 == null || t.x[0] < x0) x0 = t.x[0];
+      const last = t.x[t.x.length - 1];
+      if (x1 == null || last > x1) x1 = last;
+    });
     return {
       yRange: [lo, hi],
-      // The text sits at the spread position, a little right of the last
-      // date, with no leader: the stack keeps the order of the returns,
-      // which is what the eye needs to pair a label with its line.
+      xRange: x0 && x1 ? [x0, x1] : undefined,
+      // The text sits at the spread position, outside the grid, with no
+      // leader: the stack keeps the order of the returns, which is what
+      // the eye needs to pair a label with its line.
       endLabels: labels.map((l) => ({
-        x: l.x, y: l.y, xref: 'x', yref: 'y', text: l.text, xshift: 10,
+        x: 1, xref: 'paper', y: l.y, yref: 'y', text: l.text, xshift: 10,
         xanchor: 'left', yanchor: 'middle', align: 'left',
-        font: { color: l.color, size: 11 },
+        font: { color: l.color, size: 12, weight: l.name === house ? 700 : 400 },
         showarrow: false,
       })),
     };
@@ -335,15 +350,59 @@ export default function SppPanelPage() {
     setHover({
       date: hoverDate(pts[0].x),
       rows: pts.map((p) => ({
-        name: p.data.name, color: p.data.line?.color, y: p.y,
+        name: p.data.name, color: p.data.line?.color, y: p.y, benchmark: !!p.data.benchmark,
         cumulative: p.customdata?.[0], day: p.customdata?.[1],
       })).sort((a, b) => b.y - a.y),
       x, y, flip: x > box.width * 0.62,
     });
   };
-  const hoverLabels = scale === 'alpha'
-    ? ['Cumulative alpha', 'Day'] : ['Cumulative return', 'Daily return'];
-  const hoverFmt = scale === 'alpha' ? bps : pct;
+  // One row per line: name, the value at the date and, in the color of
+  // its sign, the cumulative since the window start (the day's step in
+  // Alpha, where the value already is the cumulative).
+  const hoverValue = (y) => (scale === 'alpha' ? bps(y)
+    : scale === 'base' ? y.toFixed(1) : fmtMetric(y, metric, true));
+  const hoverChange = (r) => (scale === 'alpha' ? signed(r.day, bps) : signed(r.cumulative, pct));
+
+  // ---- Drawdown -----------------------------------------------------------
+  // Under the lines, the house's drawdown (and the benchmark's) over the
+  // same window: how far below its running peak each sits. Not in Alpha,
+  // where the line is already a difference.
+  const drawdown = useMemo(() => {
+    if (scale === 'alpha') return [];
+    return traces.filter((t) => t.name === house || t.benchmark).map((t) => {
+      let peak = -Infinity; let min = 0;
+      const y = (t.y || []).map((v) => {
+        if (v > peak) peak = v;
+        const d = peak > 0 ? v / peak - 1 : 0;
+        if (d < min) min = d;
+        return d;
+      });
+      return { name: t.name, x: t.x, y, min, color: t.line?.color, dash: t.line?.dash, isHouse: t.name === house };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [traces, scale, house]);
+  const withAlpha = (color, a) => {
+    if (!color) return color;
+    if (color.startsWith('#') && color.length === 7) {
+      return `rgba(${parseInt(color.slice(1, 3), 16)}, ${parseInt(color.slice(3, 5), 16)}, ${parseInt(color.slice(5, 7), 16)}, ${a})`;
+    }
+    return color.replace(/^rgb\(([^)]+)\)$/, `rgba($1, ${a})`);
+  };
+  const ddTraces = drawdown.map((d) => ({
+    x: d.x, y: d.y, type: 'scatter', mode: 'lines', name: d.name, hoverinfo: 'none',
+    line: { color: d.color, width: d.isHouse ? 1.8 : 1.2, dash: d.dash || 'solid' },
+    ...(d.isHouse ? { fill: 'tozeroy', fillcolor: withAlpha(d.color, 0.14) } : {}),
+  }));
+  const ddLabels = [
+    { text: 'DRAWDOWN', y: 0.95, color: ct.muted, size: 11 },
+    ...drawdown.map((d, i) => ({
+      text: `${d.name} max ${(d.min * 100).toFixed(1).replace('-', '−')}%`,
+      y: 0.62 - i * 0.3, color: d.isHouse ? d.color : ct.text, size: 12,
+    })),
+  ].map((l) => ({
+    x: 1, xref: 'paper', y: l.y, yref: 'paper', text: l.text, xshift: 10,
+    xanchor: 'left', yanchor: 'middle', showarrow: false, font: { color: l.color, size: l.size },
+  }));
 
   const pdfReport = async () => {
     if (!cfg || !win?.control) return;
@@ -363,11 +422,18 @@ export default function SppPanelPage() {
   // Short title - the reader already knows it is the valor cuota series -
   // and under the chart what it is expressed in. The window and the rest
   // of the selection are visible in the bar above.
-  const seriesTitle = scale === 'alpha' ? `Alpha F${fund}` : `Unit value F${fund}`;
+  const seriesTitle = scale === 'alpha' ? `Alpha F${fund}`
+    : scale === 'base' ? `Unit value base 100 F${fund}` : `${metricName(cfg, metric)} F${fund}`;
   const seriesFooter = scale === 'alpha'
     ? `In basis points: ${house} minus each AFP`
     : scale === 'base' ? 'Rebased to 100'
       : `In ${metricName(cfg, metric).toLowerCase()}`;
+  const firstOnScreen = traces.reduce((m, t) => (t.x?.length && (!m || t.x[0] < m) ? t.x[0] : m), null);
+  const seriesSubtitle = (scale === 'alpha'
+    ? `Basis points, ${house} minus each line.`
+    : scale === 'base' ? 'All series rebased to 100 at the start date.'
+      : `In ${metricName(cfg, metric).toLowerCase()}.`)
+    + (firstOnScreen ? ` From ${fDate(firstOnScreen)}.` : '');
   // "Unit value F2 · Rebased to 100 · 1Y" -> a file name
   const fileNameOf = (t) => t.toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -473,16 +539,6 @@ export default function SppPanelPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }).filter(Boolean), [pos, fund, cfg, house, names, periods]);
-  // The line under the table: how often the house finished first and its
-  // average rank over the periods it has a rank for.
-  const houseSummary = (() => {
-    const row = (pos?.rows || []).find((r) => r.fund === fund && r.afp === house);
-    const ranks = periods.map((p) => row?.ranks?.[p.key]).filter((r) => r != null);
-    if (!ranks.length) return '';
-    const firsts = ranks.filter((r) => r === 1).length;
-    const avg = ranks.reduce((s, r) => s + r, 0) / ranks.length;
-    return `${house} first in ${firsts} of ${ranks.length} periods · average rank ${avg.toFixed(1)}.`;
-  })();
 
   return (
     <div className="spp-page">
@@ -527,8 +583,10 @@ export default function SppPanelPage() {
         {/* The title says what is on screen - scale, fund and window -
             because the filters stay above and the chart is looked at alone. */}
         <div className="spp-chart-header">
-          <span />
-          <div className="panel-title" style={{ margin: 0 }}>{seriesTitle}</div>
+          <div>
+            <div className="panel-title" style={{ margin: 0 }}>{seriesTitle} · {windowLabel}</div>
+            <div className="page-sub dim" style={{ margin: '2px 0 0' }}>{seriesSubtitle}</div>
+          </div>
           {/* The CSV carries the view as is: level, base 100 or alpha in bps.
               The file name repeats the title, which is what is read when the
               file shows up days later in a folder. */}
@@ -553,9 +611,12 @@ export default function SppPanelPage() {
               // date; the card itself is the page's (see onChartHover). The
               // spike is the vertical line that marks the hovered date.
               hovermode: 'x unified',
+              // The labels at the right replace the legend.
+              showlegend: false,
               xaxis: {
+                range: xRange,
                 showspikes: true, spikemode: 'across', spikesnap: 'data',
-                spikethickness: 1, spikedash: 'dot', spikecolor: ct.muted,
+                spikethickness: 1, spikedash: 'solid', spikecolor: ct.muted,
               },
               yaxis: {
                 type: 'linear',
@@ -579,13 +640,11 @@ export default function SppPanelPage() {
                 : { left: hover.x + 14, top: hover.y + 12 }}>
               <div className="spp-hover-date">{hover.date}</div>
               {hover.rows.map((r) => (
-                <div key={r.name} className="spp-hover-row">
-                  <span className="spp-hover-swatch" style={{ borderColor: r.color }} />
-                  <div>
-                    <div className="spp-hover-name">{r.name}</div>
-                    <div className="spp-hover-kv"><span>{hoverLabels[0]}</span>{signed(r.cumulative, hoverFmt)}</div>
-                    <div className="spp-hover-kv"><span>{hoverLabels[1]}</span>{signed(r.day, hoverFmt)}</div>
-                  </div>
+                <div key={r.name} className={`spp-hover-row${r.name === house ? ' spp-hover-house' : ''}`}>
+                  <span className="spp-hover-swatch" style={{ borderColor: r.color, borderTopStyle: r.benchmark ? 'dashed' : 'solid' }} />
+                  <span className="spp-hover-name">{r.name}</span>
+                  <span className="spp-hover-val">{hoverValue(r.y)}</span>
+                  <span className="spp-hover-val">{hoverChange(r)}</span>
                 </div>
               ))}
             </div>
@@ -594,8 +653,20 @@ export default function SppPanelPage() {
         ) : seriesData == null
           ? <div className="loading">Loading…</div>
           : <p className="page-sub dim">No data for this selection.</p>}
-        {traces.length > 0 && (
-          <p className="page-sub dim" style={{ textAlign: 'center', margin: '6px 0 0' }}>{seriesFooter}</p>
+        {ddTraces.length > 0 && (
+          <PlotlyChart
+            data={ddTraces}
+            style={{ height: '170px' }}
+            layout={{
+              // Same left and right margins as the lines, so the two grids
+              // share their x axis; the annotations sit in the right margin.
+              margin: { l: 70, r: 150, t: 6, b: 40 },
+              showlegend: false, hovermode: false,
+              annotations: ddLabels,
+              xaxis: { range: xRange },
+              yaxis: { tickformat: '.1%', nticks: 3, zeroline: true, zerolinecolor: ct.muted, rangemode: 'tozero' },
+            }}
+          />
         )}
       </div>
 
@@ -665,8 +736,6 @@ export default function SppPanelPage() {
           </table>
         </div>
         ) : <div className="dim">Not enough closed months.</div>}
-        <p className="page-sub">{houseSummary} Each closed month is measured against the previous
-          month&apos;s close; the last period is the MTD.</p>
       </div>
 
       <div className="panel">

@@ -78,7 +78,8 @@ jobs:
   # No gate (the WAF blocks anything lighter than Chrome): each slot is a
   # scrape until the book holds t-2. Slot count x window = worst-case
   # Chrome launches on a day the SBS publishes late. Tune from
-  # fact_prices.loaded_at of the sbs_spp rows (docs/SCHEDULER.md).
+  # job_runs.finished_at of the acquire_spp rows that carry a run_date
+  # (fact_prices has no loaded_at; docs/SCHEDULER.md).
   acquire_spp:
     day_of_week: mon-fri
     hour: "15-17"

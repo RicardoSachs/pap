@@ -22,6 +22,7 @@ const ITEMS = [
   // OURS: the dashboards that do not exist upstream.
   { href: '/spp/', label: 'SPP Unit Value', icon: '◷' },
   { href: '/benchmarks/', label: 'Benchmarks', icon: '◈' },
+  { href: '/status/', label: 'Status', icon: '●' },
 ];
 const SOON = [
   { label: 'Attribution', icon: '⊞' },

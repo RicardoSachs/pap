@@ -6,7 +6,9 @@
 -- Grain: one row per (job_id, started_at) execution attempt.
 -- status lifecycle: 'running' -> 'success' | 'error'.
 -- run_date is the business date the job processed (NULL until the
--- job finishes, and for jobs with no single business date).
+-- job finishes, for jobs with no single business date, and for a
+-- polling job's slot that found nothing to load yet - a 'success'
+-- with a NULL run_date keeps the day open for the next slot).
 --
 -- Append-only: the scheduler inserts at job start and updates the
 -- same row at job end. A row stuck in 'running' with an old

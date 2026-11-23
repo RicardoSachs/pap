@@ -8,77 +8,81 @@
 #
 # Fields per job:
 #   day_of_week          APScheduler cron expression (e.g. mon-fri)
-#   hour, minute         fire time in `timezone`
+#   hour, minute         fire time in `timezone`; an int for a fixed-time
+#                        job, or a quoted cron expression ("9-11",
+#                        "0,30") for a polling job that fires at every
+#                        slot of the range and runs once the data is
+#                        there (scripts/scheduler.py banner)
+#   deadline             optional "HH:MM" (quoted, or YAML reads it as a
+#                        number) in `timezone`: a polling job whose gate
+#                        is still closed at this time lands in job_runs
+#                        as an error. Set it to the last slot.
 #   timezone             optional IANA name; defaults to the
 #                        machine timezone from machine_config
-#   misfire_grace_time   optional seconds; defaults to 3600
+#   misfire_grace_time   optional seconds; defaults to 3600. For a
+#                        polling job keep it under the slot spacing so
+#                        a missed slot never fires on top of the next.
 #
 # Daily chain (all times America/Lima unless noted):
-#   08:30 acquire_sbs       browser scrape of prev reporting day
-#   09:00 check_sbs         gate: files arrived on network share
-#   09:15 ingest_sbs        SBS staging -> fact
-#   13:00 positions_fms     four FMS feeds + contribution, prev NYSE-or-XLIM day
-#   16:00 acquire_spp       SPP valor cuota through a visible Chrome,
-#         16:30 / 17:00     retries (each skips when the book already
-#                           holds t-2 reporting days)
-#   17:30 prices_bloomberg  America/New_York — DST-proof "after
-#                           NYSE close" regardless of season
+#   09:30        acquire_sbs       America/New_York (08:30 Lima during US
+#                                  daylight time) — browser scrape of prev
+#                                  reporting day
+#   09:00-11:45  ingest_sbs        every 15 min; runs once the SBS files
+#                                  are on the network share
+#   10:00-15:30  positions_fms     every 30 min; runs once every fund has
+#                                  a CierreIDI (accounting close) for the
+#                                  prev reporting day
+#   15:00-17:30  acquire_spp       every 30 min; one visible-Chrome scrape
+#                                  per slot until the book holds t-2
+#   16:30        prices_bloomberg  America/New_York — DST-proof "after
+#                                  NYSE close" regardless of season
 # ---------------------------------------------------------------
 
 jobs:
   prices_bloomberg:
     day_of_week: mon-fri
-    hour: 17
+    hour: 16
     minute: 30
     timezone: America/New_York
 
   dim_enrichment:
     day_of_week: mon
-    hour: 9
+    hour: 10
     minute: 0
+    timezone: America/New_York   # office hours follow the NYSE session
 
   acquire_sbs:
     day_of_week: mon-fri
-    hour: 8
-    minute: 30
-
-  check_sbs:
-    day_of_week: mon-fri
     hour: 9
-    minute: 0
-    misfire_grace_time: 1800
+    minute: 30
+    timezone: America/New_York   # operator job: office hours follow the NYSE session
 
+  # Gate: all SBS files for the prev reporting day on the network share
+  # (the operator at acquire_sbs's image pad decides when that is).
   ingest_sbs:
     day_of_week: mon-fri
-    hour: 9
-    minute: 15
-    misfire_grace_time: 1800
+    hour: "9-11"
+    minute: "0,15,30,45"
+    deadline: "11:45"
+    misfire_grace_time: 600
 
+  # Gate: FMS.CierreIDI (FlgHistorico = 0) for every active fund on the
+  # prev reporting day, i.e. accounting has closed the report.
   positions_fms:
     day_of_week: mon-fri
-    hour: 13
-    minute: 0
+    hour: "10-15"
+    minute: "0,30"
+    deadline: "15:30"
+    misfire_grace_time: 1500
 
-  # The SBS publishes the valor cuota during the afternoon with no fixed
-  # hour: three attempts, Lima time; each one returns without opening
-  # Chrome when the book already holds the expected day.
+  # No gate (the WAF blocks anything lighter than Chrome): each slot is a
+  # scrape until the book holds t-2. Slot count x window = worst-case
+  # Chrome launches on a day the SBS publishes late. Tune from
+  # job_runs.finished_at of the acquire_spp rows that carry a run_date
+  # (fact_prices has no loaded_at; docs/SCHEDULER.md).
   acquire_spp:
     day_of_week: mon-fri
-    hour: 16
-    minute: 0
-    timezone: America/Lima
-    misfire_grace_time: 1500
-
-  acquire_spp_retry_1:
-    day_of_week: mon-fri
-    hour: 16
-    minute: 30
-    timezone: America/Lima
-    misfire_grace_time: 1500
-
-  acquire_spp_retry_2:
-    day_of_week: mon-fri
-    hour: 17
-    minute: 0
+    hour: "15-17"
+    minute: "0,30"
     timezone: America/Lima
     misfire_grace_time: 1500

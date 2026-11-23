@@ -23,6 +23,7 @@ const ITEMS = [
   { href: '/spp/', label: 'SPP Unit Value', icon: '◷' },
   { href: '/benchmarks/', label: 'Benchmarks', icon: '◈' },
   { href: '/tradebook/', label: 'Tradebook', icon: '▤' },
+  { href: '/status/', label: 'Status', icon: '●' },
 ];
 const SOON = [
   { label: 'Attribution', icon: '⊞' },

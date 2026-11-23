@@ -7,12 +7,27 @@
 # is decided entirely by the machine_config flags —
 #   bloomberg_enabled      -> prices_bloomberg, dim_enrichment
 #   scraper_enabled        -> acquire_sbs (browser + image-pad beep),
-#                             acquire_spp (+ two retries; visible Chrome
-#                             through the SBS portal's WAF)
-#   sbs_ingestion_enabled  -> ingest_sbs (+ check_sbs when the
-#                             scraper runs on a remote machine)
-#   fms_enabled            -> positions_fms (four feeds, sequential)
+#                             acquire_spp (visible Chrome through the
+#                             SBS portal's WAF)
+#   sbs_ingestion_enabled  -> ingest_sbs (gated on the files)
+#   fms_enabled            -> positions_fms (gated on the FMS close)
 # Fire times come from config/schedules.yaml — no cron values here.
+#
+# Two kinds of job:
+#   - fixed-time: the data is known to exist by the fire time
+#     (prices_bloomberg after NYSE close, acquire_sbs with an operator).
+#     One slot a day.
+#   - polling: the data appears at a variable hour. The YAML gives a
+#     cron RANGE (hour: "9-11", minute: "0,30") and the job fires at
+#     every slot; _gated() decides per slot:
+#       done   job_runs already holds a success with a business date
+#              for this job today                       -> skip, no row
+#       gate   optional `ready()` probe of the SOURCE says no
+#                before `deadline`                       -> skip, no row
+#                at/after `deadline`                     -> error row
+#       else   run (tracked as usual)
+#     Jobs return None when they found nothing to load (SPP: the SBS
+#     has not published yet) so the day stays open for the next slot.
 #
 # Observability (both tables in src/db/schema/37, 38):
 #   - every job is wrapped by _tracked(): a job_runs row is inserted
@@ -21,10 +36,11 @@
 #   - a heartbeat job upserts scheduler_heartbeat every 5 minutes so
 #     "is the scheduler alive on machine X" is a SQL query.
 #
-# Daily chain (see schedules.yaml for the times):
-#   acquire_sbs -> check_sbs -> ingest_sbs -> positions_fms ->
-#   acquire_spp (16:00 Lima, retries 16:30 and 17:00) ->
-#   prices_bloomberg (17:30 America/New_York, DST-proof).
+# Daily chain (see schedules.yaml for the windows):
+#   acquire_sbs -> ingest_sbs (when the files are on the share) ->
+#   positions_fms (when every fund has a CierreIDI) ->
+#   acquire_spp (afternoon slots until the book holds t-2) ->
+#   prices_bloomberg (16:30 America/New_York, DST-proof).
 #
 # Deployment: no admin rights, so no service. Register a user-level
 # Windows Task Scheduler task per machine that launches
@@ -40,9 +56,10 @@ import logging
 import sys
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, time as dtime
 from pathlib import Path
 from typing import Callable, Optional
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -115,8 +132,10 @@ def _record_end(
 
 def _tracked(job_id: str, fn: Callable[[], Optional[date]]) -> Callable[[], None]:
     """Wraps a job so every execution lands in job_runs. The job
-    returns the business date it processed (or None); exceptions are
-    recorded and re-raised so APScheduler logs the failure too."""
+    returns the business date it processed, or None when it has no
+    single business date or found nothing to load yet (a polling job
+    returning None keeps the day open for its next slot); exceptions
+    are recorded and re-raised so APScheduler logs the failure too."""
     @functools.wraps(fn)
     def wrapper() -> None:
         job_run_id = _record_start(job_id)
@@ -150,6 +169,102 @@ def job_heartbeat() -> None:
         logger.warning(f"heartbeat upsert failed: {e}")
 
 
+# ---- Slot gating (polling jobs) --------------------------------
+
+def _done_today(job_id: str) -> bool:
+    """True when job_runs already holds a success with a business date
+    for this job on this machine today (machine timezone). Unreachable
+    DB -> False: a repeated run is idempotent, a missed one is not."""
+    try:
+        from src.db.connection import get_connection
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM job_runs "
+                "WHERE job_id = %s AND machine_id = %s AND status = 'success' "
+                "AND run_date IS NOT NULL "
+                "AND (started_at AT TIME ZONE %s)::date = (now() AT TIME ZONE %s)::date "
+                "LIMIT 1",
+                (job_id, MACHINE, TZ, TZ),
+            )
+            return cur.fetchone() is not None
+    except Exception as e:
+        logger.warning(f"done-check failed for {job_id}: {e}")
+        return False
+
+
+def _gated(
+    job_id: str,
+    fn: Callable[[], Optional[date]],
+    ready: Optional[Callable[[], bool]],
+    deadline: Optional[dtime],
+    tz: ZoneInfo,
+) -> Callable[[], None]:
+    """Per-slot decision for polling jobs (see banner). A probe that
+    raises counts as not ready: the deadline turns a persistently
+    unreachable source into one error row instead of one per slot."""
+    tracked = _tracked(job_id, fn)
+
+    def not_ready() -> None:
+        raise RuntimeError(f"{job_id}: source not ready by deadline {deadline:%H:%M}")
+
+    @functools.wraps(fn)
+    def wrapper() -> None:
+        if _done_today(job_id):
+            logger.info(f"{job_id}: already done today, slot skipped")
+            return
+        if ready is not None:
+            try:
+                ok = ready()
+            except Exception as e:
+                logger.warning(f"{job_id}: readiness probe failed: {e}")
+                ok = False
+            if not ok:
+                if deadline is not None and datetime.now(tz).time() >= deadline:
+                    _tracked(job_id, not_ready)()  # error row, then raises
+                logger.info(f"{job_id}: source not ready, slot skipped")
+                return
+        tracked()
+    return wrapper
+
+
+def _sbs_files_ready() -> bool:
+    """Gate for ingest_sbs: every SBS file for the previous reporting
+    day is on the network share (acquisition may run on another machine)."""
+    from src.calendars.calendar_sbs import prev_reporting_day
+    from src.scrapers.sbs import all_files_present
+    return all_files_present(prev_reporting_day(date.today()))
+
+
+def _fms_closed() -> bool:
+    """Gate for positions_fms: accounting has closed the previous
+    reporting day for every active FMS fund. A CierreIDI row with
+    FlgHistorico = 0 exists only once the fund's day is signed off, so
+    the probe cannot open on a half-written day. holdings.sql inner-joins
+    the same table: before the close it returns zero rows."""
+    from src.calendars.calendar_sbs import prev_reporting_day
+    from src.db.connection import get_connection
+    from src.vendors.fms import get_fms_connection
+
+    run_date = prev_reporting_day(date.today())
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS n FROM dim_portfolio "
+                    "WHERE source = 'fms' AND status = 'active'")
+        expected = cur.fetchone()["n"]
+    with get_fms_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(DISTINCT i.IdFondoPension) "
+            "FROM FMS.CierreIDI ci JOIN FMS.IDI i ON i.IdIDI = ci.IdIDI "
+            "WHERE i.IdSecuencialFechaIDI = ? AND ci.FlgHistorico = 0",
+            int(run_date.strftime("%Y%m%d")),
+        )
+        closed = cur.fetchone()[0]
+    logger.info(f"fms close probe {run_date}: {closed}/{expected} funds closed")
+    return expected > 0 and closed >= expected
+
+
 # ---- Beep helper (SBS image-pad login alert) -------------------
 
 def _beep_until_stopped(stop_event: threading.Event) -> None:
@@ -169,7 +284,7 @@ def _beep_until_stopped(stop_event: threading.Event) -> None:
 
 def job_prices_bloomberg() -> date:
     """Daily Bloomberg prices. run() itself skips NYSE holidays in
-    incremental mode. Fires 17:30 America/New_York, so today's Lima
+    incremental mode. Fires 16:30 America/New_York, so today's Lima
     date equals today's New York date."""
     logger.info("--- job: prices bloomberg ---")
     from src.pipelines.prices.bloomberg.run import run
@@ -193,7 +308,7 @@ def job_acquire_sbs() -> Optional[date]:
     """Semi-automated SBS acquisition for the previous reporting day
     (Monday -> Friday, day after holiday -> last open day). Beeps
     until the operator completes the image-pad login. Files land on
-    the network share for check_sbs/ingest_sbs."""
+    the network share for ingest_sbs."""
     from src.calendars.calendar_sbs import prev_reporting_day
     from src.scrapers.sbs import acquire_day, all_files_present
 
@@ -231,39 +346,21 @@ def job_acquire_sbs() -> Optional[date]:
     return run_date
 
 
-def job_acquire_spp() -> date:
+def job_acquire_spp() -> Optional[date]:
     """SPP valor cuota from the public SBS portal, through a visible
     Chrome (the Imperva WAF blocks headless browsers). The SBS publishes
-    t-2 reporting days during the afternoon with no fixed hour, so the
-    job is registered three times (acquire_spp and two retries); every
-    attempt first asks whether the book already holds the expected day
-    and, if so, returns without opening Chrome. The first run on a fresh
-    browser profile needs an operator to solve the WAF challenge once
-    (docs/SCHEDULER.md)."""
+    t-2 reporting days during the afternoon with no fixed hour, so this
+    is a polling job: a cron range in schedules.yaml, one Chrome launch
+    per slot until the day is in the book. No source gate exists (the
+    WAF blocks anything lighter than Chrome), so the scrape IS the probe;
+    run_scheduled returns None when the day was not published yet and
+    _gated() skips the remaining slots once it was. The first run on a
+    fresh browser profile needs an operator to solve the WAF challenge
+    once (docs/SCHEDULER.md)."""
     from src.pipelines.prices.sbs.valor_cuota.run import run_scheduled
 
     logger.info("--- job: acquire spp ---")
     return run_scheduled()
-
-
-def job_check_sbs() -> date:
-    """Verifies the previous reporting day's SBS files arrived on the
-    network share (remote acquisition). Raises on missing files so
-    the failure lands in job_runs and the APScheduler log before the
-    ingest window."""
-    from src.calendars.calendar_sbs import prev_reporting_day
-    from src.scrapers.sbs import all_files_present
-
-    run_date = prev_reporting_day(date.today())
-    logger.info(f"--- job: check sbs | reporting day={run_date} ---")
-
-    if not all_files_present(run_date):
-        raise RuntimeError(
-            f"SBS files missing for {run_date}. "
-            f"Ingestion at the next window will use stale data."
-        )
-    logger.info(f"All SBS files present for {run_date}.")
-    return run_date
 
 
 def job_ingest_sbs() -> date:
@@ -318,17 +415,29 @@ def job_positions_fms() -> date:
 
 # ---- Registration ----------------------------------------------
 
-def _register(job_id: str, fn: Callable[[], Optional[date]], name: str, jobs_cfg: dict) -> None:
+def _register(
+    job_id: str,
+    fn: Callable[[], Optional[date]],
+    name: str,
+    jobs_cfg: dict,
+    ready: Optional[Callable[[], bool]] = None,
+) -> None:
+    """hour/minute may be cron expressions ("9-11", "0,30"): the job then
+    fires at every slot of the range and _gated() decides per slot.
+    `deadline` ("HH:MM", quoted, job timezone) is when a still-closed
+    gate becomes an error row; set it to the last slot of the range."""
     cfg = jobs_cfg.get(job_id)
     if cfg is None:
         raise KeyError(f"Job '{job_id}' has no entry in config/schedules.yaml")
+    tz = ZoneInfo(cfg.get("timezone", TZ))
+    deadline = dtime.fromisoformat(cfg["deadline"]) if "deadline" in cfg else None
     scheduler.add_job(
-        _tracked(job_id, fn),
+        _gated(job_id, fn, ready, deadline, tz),
         CronTrigger(
             day_of_week=cfg["day_of_week"],
             hour=cfg["hour"],
             minute=cfg["minute"],
-            timezone=cfg.get("timezone", TZ),
+            timezone=tz,
         ),
         id=job_id,
         name=name,
@@ -353,18 +462,12 @@ def register_jobs() -> None:
         if get_machine_config().get("automated_scraper_enabled") is not False:
             _register("acquire_sbs", job_acquire_sbs, "SBS daily acquisition", jobs_cfg)
         _register("acquire_spp", job_acquire_spp, "SPP valor cuota scrape", jobs_cfg)
-        _register("acquire_spp_retry_1", job_acquire_spp, "SPP valor cuota scrape (retry 1)", jobs_cfg)
-        _register("acquire_spp_retry_2", job_acquire_spp, "SPP valor cuota scrape (retry 2)", jobs_cfg)
 
     if sbs_ingestion_enabled():
-        # check_sbs only matters when acquisition happens on a remote
-        # machine; a machine that scrapes and ingests needs no gate.
-        if not scraper_enabled():
-            _register("check_sbs", job_check_sbs, "SBS file check", jobs_cfg)
-        _register("ingest_sbs", job_ingest_sbs, "SBS ingestion", jobs_cfg)
+        _register("ingest_sbs", job_ingest_sbs, "SBS ingestion", jobs_cfg, ready=_sbs_files_ready)
 
     if fms_enabled():
-        _register("positions_fms", job_positions_fms, "FMS daily positions", jobs_cfg)
+        _register("positions_fms", job_positions_fms, "FMS daily positions", jobs_cfg, ready=_fms_closed)
 
     scheduler.add_job(
         job_heartbeat,

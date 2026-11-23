@@ -20,10 +20,12 @@
 #                       (scripts/scheduler.py; fire times in
 #                       config/schedules.yaml). Skips the scrape when the
 #                       book already holds the day the SBS publishes (t-2
-#                       reporting days): the job fires at 16:00 and again
-#                       at 16:30 and 17:00, and only the first attempt
-#                       that finds something should touch the SBS. Its
-#                       outcome lands in job_runs like every other job.
+#                       reporting days). The job is a polling job: it
+#                       fires at every slot of an afternoon window and
+#                       returns None while the SBS has not published, so
+#                       the scheduler keeps retrying; once it returns the
+#                       date the remaining slots are skipped. Its outcome
+#                       lands in job_runs like every other job.
 #
 # Unlike the file-driven SBS feeds this one does not use the
 # backfill-pending dance: the series universe is closed and declared
@@ -359,13 +361,14 @@ def book_has_date(day: date) -> bool:
     return bool(row) and row["series"] > 0 and row["with_data"] == row["series"]
 
 
-def run_scheduled(force: bool = False) -> date:
+def run_scheduled(force: bool = False) -> date | None:
     """
     The body of the scheduler job acquire_spp (and of the CLI's
     --scheduled): when the book already holds the day the SBS publishes
     (t-2 reporting days) for every AFP, nothing is scraped and no Chrome
-    opens - the 16:30 and 17:00 attempts land here when 16:00 already
-    brought the day. Otherwise run_daily(). Returns the expected date;
+    opens. Otherwise run_daily(). Returns the expected date when the
+    book holds it afterwards, None when the SBS has not published it
+    yet (the scheduler then keeps the day open for its next slot);
     raises on failure so the job_runs row records the error.
     """
     from src.configs.machine_config import machine_id, scraper_enabled
@@ -380,4 +383,7 @@ def run_scheduled(force: bool = False) -> date:
                     "every AFP: the SBS is not scraped.")
         return expected
     run_daily(force=force)
-    return expected
+    if force or book_has_date(expected):
+        return expected
+    logger.info(f"The SBS has not published {expected} yet: the next slot retries.")
+    return None
